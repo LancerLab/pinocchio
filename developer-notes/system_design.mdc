@@ -1,0 +1,476 @@
+---
+description: 系统设计
+globs: 
+alwaysApply: false
+---
+# Pinocchio 多智能体协作系统设计文档
+
+## 项目简介
+
+Pinocchio 是一个用于自动编写、调试、优化 Choreo 计算核编程 DSL 算子的多代理系统。
+系统基于 Python 实现，支持端到端的 Prompt 工程方式串联 Agents，消息传递基于自研轻量消息队列，数据和交互均采用 JSON 格式标准，交互日志分为详细持久化存储与摘要级别的 verbose 输出。
+
+---
+
+## 一、整体架构与模块划分
+
+```
+pinocchio/
+├── agents/           # 多智能体Agent模块（generator, debugger, optimizer, evaluator）
+│   ├── __init__.py
+│   ├── base.py       # Agent 基类及公共接口
+│   ├── generator.py  # 生成器Agent实现
+│   ├── debugger.py   # 调试器Agent实现
+│   ├── optimizer.py  # 优化器Agent实现
+│   └── evaluator.py  # 评估器Agent实现
+├── workflows/        # 任务调度与协作流程（基于invoke包装任务）
+│   ├── __init__.py
+│   ├── tasks.py      # invoke任务定义与消息队列管理
+│   ├── message_queue.py  # 内存消息队列实现
+│   └── orchestrator.py   # 工作流编排与条件分支管理
+├── knowledge/        # Choreo相关知识和Prompt模板（md/json格式存储）
+│   ├── choreo_knowledge.md
+│   ├── prompt_templates.json
+│   ├── loader.py     # 知识和模板加载工具
+│   └── versioning.py # 知识库与模板版本管理
+├── memory/           # 交互记录与摘要日志管理（JSON持久化 + verbose日志）
+│   ├── __init__.py
+│   ├── memory_manager.py  # 详细日志和摘要日志管理
+│   └── metrics.py         # 性能指标收集与监控
+├── prompt/           # Prompt模板管理与格式化
+│   ├── __init__.py
+│   ├── template_loader.py # 模板加载
+│   ├── formatter.py       # 模板变量替换和格式化
+│   └── version_control.py # 模板版本控制
+├── llm/              # LLM调用封装（OpenAI/Anthropic官方SDK）
+│   ├── __init__.py
+│   ├── base_client.py     # LLM客户端基类
+│   ├── openai_client.py   # OpenAI API封装
+│   ├── anthropic_client.py# Anthropic API封装
+│   └── retry.py           # LLM调用重试与错误处理
+├── config/           # 配置管理模块
+│   ├── __init__.py
+│   ├── settings.py        # 配置加载与管理
+│   └── credentials.py     # API密钥安全管理
+├── errors/           # 错误处理模块
+│   ├── __init__.py
+│   ├── exceptions.py      # 自定义异常类
+│   └── handlers.py        # 全局错误处理逻辑
+├── cli/              # 命令行入口（invoke实现）
+│   ├── __init__.py
+│   └── main.py        # invoke CLI任务入口
+├── tests/            # 测试代码（单元测试和集成测试）
+│   ├── __init__.py
+│   ├── test_agents.py
+│   ├── test_workflows.py
+│   ├── test_memory.py
+│   ├── test_prompt.py
+│   ├── test_llm.py
+│   ├── test_knowledge.py
+│   ├── fixtures/          # LLM响应模拟数据
+│   └── mocks/             # API调用模拟
+└── pyproject.toml    # Poetry项目配置
+```
+
+---
+
+## 二、模块功能定义及接口设计
+
+### 1. agents/
+
+* **功能**：实现各类智能体，接收标准格式 JSON Prompt，调用 LLM，输出 JSON 格式响应。
+
+* **核心接口**：
+
+  ```python
+  class AgentBase:
+      def process(self, prompt_json: dict) -> dict:
+          """
+          接受规范化的Prompt JSON，返回Response JSON
+          """
+          pass
+          
+      def handle_error(self, error: Exception) -> dict:
+          """
+          处理执行过程中的错误，返回标准错误响应
+          """
+          pass
+  ```
+
+* **包含Agents**：Generator, Debugger, Optimizer, Evaluator。
+
+---
+
+### 2. workflows/
+
+* **功能**：使用 invoke 组织并调度多Agent任务，利用内存消息队列传递JSON格式Prompt。
+
+* **核心接口**：
+
+  ```python
+  from invoke import task
+  from queue import Queue
+
+  @task
+  def generator_task(ctx, input_prompt_json: str) -> str:
+      ...
+
+  class MessageQueue:
+      def send(self, message_json: dict) -> None:
+          ...
+
+      def receive(self) -> dict:
+          ...
+          
+  class Orchestrator:
+      def define_workflow(self, workflow_config: dict) -> None:
+          """
+          定义工作流程，支持条件分支和并行执行
+          """
+          pass
+          
+      def execute(self, input_data: dict) -> dict:
+          """
+          执行工作流程，处理分支逻辑和错误恢复
+          """
+          pass
+  ```
+
+* **设计**：轻量内存队列（基于 `queue.Queue`），消息顺序和并发安全保证。
+
+---
+
+### 3. knowledge/
+
+* **功能**：管理Choreo相关知识文档及Prompt模板，支持md/json格式文件读取。
+* **接口**：
+
+  ```python
+  def load_md(filepath: str) -> str:
+      ...
+
+  def load_json(filepath: str) -> dict:
+      ...
+      
+  class KnowledgeVersionManager:
+      def get_version(self, resource_id: str) -> str:
+          """
+          获取知识资源的当前版本
+          """
+          pass
+          
+      def update_knowledge(self, resource_id: str, content: str) -> str:
+          """
+          更新知识资源并创建新版本
+          """
+          pass
+  ```
+
+---
+
+### 4. memory/
+
+* **功能**：存储完整交互详情（Prompt/Response JSON），提供摘要日志打印接口。
+
+* **核心接口**：
+
+  ```python
+  class MemoryManager:
+      def log_detail(self, agent_name: str, prompt_json: dict, response_json: dict, metadata: dict) -> None:
+          ...
+
+      def log_verbose(self, message: str) -> None:
+          ...
+
+      def query_history(self, filter: dict) -> list:
+          ...
+
+      def export_logs(self, filepath: str) -> None:
+          ...
+          
+  class MetricsCollector:
+      def record_latency(self, operation: str, duration_ms: int) -> None:
+          """
+          记录操作延迟
+          """
+          pass
+          
+      def record_success(self, operation: str) -> None:
+          """
+          记录操作成功
+          """
+          pass
+          
+      def record_failure(self, operation: str, error_type: str) -> None:
+          """
+          记录操作失败
+          """
+          pass
+          
+      def get_summary(self) -> dict:
+          """
+          获取性能指标摘要
+          """
+          pass
+  ```
+
+* **存储**：采用JSON Lines格式持久化。
+
+---
+
+### 5. prompt/
+
+* **功能**：加载和格式化Prompt模板，支持变量替换，生成符合约定JSON格式的Prompt。
+* **接口**：
+
+  ```python
+  class TemplateLoader:
+      def load_template(self, name: str) -> str:
+          ...
+
+  class PromptFormatter:
+      def fill_template(self, template_str: str, variables: dict) -> dict:
+          ...
+          
+  class PromptVersionControl:
+      def get_template_version(self, template_name: str) -> str:
+          """
+          获取模板版本
+          """
+          pass
+          
+      def update_template(self, template_name: str, content: str) -> str:
+          """
+          更新模板并创建新版本
+          """
+          pass
+  ```
+
+---
+
+### 6. llm/
+
+* **功能**：统一封装多家LLM API调用。
+
+* **接口**：
+
+  ```python
+  class LLMClient:
+      def send_request(self, prompt_text: str) -> str:
+          ...
+          
+  class RetryHandler:
+      def execute_with_retry(self, func, *args, max_retries=3, **kwargs) -> Any:
+          """
+          执行函数并在失败时自动重试
+          """
+          pass
+  ```
+
+* **实现**：支持OpenAIClient、AnthropicClient等。
+
+---
+
+### 7. config/
+
+* **功能**：管理系统配置和API凭证。
+
+* **接口**：
+
+  ```python
+  class Settings:
+      def load_from_env(self) -> None:
+          """
+          从环境变量加载配置
+          """
+          pass
+          
+      def load_from_file(self, filepath: str) -> None:
+          """
+          从配置文件加载配置
+          """
+          pass
+          
+      def get(self, key: str, default=None) -> Any:
+          """
+          获取配置项
+          """
+          pass
+          
+  class CredentialManager:
+      def get_api_key(self, service_name: str) -> str:
+          """
+          安全获取API密钥
+          """
+          pass
+  ```
+
+---
+
+### 8. errors/
+
+* **功能**：统一错误处理和异常管理。
+
+* **接口**：
+
+  ```python
+  class PinocchioError(Exception):
+      """基础异常类"""
+      pass
+      
+  class LLMApiError(PinocchioError):
+      """LLM API调用错误"""
+      pass
+      
+  class WorkflowError(PinocchioError):
+      """工作流执行错误"""
+      pass
+      
+  def global_error_handler(func):
+      """
+      全局错误处理装饰器
+      """
+      @wraps(func)
+      def wrapper(*args, **kwargs):
+          try:
+              return func(*args, **kwargs)
+          except Exception as e:
+              # 处理错误并返回标准错误响应
+              ...
+      return wrapper
+  ```
+
+---
+
+### 9. cli/
+
+* **功能**：基于 invoke 实现命令行入口，支持 `pinocchio --prompt ""` 格式调用。
+* **接口**：
+
+  ```python
+  from invoke import task
+
+  @task
+  def run(ctx, prompt: str):
+      ...
+  ```
+
+---
+
+### 10. tests/
+
+* **功能**：单元测试和集成测试覆盖所有模块接口和流程。
+* **技术栈**：pytest
+* **设计**：
+
+  * 单元测试覆盖核心模块方法。
+  * 集成测试验证agent协作工作流。
+  * 测试模拟 LLM API 调用。
+  * 使用记录的LLM响应进行确定性测试。
+
+---
+
+## 三、技术栈及依赖策略
+
+| 模块        | 关键技术/依赖                  | 说明               |
+| --------- | ------------------------ | ---------------- |
+| 全局        | Python 3.9+              | 基础语言             |
+| agents    | Python 标准库 + LLM SDK     | LLM调用唯一第三方库      |
+| workflows | invoke + Python 标准库      | invoke作为任务调度     |
+| memory    | Python 标准库（json,logging） | 持久化与日志管理         |
+| prompt    | Python 标准库（string）       | 模板处理             |
+| knowledge | Python 标准库（pathlib,json） | 文件读取             |
+| llm       | LLM官方SDK + Python标准库     | API封装            |
+| config    | Python 标准库 + pydantic    | 配置管理（可选依赖pydantic）|
+| errors    | Python 标准库              | 错误处理             |
+| cli       | invoke + Python标准库       | CLI入口管理          |
+| tests     | pytest                   | 测试框架（生产代码无第三方依赖） |
+
+---
+
+## 四、消息传递方案
+
+* 自研轻量消息队列基于 Python `queue.Queue`，保证顺序和线程安全。
+* 消息格式为 JSON，直接传递Prompt及Response结构。
+* 消息持久化写入 memory 模块的 JSON Lines文件，方便后续查询和调试。
+* verbose日志由 memory 模块摘要后输出到shell。
+* 适合单机轻量级应用，兼顾性能和扩展性。
+* 错误处理机制确保消息传递失败时有明确的恢复策略。
+
+---
+
+## 五、错误处理与恢复策略
+
+1. **分层错误处理**
+
+   * 底层：LLM API调用错误 - 实现自动重试和备用模型切换。
+   * 中层：Agent处理错误 - 标准化错误响应格式，确保工作流可继续。
+   * 上层：工作流错误 - 支持回退到上一步或跳过特定步骤。
+
+2. **错误类型**
+
+   * 网络/API错误：自动重试，指数退避策略。
+   * 内容生成错误：尝试调整prompt或切换模型。
+   * 业务逻辑错误：记录详细上下文，提供诊断信息。
+
+3. **错误日志**
+
+   * 详细记录错误上下文、输入输出和堆栈信息。
+   * 关键错误自动生成诊断报告。
+
+4. **优雅降级**
+
+   * 定义关键路径和非关键路径，允许非关键错误时继续执行。
+   * 提供手动干预接口，允许用户在错误时输入修正。
+
+---
+
+## 六、版本管理策略
+
+1. **知识资源版本控制**
+
+   * 每次知识更新生成新版本号。
+   * 记录知识变更历史和来源。
+   * 支持按版本查询历史知识。
+
+2. **Prompt模板版本控制**
+
+   * 模板更新自动生成版本号。
+   * 记录模板变更历史。
+   * 支持回滚到历史模板版本。
+
+3. **兼容性管理**
+
+   * 明确定义模块间接口兼容性规则。
+   * 新版本发布时验证向后兼容性。
+   * 不兼容变更时提供迁移路径。
+
+---
+
+## 七、开发和测试流程规范
+
+1. **模块开发**
+
+   * 先完成模块接口和核心功能实现。
+   * 编写单元测试确保接口正确。
+
+2. **模块单测**
+
+   * 使用pytest进行自动化单元测试，覆盖正常及异常场景。
+   * 使用记录的LLM响应进行确定性测试。
+
+3. **集成开发**
+
+   * 组合调用多个模块，实现典型工作流。
+   * 编写集成测试验证完整业务逻辑。
+
+4. **集成单测**
+
+   * 模拟真实调用，包含Agent协作链路测试。
+   * 确认消息队列传递正确，日志存储完整。
+   * 验证错误处理和恢复机制。
+
+5. **性能测试**
+
+   * 测量关键操作的延迟和资源消耗。
+   * 验证在持续运行下的稳定性。

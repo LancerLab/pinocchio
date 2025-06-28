@@ -1,0 +1,924 @@
+---
+description: workflow module
+globs: 
+alwaysApply: false
+---
+# Workflows Module Design
+
+## Overview
+
+The Workflows Module is responsible for orchestrating the execution of multi-agent tasks in the Pinocchio system. It provides a framework for defining, scheduling, and monitoring workflows that coordinate the activities of different agents. The module implements a lightweight message queue for inter-agent communication and supports both sequential and conditional execution paths.
+
+## Design Goals
+
+1. **Orchestration**: Coordinate the execution of multiple agents in a coherent workflow
+2. **Flexibility**: Support various workflow patterns including sequential, parallel, and conditional execution
+3. **Reliability**: Ensure robust execution with error handling and recovery mechanisms
+4. **Observability**: Provide visibility into workflow execution status and progress
+5. **Extensibility**: Allow easy definition of new workflows and integration of new agents
+
+## Core Components
+
+### 1. Message Queue
+
+A lightweight in-memory message queue for inter-agent communication:
+
+```python
+from typing import Dict, List, Any, Optional, Callable
+from queue import Queue
+import json
+import uuid
+import threading
+import time
+
+class MessageQueue:
+    """Lightweight in-memory message queue for inter-agent communication."""
+    
+    def __init__(self):
+        self._queues: Dict[str, Queue] = {}
+        self._subscribers: Dict[str, List[Callable]] = {}
+        self._lock = threading.RLock()
+        
+    def create_queue(self, queue_name: str) -> None:
+        """
+        Create a new message queue.
+        
+        Args:
+            queue_name: Name of the queue to create
+        """
+        with self._lock:
+            if queue_name not in self._queues:
+                self._queues[queue_name] = Queue()
+                self._subscribers[queue_name] = []
+                
+    def delete_queue(self, queue_name: str) -> None:
+        """
+        Delete a message queue.
+        
+        Args:
+            queue_name: Name of the queue to delete
+        """
+        with self._lock:
+            if queue_name in self._queues:
+                del self._queues[queue_name]
+                del self._subscribers[queue_name]
+                
+    def send(self, queue_name: str, message: Dict[str, Any]) -> str:
+        """
+        Send a message to a queue.
+        
+        Args:
+            queue_name: Name of the queue to send to
+            message: Message to send (will be converted to JSON)
+            
+        Returns:
+            Message ID
+        """
+        with self._lock:
+            if queue_name not in self._queues:
+                self.create_queue(queue_name)
+                
+            # Add message ID and timestamp if not present
+            if "message_id" not in message:
+                message["message_id"] = str(uuid.uuid4())
+            if "timestamp" not in message:
+                message["timestamp"] = time.time()
+                
+            # Put message in queue
+            self._queues[queue_name].put(message)
+            
+            # Notify subscribers
+            for subscriber in self._subscribers.get(queue_name, []):
+                try:
+                    subscriber(message)
+                except Exception as e:
+                    print(f"Error notifying subscriber: {e}")
+                    
+            return message["message_id"]
+            
+    def receive(self, queue_name: str, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
+        """
+        Receive a message from a queue.
+        
+        Args:
+            queue_name: Name of the queue to receive from
+            timeout: Timeout in seconds (None for no timeout)
+            
+        Returns:
+            Message or None if queue doesn't exist or timeout occurs
+        """
+        with self._lock:
+            if queue_name not in self._queues:
+                return None
+                
+        try:
+            return self._queues[queue_name].get(block=True, timeout=timeout)
+        except Exception:
+            return None
+            
+    def subscribe(self, queue_name: str, callback: Callable[[Dict[str, Any]], None]) -> None:
+        """
+        Subscribe to messages on a queue.
+        
+        Args:
+            queue_name: Name of the queue to subscribe to
+            callback: Function to call when a message is received
+        """
+        with self._lock:
+            if queue_name not in self._subscribers:
+                self._subscribers[queue_name] = []
+            self._subscribers[queue_name].append(callback)
+            
+    def unsubscribe(self, queue_name: str, callback: Callable[[Dict[str, Any]], None]) -> None:
+        """
+        Unsubscribe from messages on a queue.
+        
+        Args:
+            queue_name: Name of the queue to unsubscribe from
+            callback: Function to unsubscribe
+        """
+        with self._lock:
+            if queue_name in self._subscribers and callback in self._subscribers[queue_name]:
+                self._subscribers[queue_name].remove(callback)
+```
+
+### 2. Task Definition
+
+A framework for defining tasks that can be executed in a workflow:
+
+```python
+from typing import Dict, Any, Callable, Optional, List, Union
+from abc import ABC, abstractmethod
+import asyncio
+import functools
+import inspect
+
+class Task(ABC):
+    """Base class for all workflow tasks."""
+    
+    def __init__(self, name: str, description: Optional[str] = None):
+        self.name = name
+        self.description = description or ""
+        self.metadata: Dict[str, Any] = {}
+        
+    @abstractmethod
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the task.
+        
+        Args:
+            context: Execution context containing input data
+            
+        Returns:
+            Task result
+        """
+        pass
+        
+    def set_metadata(self, key: str, value: Any) -> None:
+        """Set metadata for the task."""
+        self.metadata[key] = value
+        
+    def get_metadata(self, key: str, default: Any = None) -> Any:
+        """Get metadata for the task."""
+        return self.metadata.get(key, default)
+
+
+class FunctionTask(Task):
+    """Task that executes a function."""
+    
+    def __init__(self, name: str, func: Callable, description: Optional[str] = None):
+        super().__init__(name, description)
+        self.func = func
+        
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the function."""
+        if inspect.iscoroutinefunction(self.func):
+            result = await self.func(context)
+        else:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, functools.partial(self.func, context)
+            )
+            
+        if isinstance(result, dict):
+            return result
+        else:
+            return {"result": result}
+
+
+class AgentTask(Task):
+    """Task that executes an agent."""
+    
+    def __init__(self, name: str, agent_class: type, agent_args: Dict[str, Any] = None, description: Optional[str] = None):
+        super().__init__(name, description)
+        self.agent_class = agent_class
+        self.agent_args = agent_args or {}
+        
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the agent."""
+        # Instantiate the agent
+        agent = self.agent_class(**self.agent_args)
+        
+        # Process the input with the agent
+        result = await agent.process(context)
+        
+        return result
+```
+
+### 3. Workflow Definition
+
+A system for defining workflows that coordinate the execution of tasks:
+
+```python
+from typing import Dict, List, Any, Optional, Union, Callable
+from enum import Enum
+import asyncio
+import uuid
+import time
+
+class WorkflowStatus(Enum):
+    """Status of a workflow execution."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class Workflow:
+    """Definition of a workflow."""
+    
+    def __init__(self, name: str, description: Optional[str] = None):
+        self.name = name
+        self.description = description or ""
+        self.tasks: Dict[str, Task] = {}
+        self.edges: Dict[str, List[Dict[str, Any]]] = {}
+        self.start_tasks: List[str] = []
+        self.metadata: Dict[str, Any] = {}
+        
+    def add_task(self, task: Task) -> None:
+        """
+        Add a task to the workflow.
+        
+        Args:
+            task: Task to add
+        """
+        self.tasks[task.name] = task
+        
+    def add_edge(self, from_task: str, to_task: str, condition: Optional[Callable[[Dict[str, Any]], bool]] = None) -> None:
+        """
+        Add an edge between tasks.
+        
+        Args:
+            from_task: Name of the source task
+            to_task: Name of the target task
+            condition: Optional condition for the edge
+        """
+        if from_task not in self.tasks:
+            raise ValueError(f"Task not found: {from_task}")
+        if to_task not in self.tasks:
+            raise ValueError(f"Task not found: {to_task}")
+            
+        if from_task not in self.edges:
+            self.edges[from_task] = []
+            
+        self.edges[from_task].append({
+            "to": to_task,
+            "condition": condition
+        })
+        
+    def set_start_tasks(self, task_names: List[str]) -> None:
+        """
+        Set the starting tasks for the workflow.
+        
+        Args:
+            task_names: Names of the starting tasks
+        """
+        for task_name in task_names:
+            if task_name not in self.tasks:
+                raise ValueError(f"Task not found: {task_name}")
+                
+        self.start_tasks = task_names
+        
+    def validate(self) -> bool:
+        """
+        Validate the workflow.
+        
+        Returns:
+            True if the workflow is valid
+        """
+        # Check that there are start tasks
+        if not self.start_tasks:
+            return False
+            
+        # Check that all tasks are reachable
+        reachable = set(self.start_tasks)
+        frontier = list(self.start_tasks)
+        
+        while frontier:
+            task_name = frontier.pop(0)
+            
+            if task_name in self.edges:
+                for edge in self.edges[task_name]:
+                    to_task = edge["to"]
+                    if to_task not in reachable:
+                        reachable.add(to_task)
+                        frontier.append(to_task)
+                        
+        return len(reachable) == len(self.tasks)
+```
+
+### 4. Workflow Executor
+
+A component for executing workflows:
+
+```python
+from typing import Dict, List, Any, Optional, Set
+import asyncio
+import time
+import uuid
+
+class WorkflowExecution:
+    """Execution instance of a workflow."""
+    
+    def __init__(self, workflow: Workflow):
+        self.workflow = workflow
+        self.execution_id = str(uuid.uuid4())
+        self.status = WorkflowStatus.PENDING
+        self.start_time: Optional[float] = None
+        self.end_time: Optional[float] = None
+        self.task_results: Dict[str, Dict[str, Any]] = {}
+        self.current_tasks: Set[str] = set()
+        self.completed_tasks: Set[str] = set()
+        self.failed_tasks: Set[str] = set()
+        self.context: Dict[str, Any] = {}
+        
+    async def execute(self, initial_context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Execute the workflow.
+        
+        Args:
+            initial_context: Initial execution context
+            
+        Returns:
+            Final execution context
+        """
+        self.context = initial_context or {}
+        self.status = WorkflowStatus.RUNNING
+        self.start_time = time.time()
+        
+        try:
+            # Start with the initial tasks
+            next_tasks = set(self.workflow.start_tasks)
+            
+            # Execute until no more tasks
+            while next_tasks:
+                # Get tasks that can be executed in parallel
+                self.current_tasks = next_tasks
+                next_tasks = set()
+                
+                # Execute current tasks in parallel
+                tasks = [self._execute_task(task_name) for task_name in self.current_tasks]
+                await asyncio.gather(*tasks)
+                
+                # Find next tasks
+                for task_name in self.completed_tasks:
+                    if task_name in self.workflow.edges:
+                        for edge in self.workflow.edges[task_name]:
+                            to_task = edge["to"]
+                            condition = edge["condition"]
+                            
+                            # Check condition if present
+                            if condition is None or condition(self.context):
+                                next_tasks.add(to_task)
+                                
+            # All tasks completed successfully
+            self.status = WorkflowStatus.COMPLETED
+            
+        except Exception as e:
+            self.status = WorkflowStatus.FAILED
+            self.context["error"] = str(e)
+            
+        finally:
+            self.end_time = time.time()
+            
+        return self.context
+        
+    async def _execute_task(self, task_name: str) -> None:
+        """
+        Execute a single task.
+        
+        Args:
+            task_name: Name of the task to execute
+        """
+        task = self.workflow.tasks[task_name]
+        
+        try:
+            # Execute the task
+            result = await task.execute(self.context)
+            
+            # Update context with task result
+            self.context.update(result)
+            
+            # Record task result
+            self.task_results[task_name] = {
+                "status": "completed",
+                "result": result,
+                "timestamp": time.time()
+            }
+            
+            # Update task sets
+            self.completed_tasks.add(task_name)
+            
+        except Exception as e:
+            # Record task failure
+            self.task_results[task_name] = {
+                "status": "failed",
+                "error": str(e),
+                "timestamp": time.time()
+            }
+            
+            # Update task sets
+            self.failed_tasks.add(task_name)
+            
+            # Re-raise the exception
+            raise
+            
+        finally:
+            self.current_tasks.remove(task_name)
+
+
+class WorkflowExecutor:
+    """Executor for workflows."""
+    
+    def __init__(self, message_queue: Optional[MessageQueue] = None):
+        self.message_queue = message_queue or MessageQueue()
+        self.executions: Dict[str, WorkflowExecution] = {}
+        
+    async def execute_workflow(self, workflow: Workflow, initial_context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Execute a workflow.
+        
+        Args:
+            workflow: Workflow to execute
+            initial_context: Initial execution context
+            
+        Returns:
+            Final execution context
+        """
+        # Validate the workflow
+        if not workflow.validate():
+            raise ValueError("Invalid workflow")
+            
+        # Create execution instance
+        execution = WorkflowExecution(workflow)
+        self.executions[execution.execution_id] = execution
+        
+        # Execute the workflow
+        try:
+            result = await execution.execute(initial_context)
+            return result
+        finally:
+            # Clean up execution if needed
+            pass
+            
+    def get_execution_status(self, execution_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the status of a workflow execution.
+        
+        Args:
+            execution_id: ID of the execution
+            
+        Returns:
+            Execution status or None if not found
+        """
+        if execution_id not in self.executions:
+            return None
+            
+        execution = self.executions[execution_id]
+        
+        return {
+            "execution_id": execution.execution_id,
+            "workflow_name": execution.workflow.name,
+            "status": execution.status.value,
+            "start_time": execution.start_time,
+            "end_time": execution.end_time,
+            "completed_tasks": list(execution.completed_tasks),
+            "failed_tasks": list(execution.failed_tasks),
+            "current_tasks": list(execution.current_tasks)
+        }
+```
+
+### 5. Workflow Registry
+
+A registry for managing workflow definitions:
+
+```python
+from typing import Dict, List, Any, Optional
+import json
+import os
+from pathlib import Path
+
+class WorkflowRegistry:
+    """Registry for managing workflow definitions."""
+    
+    def __init__(self, storage_path: Optional[str] = None):
+        self.workflows: Dict[str, Workflow] = {}
+        self.storage_path = storage_path
+        
+    def register_workflow(self, workflow: Workflow) -> None:
+        """
+        Register a workflow.
+        
+        Args:
+            workflow: Workflow to register
+        """
+        self.workflows[workflow.name] = workflow
+        
+    def get_workflow(self, name: str) -> Optional[Workflow]:
+        """
+        Get a workflow by name.
+        
+        Args:
+            name: Name of the workflow
+            
+        Returns:
+            Workflow or None if not found
+        """
+        return self.workflows.get(name)
+        
+    def list_workflows(self) -> List[str]:
+        """
+        List all registered workflows.
+        
+        Returns:
+            List of workflow names
+        """
+        return list(self.workflows.keys())
+        
+    def save_workflows(self) -> None:
+        """Save all workflows to storage."""
+        if not self.storage_path:
+            return
+            
+        os.makedirs(self.storage_path, exist_ok=True)
+        
+        for name, workflow in self.workflows.items():
+            # Serialize workflow to JSON
+            workflow_data = {
+                "name": workflow.name,
+                "description": workflow.description,
+                "tasks": [{"name": task.name, "type": task.__class__.__name__, "description": task.description}
+                         for task in workflow.tasks.values()],
+                "edges": [{"from": from_task, "to": edge["to"], "has_condition": edge["condition"] is not None}
+                         for from_task, edges in workflow.edges.items()
+                         for edge in edges],
+                "start_tasks": workflow.start_tasks,
+                "metadata": workflow.metadata
+            }
+            
+            # Save to file
+            filepath = os.path.join(self.storage_path, f"{name}.json")
+            with open(filepath, 'w') as f:
+                json.dump(workflow_data, f, indent=2)
+```
+
+## Module Structure
+
+```
+workflows/
+├── __init__.py             # Exports main classes and functions
+├── message_queue.py        # Message queue implementation
+├── task.py                 # Task definition classes
+├── workflow.py             # Workflow definition and execution
+├── registry.py             # Workflow registry
+└── tasks/                  # Pre-defined task implementations
+    ├── __init__.py
+    ├── agent_tasks.py      # Tasks for agent execution
+    ├── utility_tasks.py    # Utility tasks (e.g., data transformation)
+    └── control_tasks.py    # Control flow tasks (e.g., branching, looping)
+```
+
+## Workflow Definition Example
+
+An example of defining a workflow for the Pinocchio system:
+
+```python
+from workflows import Workflow, FunctionTask, AgentTask
+from agents import GeneratorAgent, DebuggerAgent, OptimizerAgent, EvaluatorAgent
+
+def create_choreo_workflow() -> Workflow:
+    """Create a workflow for Choreo DSL operator development."""
+    workflow = Workflow("choreo_development", "Workflow for Choreo DSL operator development")
+    
+    # Define tasks
+    generator_task = AgentTask("generator", GeneratorAgent, description="Generate initial Choreo DSL operator")
+    debugger_task = AgentTask("debugger", DebuggerAgent, description="Debug Choreo DSL operator")
+    optimizer_task = AgentTask("optimizer", OptimizerAgent, description="Optimize Choreo DSL operator")
+    evaluator_task = AgentTask("evaluator", EvaluatorAgent, description="Evaluate Choreo DSL operator")
+    
+    # Add tasks to workflow
+    workflow.add_task(generator_task)
+    workflow.add_task(debugger_task)
+    workflow.add_task(optimizer_task)
+    workflow.add_task(evaluator_task)
+    
+    # Define workflow edges
+    workflow.add_edge("generator", "debugger")
+    workflow.add_edge("debugger", "optimizer", condition=lambda ctx: not ctx.get("has_errors", True))
+    workflow.add_edge("debugger", "debugger", condition=lambda ctx: ctx.get("has_errors", False))
+    workflow.add_edge("optimizer", "evaluator")
+    workflow.add_edge("evaluator", "optimizer", condition=lambda ctx: ctx.get("performance_score", 0) < 0.8)
+    
+    # Set starting task
+    workflow.set_start_tasks(["generator"])
+    
+    return workflow
+```
+
+## Workflow Execution Example
+
+An example of executing a workflow:
+
+```python
+import asyncio
+from workflows import WorkflowExecutor
+
+async def run_workflow():
+    # Create workflow
+    workflow = create_choreo_workflow()
+    
+    # Create executor
+    executor = WorkflowExecutor()
+    
+    # Execute workflow
+    initial_context = {
+        "problem_description": "Implement matrix multiplication operator",
+        "constraints": ["Must support arbitrary dimensions", "Optimize for memory usage"]
+    }
+    
+    result = await executor.execute_workflow(workflow, initial_context)
+    
+    # Print results
+    print(f"Workflow completed with status: {result.get('status')}")
+    print(f"Final operator code: {result.get('operator_code')}")
+    print(f"Performance score: {result.get('performance_score')}")
+
+# Run the workflow
+asyncio.run(run_workflow())
+```
+
+## Message Queue Usage Example
+
+An example of using the message queue for inter-agent communication:
+
+```python
+from workflows import MessageQueue
+import threading
+import time
+
+def producer(queue, num_messages):
+    """Produce messages to the queue."""
+    for i in range(num_messages):
+        message = {
+            "content": f"Message {i}",
+            "timestamp": time.time()
+        }
+        queue.send("test_queue", message)
+        print(f"Sent: {message['content']}")
+        time.sleep(0.5)
+
+def consumer(queue):
+    """Consume messages from the queue."""
+    while True:
+        message = queue.receive("test_queue", timeout=1.0)
+        if message is None:
+            break
+        print(f"Received: {message['content']}")
+
+# Create queue
+queue = MessageQueue()
+
+# Start producer and consumer threads
+producer_thread = threading.Thread(target=producer, args=(queue, 5))
+consumer_thread = threading.Thread(target=consumer, args=(queue,))
+
+producer_thread.start()
+consumer_thread.start()
+
+producer_thread.join()
+consumer_thread.join()
+```
+
+## Integration with Other Modules
+
+### 1. Agents Module Integration
+
+```python
+from workflows import Workflow, AgentTask, WorkflowExecutor
+from agents import AgentBase
+
+class GeneratorAgent(AgentBase):
+    async def process(self, prompt_json: dict) -> dict:
+        # Process the prompt and generate code
+        return {"generated_code": "..."}
+
+class DebuggerAgent(AgentBase):
+    async def process(self, prompt_json: dict) -> dict:
+        # Debug the code
+        return {"debugged_code": "...", "has_errors": False}
+
+# Create a workflow with agents
+workflow = Workflow("agent_workflow", "Workflow using agents")
+
+# Add agent tasks
+workflow.add_task(AgentTask("generator", GeneratorAgent))
+workflow.add_task(AgentTask("debugger", DebuggerAgent))
+
+# Define workflow structure
+workflow.add_edge("generator", "debugger")
+workflow.set_start_tasks(["generator"])
+
+# Execute the workflow
+executor = WorkflowExecutor()
+asyncio.run(executor.execute_workflow(workflow, {"input": "Generate a matrix multiplication operator"}))
+```
+
+### 2. Memory Module Integration
+
+```python
+from workflows import Workflow, Task, WorkflowExecutor
+from memory import MemoryManager
+
+class MemoryAwareTask(Task):
+    def __init__(self, name: str, memory_manager: MemoryManager, description: Optional[str] = None):
+        super().__init__(name, description)
+        self.memory_manager = memory_manager
+        
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Log execution start
+        self.memory_manager.log_detail(
+            agent_name=self.name,
+            prompt_json=context,
+            response_json={},
+            metadata={"status": "started"}
+        )
+        
+        try:
+            # Execute task logic
+            result = await self._execute_task_logic(context)
+            
+            # Log successful execution
+            self.memory_manager.log_detail(
+                agent_name=self.name,
+                prompt_json=context,
+                response_json=result,
+                metadata={"status": "completed"}
+            )
+            
+            return result
+            
+        except Exception as e:
+            # Log failed execution
+            self.memory_manager.log_detail(
+                agent_name=self.name,
+                prompt_json=context,
+                response_json={"error": str(e)},
+                metadata={"status": "failed"}
+            )
+            
+            # Re-raise the exception
+            raise
+            
+    async def _execute_task_logic(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Override in subclasses
+        pass
+```
+
+### 3. LLM Module Integration
+
+```python
+from workflows import Task
+from llm import LLMClient
+
+class LLMTask(Task):
+    def __init__(self, name: str, llm_client: LLMClient, prompt_template: str, description: Optional[str] = None):
+        super().__init__(name, description)
+        self.llm_client = llm_client
+        self.prompt_template = prompt_template
+        
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Format the prompt template with context
+        prompt = self.prompt_template.format(**context)
+        
+        # Call the LLM
+        response = await self.llm_client.complete(prompt)
+        
+        # Return the result
+        return {"llm_response": response["text"]}
+```
+
+## Error Handling
+
+The module includes comprehensive error handling for workflow execution:
+
+```python
+class WorkflowError(Exception):
+    """Base class for workflow errors."""
+    pass
+
+class TaskExecutionError(WorkflowError):
+    """Error during task execution."""
+    
+    def __init__(self, task_name: str, original_error: Exception):
+        self.task_name = task_name
+        self.original_error = original_error
+        super().__init__(f"Error executing task '{task_name}': {str(original_error)}")
+
+class WorkflowValidationError(WorkflowError):
+    """Error during workflow validation."""
+    pass
+
+# Using error handling in workflow execution
+try:
+    result = await executor.execute_workflow(workflow, initial_context)
+except TaskExecutionError as e:
+    print(f"Task '{e.task_name}' failed: {e.original_error}")
+    # Implement recovery strategy
+except WorkflowValidationError as e:
+    print(f"Workflow validation failed: {e}")
+    # Fix workflow definition
+except WorkflowError as e:
+    print(f"Workflow error: {e}")
+    # General error handling
+```
+
+## Monitoring and Observability
+
+The module provides tools for monitoring workflow execution:
+
+```python
+class WorkflowMonitor:
+    """Monitor for workflow executions."""
+    
+    def __init__(self, executor: WorkflowExecutor):
+        self.executor = executor
+        self.active_executions = set()
+        
+    def start_monitoring(self, execution_id: str) -> None:
+        """Start monitoring a workflow execution."""
+        self.active_executions.add(execution_id)
+        
+    def stop_monitoring(self, execution_id: str) -> None:
+        """Stop monitoring a workflow execution."""
+        if execution_id in self.active_executions:
+            self.active_executions.remove(execution_id)
+            
+    def get_active_executions(self) -> List[Dict[str, Any]]:
+        """Get status of all active executions."""
+        return [
+            self.executor.get_execution_status(execution_id)
+            for execution_id in self.active_executions
+        ]
+        
+    def get_execution_metrics(self, execution_id: str) -> Dict[str, Any]:
+        """Get metrics for a workflow execution."""
+        status = self.executor.get_execution_status(execution_id)
+        if not status:
+            return {}
+            
+        execution = self.executor.executions.get(execution_id)
+        if not execution:
+            return {}
+            
+        # Calculate metrics
+        total_tasks = len(execution.workflow.tasks)
+        completed_tasks = len(execution.completed_tasks)
+        failed_tasks = len(execution.failed_tasks)
+        
+        # Calculate duration
+        duration = None
+        if execution.start_time:
+            end_time = execution.end_time or time.time()
+            duration = end_time - execution.start_time
+            
+        return {
+            "total_tasks": total_tasks,
+            "completed_tasks": completed_tasks,
+            "failed_tasks": failed_tasks,
+            "progress": completed_tasks / total_tasks if total_tasks > 0 else 0,
+            "duration": duration
+        }
+```
+
+## Future Enhancements
+
+1. **Persistent Message Queue**: Replace in-memory queue with a persistent implementation for reliability
+2. **Distributed Execution**: Support for executing workflows across multiple nodes
+3. **Workflow Versioning**: Track changes to workflow definitions over time
+4. **Visual Workflow Editor**: A graphical interface for creating and editing workflows
+5. **Workflow Templates**: Reusable workflow templates for common patterns
+
+## Conclusion
+
+The Workflows Module provides a flexible and robust framework for orchestrating multi-agent tasks in the Pinocchio system. By abstracting the coordination logic into workflow definitions, it enables complex agent interactions while maintaining clear separation of concerns. The lightweight message queue facilitates efficient inter-agent communication, and the task-based execution model supports both sequential and conditional execution paths.

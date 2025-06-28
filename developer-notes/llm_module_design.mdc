@@ -1,0 +1,384 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# LLM Module Design
+
+## Overview
+
+The LLM (Large Language Model) Module is designed to provide a unified interface for interacting with various LLM providers, including both local models (e.g., Ollama) and cloud-based APIs (e.g., Anthropic, OpenAI). This module adopts the adapter pattern to abstract away the differences between different LLM providers, offering a consistent API for the rest of the Pinocchio system.
+
+## Design Goals
+
+1. **Provider Agnosticism**: Support multiple LLM providers through a unified interface
+2. **Extensibility**: Easy addition of new LLM providers
+3. **Reliability**: Robust error handling and retry mechanisms
+4. **Performance**: Efficient handling of requests with rate limiting and caching
+5. **Observability**: Comprehensive logging and monitoring
+
+## Core Components
+
+### 1. Base LLM Client
+
+An abstract base class that defines the common interface for all LLM clients:
+
+```python
+from abc import ABC, abstractmethod
+from typing import Dict, Any, Optional
+
+class LLMClient(ABC):
+    """Base class for all LLM clients."""
+    
+    @abstractmethod
+    async def complete(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        """Generate a completion for the given prompt."""
+        pass
+    
+    @abstractmethod
+    async def chat(self, messages: list, **kwargs) -> Dict[str, Any]:
+        """Generate a response for a chat conversation."""
+        pass
+    
+    @abstractmethod
+    async def embed(self, text: str, **kwargs) -> Dict[str, Any]:
+        """Generate embeddings for the given text."""
+        pass
+```
+
+### 2. Concrete LLM Clients
+
+Implementations for specific LLM providers:
+
+#### OpenAI Client
+
+```python
+class OpenAIClient(LLMClient):
+    """Client for OpenAI API."""
+    
+    def __init__(self, api_key: str, organization: Optional[str] = None):
+        self.api_key = api_key
+        self.organization = organization
+        # Initialize client
+        
+    async def complete(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        # Implementation for OpenAI completion API
+        pass
+    
+    async def chat(self, messages: list, **kwargs) -> Dict[str, Any]:
+        # Implementation for OpenAI chat API
+        pass
+    
+    async def embed(self, text: str, **kwargs) -> Dict[str, Any]:
+        # Implementation for OpenAI embedding API
+        pass
+```
+
+#### Anthropic Client
+
+```python
+class AnthropicClient(LLMClient):
+    """Client for Anthropic API."""
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        # Initialize client
+        
+    async def complete(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        # Implementation for Anthropic completion API
+        pass
+    
+    async def chat(self, messages: list, **kwargs) -> Dict[str, Any]:
+        # Implementation for Anthropic chat API
+        pass
+    
+    async def embed(self, text: str, **kwargs) -> Dict[str, Any]:
+        # Implementation for Anthropic embedding API
+        pass
+```
+
+#### Ollama Client
+
+```python
+class OllamaClient(LLMClient):
+    """Client for local Ollama models."""
+    
+    def __init__(self, base_url: str = "http://localhost:11434"):
+        self.base_url = base_url
+        # Initialize client
+        
+    async def complete(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        # Implementation for Ollama completion API
+        pass
+    
+    async def chat(self, messages: list, **kwargs) -> Dict[str, Any]:
+        # Implementation for Ollama chat API
+        pass
+    
+    async def embed(self, text: str, **kwargs) -> Dict[str, Any]:
+        # Implementation for Ollama embedding API
+        pass
+```
+
+### 3. LLM Client Factory
+
+A factory class to create appropriate LLM clients based on configuration:
+
+```python
+class LLMClientFactory:
+    """Factory for creating LLM clients."""
+    
+    @staticmethod
+    def create_client(provider: str, config: Dict[str, Any]) -> LLMClient:
+        """Create an LLM client based on the provider and configuration."""
+        if provider.lower() == "openai":
+            return OpenAIClient(
+                api_key=config["api_key"],
+                organization=config.get("organization")
+            )
+        elif provider.lower() == "anthropic":
+            return AnthropicClient(api_key=config["api_key"])
+        elif provider.lower() == "ollama":
+            return OllamaClient(base_url=config.get("base_url", "http://localhost:11434"))
+        else:
+            raise ValueError(f"Unsupported LLM provider: {provider}")
+```
+
+### 4. Data Models
+
+Pydantic models for request and response data:
+
+```python
+from pydantic import BaseModel, Field
+from typing import List, Optional, Union, Dict, Any
+
+class CompletionRequest(BaseModel):
+    """Model for completion requests."""
+    prompt: str
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    stop: Optional[List[str]] = None
+    
+class ChatMessage(BaseModel):
+    """Model for chat messages."""
+    role: str  # "system", "user", "assistant", etc.
+    content: str
+    
+class ChatRequest(BaseModel):
+    """Model for chat requests."""
+    messages: List[ChatMessage]
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    stop: Optional[List[str]] = None
+    
+class EmbeddingRequest(BaseModel):
+    """Model for embedding requests."""
+    text: Union[str, List[str]]
+    model: Optional[str] = None
+    
+class LLMResponse(BaseModel):
+    """Base model for LLM responses."""
+    provider: str
+    model: str
+    
+class CompletionResponse(LLMResponse):
+    """Model for completion responses."""
+    text: str
+    usage: Dict[str, int]
+    
+class ChatResponse(LLMResponse):
+    """Model for chat responses."""
+    message: ChatMessage
+    usage: Dict[str, int]
+    
+class EmbeddingResponse(LLMResponse):
+    """Model for embedding responses."""
+    embeddings: List[List[float]]
+    usage: Dict[str, int]
+```
+
+### 5. Retry Decorator
+
+A decorator to handle retries for failed API calls:
+
+```python
+import asyncio
+import functools
+from typing import Callable, Any, TypeVar
+
+T = TypeVar('T')
+
+def retry(max_retries: int = 3, base_delay: float = 1.0, max_delay: float = 60.0):
+    """Decorator for retrying failed API calls."""
+    
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs) -> T:
+            retries = 0
+            while True:
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    retries += 1
+                    if retries > max_retries:
+                        raise
+                    
+                    # Calculate exponential backoff delay
+                    delay = min(base_delay * (2 ** (retries - 1)), max_delay)
+                    
+                    # Log the retry attempt
+                    print(f"Retry {retries}/{max_retries} after {delay}s due to: {str(e)}")
+                    
+                    # Wait before retrying
+                    await asyncio.sleep(delay)
+        
+        return wrapper
+    
+    return decorator
+```
+
+### 6. Rate Limiter
+
+A utility to manage API rate limits:
+
+```python
+import asyncio
+import time
+from typing import Dict, Optional
+
+class RateLimiter:
+    """Rate limiter for API calls."""
+    
+    def __init__(self, requests_per_minute: int):
+        self.requests_per_minute = requests_per_minute
+        self.interval = 60.0 / requests_per_minute
+        self.last_request_time: Dict[str, float] = {}
+        self.locks: Dict[str, asyncio.Lock] = {}
+    
+    async def acquire(self, key: Optional[str] = "default"):
+        """Acquire permission to make a request."""
+        if key not in self.locks:
+            self.locks[key] = asyncio.Lock()
+            
+        async with self.locks[key]:
+            if key in self.last_request_time:
+                elapsed = time.time() - self.last_request_time[key]
+                if elapsed < self.interval:
+                    await asyncio.sleep(self.interval - elapsed)
+                    
+            self.last_request_time[key] = time.time()
+```
+
+## Module Structure
+
+```
+llm/
+├── __init__.py
+├── base.py              # Base LLM client class
+├── clients/
+│   ├── __init__.py
+│   ├── openai.py        # OpenAI client implementation
+│   ├── anthropic.py     # Anthropic client implementation
+│   └── ollama.py        # Ollama client implementation
+├── factory.py           # LLM client factory
+├── models/
+│   ├── __init__.py
+│   ├── request.py       # Request data models
+│   └── response.py      # Response data models
+├── utils/
+│   ├── __init__.py
+│   ├── retry.py         # Retry decorator
+│   └── rate_limiter.py  # Rate limiter
+└── config.py            # Configuration management
+```
+
+## Request Types
+
+The LLM module supports three primary types of requests:
+
+1. **Text Completion**: Generate text based on a prompt
+2. **Chat Conversation**: Generate responses in a conversation format
+3. **Text Embedding**: Generate vector embeddings for text
+
+## Error Handling
+
+The module includes comprehensive error handling:
+
+1. **API Errors**: Handle errors from LLM provider APIs
+2. **Network Errors**: Handle network connectivity issues
+3. **Rate Limit Errors**: Handle rate limiting from providers
+4. **Timeout Errors**: Handle request timeouts
+
+## Configuration Management
+
+Configuration for LLM providers is managed through a centralized configuration system:
+
+```python
+from typing import Dict, Any, Optional
+import os
+import json
+
+class LLMConfig:
+    """Configuration manager for LLM providers."""
+    
+    def __init__(self, config_path: Optional[str] = None):
+        self.config: Dict[str, Any] = {}
+        
+        # Load from config file if provided
+        if config_path and os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                self.config = json.load(f)
+        
+        # Override with environment variables
+        self._load_from_env()
+    
+    def _load_from_env(self):
+        """Load configuration from environment variables."""
+        # OpenAI
+        if os.environ.get("OPENAI_API_KEY"):
+            if "openai" not in self.config:
+                self.config["openai"] = {}
+            self.config["openai"]["api_key"] = os.environ["OPENAI_API_KEY"]
+            
+        # Anthropic
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            if "anthropic" not in self.config:
+                self.config["anthropic"] = {}
+            self.config["anthropic"]["api_key"] = os.environ["ANTHROPIC_API_KEY"]
+            
+        # Ollama
+        if os.environ.get("OLLAMA_BASE_URL"):
+            if "ollama" not in self.config:
+                self.config["ollama"] = {}
+            self.config["ollama"]["base_url"] = os.environ["OLLAMA_BASE_URL"]
+    
+    def get_provider_config(self, provider: str) -> Dict[str, Any]:
+        """Get configuration for a specific provider."""
+        return self.config.get(provider.lower(), {})
+    
+    def get_default_provider(self) -> str:
+        """Get the default LLM provider."""
+        return self.config.get("default_provider", "openai")
+```
+
+## Integration with Other Modules
+
+The LLM module integrates with other Pinocchio modules:
+
+1. **Agents Module**: Provides LLM capabilities for agent reasoning
+2. **Memory Module**: Enables semantic search through embeddings
+3. **Session Module**: Supports conversation history management
+
+## Future Enhancements
+
+1. **Streaming Support**: Add support for streaming responses from LLMs
+2. **Function Calling**: Support for function calling capabilities in modern LLMs
+3. **Model Switching**: Dynamic switching between models based on task requirements
+4. **Caching**: Implement response caching for improved performance
+5. **Cost Tracking**: Track token usage and associated costs
+
+## Conclusion
+
+The LLM Module provides a flexible, extensible, and reliable foundation for interacting with various LLM providers. By abstracting away the differences between providers, it enables the rest of the Pinocchio system to leverage LLM capabilities without being tied to specific implementations.

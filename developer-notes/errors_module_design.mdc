@@ -1,0 +1,502 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Errors Module Design
+
+## Overview
+
+The Errors Module is responsible for standardized error handling and exception management across the Pinocchio multi-agent system. It provides a comprehensive framework for defining, raising, catching, and reporting errors in a consistent manner, ensuring robust error handling and recovery strategies throughout the application.
+
+## Design Goals
+
+1. **Consistency**: Establish a uniform approach to error handling across all modules
+2. **Traceability**: Enable detailed error tracking and contextual information for debugging
+3. **Recoverability**: Support graceful error recovery and fallback mechanisms
+4. **Extensibility**: Allow easy addition of new error types as the system evolves
+5. **User Experience**: Present clear and actionable error messages to end users
+
+## Core Components
+
+### 1. Base Exception Classes
+
+A hierarchy of custom exception classes that extend from Python's built-in Exception classes:
+
+```python
+class PinocchioError(Exception):
+    """Base exception class for all Pinocchio-specific errors."""
+    
+    def __init__(self, message: str, error_code: str = None, details: dict = None):
+        self.message = message
+        self.error_code = error_code or "UNKNOWN_ERROR"
+        self.details = details or {}
+        super().__init__(self.message)
+    
+    def to_dict(self) -> dict:
+        """Convert exception to a dictionary representation."""
+        return {
+            "error_code": self.error_code,
+            "message": self.message,
+            "details": self.details
+        }
+```
+
+### 2. Specialized Exception Classes
+
+Domain-specific exception classes for different types of errors:
+
+```python
+class LLMError(PinocchioError):
+    """Errors related to LLM API calls and processing."""
+    
+    def __init__(self, message: str, error_code: str = "LLM_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+
+
+class ConfigError(PinocchioError):
+    """Errors related to configuration loading and validation."""
+    
+    def __init__(self, message: str, error_code: str = "CONFIG_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+
+
+class WorkflowError(PinocchioError):
+    """Errors related to workflow execution and orchestration."""
+    
+    def __init__(self, message: str, error_code: str = "WORKFLOW_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+
+
+class MemoryError(PinocchioError):
+    """Errors related to memory operations."""
+    
+    def __init__(self, message: str, error_code: str = "MEMORY_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+
+
+class AgentError(PinocchioError):
+    """Errors related to agent operations."""
+    
+    def __init__(self, message: str, error_code: str = "AGENT_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+
+
+class KnowledgeError(PinocchioError):
+    """Errors related to knowledge base operations."""
+    
+    def __init__(self, message: str, error_code: str = "KNOWLEDGE_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+```
+
+### 3. More Specific LLM Error Classes
+
+```python
+class LLMAPIError(LLMError):
+    """Errors related to LLM API communication."""
+    
+    def __init__(self, message: str, error_code: str = "LLM_API_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+
+
+class LLMRateLimitError(LLMError):
+    """Errors related to LLM API rate limiting."""
+    
+    def __init__(self, message: str, error_code: str = "LLM_RATE_LIMIT_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+
+
+class LLMAuthenticationError(LLMError):
+    """Errors related to LLM API authentication."""
+    
+    def __init__(self, message: str, error_code: str = "LLM_AUTH_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+
+
+class LLMContentFilterError(LLMError):
+    """Errors related to LLM content filtering."""
+    
+    def __init__(self, message: str, error_code: str = "LLM_CONTENT_FILTER_ERROR", details: dict = None):
+        super().__init__(message, error_code, details)
+```
+
+### 4. Error Handler
+
+A centralized error handling system with decorators and context managers:
+
+```python
+import functools
+import logging
+import traceback
+from typing import Callable, TypeVar, Any
+
+T = TypeVar('T')
+
+logger = logging.getLogger(__name__)
+
+def handle_errors(
+    fallback_value: Any = None,
+    reraise: bool = False,
+    log_level: int = logging.ERROR
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    Decorator for handling errors in functions.
+    
+    Args:
+        fallback_value: Value to return if an error occurs and reraise is False
+        reraise: Whether to reraise the exception after handling
+        log_level: Logging level for error messages
+    
+    Returns:
+        Decorated function with error handling
+    """
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> T:
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                # Extract function context for better error reporting
+                func_name = func.__name__
+                module_name = func.__module__
+                
+                # Get traceback information
+                tb = traceback.format_exc()
+                
+                # Log the error with context
+                error_context = {
+                    "function": func_name,
+                    "module": module_name,
+                    "args": repr(args),
+                    "kwargs": repr(kwargs),
+                    "traceback": tb
+                }
+                
+                if isinstance(e, PinocchioError):
+                    error_context.update(e.to_dict())
+                    
+                logger.log(log_level, f"Error in {module_name}.{func_name}: {str(e)}", 
+                           extra={"error_context": error_context})
+                
+                # Reraise or return fallback
+                if reraise:
+                    raise
+                return fallback_value
+                
+        return wrapper
+    return decorator
+```
+
+### 5. Error Reporting
+
+A system for collecting and reporting errors:
+
+```python
+class ErrorReporter:
+    """Collects and reports errors for analysis."""
+    
+    def __init__(self):
+        self.errors = []
+    
+    def record_error(self, error: Exception, context: dict = None):
+        """
+        Record an error with its context.
+        
+        Args:
+            error: The exception that occurred
+            context: Additional context information
+        """
+        error_data = {
+            "timestamp": datetime.now().isoformat(),
+            "error_type": error.__class__.__name__,
+            "message": str(error),
+            "context": context or {}
+        }
+        
+        if isinstance(error, PinocchioError):
+            error_data.update(error.to_dict())
+            
+        self.errors.append(error_data)
+        
+    def get_error_summary(self) -> dict:
+        """Get a summary of recorded errors."""
+        error_counts = {}
+        for error in self.errors:
+            error_type = error["error_type"]
+            if error_type in error_counts:
+                error_counts[error_type] += 1
+            else:
+                error_counts[error_type] = 1
+                
+        return {
+            "total_errors": len(self.errors),
+            "error_counts": error_counts,
+            "latest_error": self.errors[-1] if self.errors else None
+        }
+        
+    def clear_errors(self):
+        """Clear recorded errors."""
+        self.errors = []
+```
+
+## Module Structure
+
+```
+errors/
+├── __init__.py          # Exports common exceptions and functions
+├── exceptions.py        # Defines all exception classes
+├── handlers.py          # Error handling decorators and context managers
+└── reporting.py         # Error reporting and analysis tools
+```
+
+## Error Codes
+
+The module defines standardized error codes for different categories of errors:
+
+| Error Code Prefix | Description | Example |
+|-------------------|-------------|---------|
+| LLM_* | LLM-related errors | LLM_API_ERROR |
+| CONFIG_* | Configuration errors | CONFIG_MISSING_KEY |
+| WORKFLOW_* | Workflow execution errors | WORKFLOW_TASK_FAILED |
+| MEMORY_* | Memory operation errors | MEMORY_STORAGE_FAILED |
+| AGENT_* | Agent operation errors | AGENT_EXECUTION_FAILED |
+| KNOWLEDGE_* | Knowledge base errors | KNOWLEDGE_NOT_FOUND |
+
+## Error Handling Strategies
+
+### 1. Function-Level Error Handling
+
+Using the `handle_errors` decorator for function-level error handling:
+
+```python
+@handle_errors(fallback_value=None, reraise=False)
+def process_data(data):
+    # Process data with potential errors
+    pass
+```
+
+### 2. Context-Based Error Handling
+
+Using context managers for block-level error handling:
+
+```python
+from errors.handlers import error_context
+
+with error_context("data_processing", reraise=False) as ctx:
+    # Code that might raise exceptions
+    process_data(data)
+    
+    # Access error information
+    if ctx.error_occurred:
+        # Handle the error
+        pass
+```
+
+### 3. Global Error Handler
+
+A global error handler for unhandled exceptions:
+
+```python
+import sys
+from errors.handlers import global_error_handler
+
+# Register global error handler
+sys.excepthook = global_error_handler
+```
+
+## Recovery Strategies
+
+### 1. Retry Mechanism
+
+A decorator for automatic retries with exponential backoff:
+
+```python
+@retry(max_retries=3, backoff_factor=2.0)
+def call_llm_api():
+    # Call LLM API that might fail temporarily
+    pass
+```
+
+### 2. Fallback Mechanism
+
+A pattern for implementing fallbacks:
+
+```python
+def get_completion_with_fallback(prompt, primary_model, fallback_model):
+    try:
+        return get_completion(prompt, model=primary_model)
+    except LLMError:
+        # Log the fallback
+        logger.warning(f"Falling back to {fallback_model} from {primary_model}")
+        return get_completion(prompt, model=fallback_model)
+```
+
+### 3. Circuit Breaker Pattern
+
+Implementation of the circuit breaker pattern for external service calls:
+
+```python
+class CircuitBreaker:
+    """
+    Implements the circuit breaker pattern to prevent repeated calls to failing services.
+    """
+    
+    def __init__(self, failure_threshold=5, recovery_timeout=60):
+        self.failure_count = 0
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.last_failure_time = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF-OPEN
+        
+    def execute(self, func, *args, **kwargs):
+        """Execute a function with circuit breaker protection."""
+        if self.state == "OPEN":
+            # Check if recovery timeout has elapsed
+            if time.time() - self.last_failure_time > self.recovery_timeout:
+                self.state = "HALF-OPEN"
+            else:
+                raise CircuitBreakerOpenError("Circuit breaker is open")
+                
+        try:
+            result = func(*args, **kwargs)
+            
+            # Reset on success if in HALF-OPEN state
+            if self.state == "HALF-OPEN":
+                self.reset()
+                
+            return result
+            
+        except Exception as e:
+            self.record_failure()
+            raise e
+            
+    def record_failure(self):
+        """Record a failure and update circuit breaker state."""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = "OPEN"
+            
+    def reset(self):
+        """Reset the circuit breaker to closed state."""
+        self.failure_count = 0
+        self.state = "CLOSED"
+        self.last_failure_time = None
+```
+
+## Integration with Other Modules
+
+### 1. LLM Module Integration
+
+Error handling for LLM API calls:
+
+```python
+from errors.exceptions import LLMAPIError, LLMRateLimitError
+from errors.handlers import handle_errors
+
+class LLMClient:
+    @handle_errors(reraise=True)
+    async def send_request(self, prompt_text: str) -> str:
+        try:
+            # Send request to LLM API
+            response = await self._make_api_call(prompt_text)
+            return response
+        except ApiRateLimitException as e:
+            # Convert to our standard error type
+            raise LLMRateLimitError(str(e), details={"prompt": prompt_text})
+        except ApiException as e:
+            # Convert to our standard error type
+            raise LLMAPIError(str(e), details={"prompt": prompt_text})
+```
+
+### 2. Workflow Module Integration
+
+Error handling for workflow execution:
+
+```python
+from errors.exceptions import WorkflowError
+from errors.handlers import handle_errors
+
+class Orchestrator:
+    @handle_errors(reraise=True)
+    def execute(self, input_data: dict) -> dict:
+        try:
+            # Execute workflow
+            result = self._execute_workflow(input_data)
+            return result
+        except Exception as e:
+            # Convert to workflow error
+            raise WorkflowError(f"Workflow execution failed: {str(e)}", 
+                               details={"input_data": input_data})
+```
+
+## Error Logging and Monitoring
+
+### 1. Structured Error Logging
+
+```python
+def setup_error_logging():
+    """Configure structured error logging."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler("errors.log"),
+            logging.StreamHandler()
+        ]
+    )
+    
+    # Set up JSON formatter for error logs
+    error_handler = logging.FileHandler("errors.json")
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(JsonFormatter())
+    
+    # Add handler to root logger
+    logging.getLogger().addHandler(error_handler)
+```
+
+### 2. Error Metrics Collection
+
+```python
+class ErrorMetricsCollector:
+    """Collects error metrics for monitoring."""
+    
+    def __init__(self):
+        self.error_counts = defaultdict(int)
+        self.error_rates = defaultdict(list)
+        
+    def record_error(self, error_type: str):
+        """Record an error occurrence."""
+        self.error_counts[error_type] += 1
+        
+    def calculate_error_rates(self, window_size: int = 60):
+        """Calculate error rates over the specified window size (in seconds)."""
+        current_time = time.time()
+        
+        # Record error rates
+        for error_type, count in self.error_counts.items():
+            self.error_rates[error_type].append((current_time, count))
+            
+        # Prune old data points
+        for error_type in self.error_rates:
+            self.error_rates[error_type] = [
+                (t, c) for t, c in self.error_rates[error_type]
+                if current_time - t <= window_size
+            ]
+            
+        # Reset counts
+        self.error_counts = defaultdict(int)
+```
+
+## Future Enhancements
+
+1. **Automated Error Classification**: Use machine learning to automatically classify and categorize errors
+2. **Self-Healing Mechanisms**: Implement automated recovery strategies for common error patterns
+3. **Error Visualization Dashboard**: Create a visual dashboard for monitoring and analyzing errors
+4. **Error Correlation**: Identify patterns and correlations between different types of errors
+5. **Predictive Error Detection**: Implement early warning systems to predict potential failures
+
+## Conclusion
+
+The Errors Module provides a comprehensive framework for handling, reporting, and recovering from errors throughout the Pinocchio system. By standardizing error handling practices and providing robust recovery mechanisms, it enhances the reliability and resilience of the multi-agent system.

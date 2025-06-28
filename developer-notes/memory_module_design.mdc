@@ -1,0 +1,872 @@
+---
+description: memory模块设计
+globs: 
+alwaysApply: false
+---
+# Pinocchio 多智能体系统 Memory 模块设计文档
+
+## 1. 概述
+
+Memory 模块是 Pinocchio 多智能体系统的核心组件，负责存储和管理系统运行过程中的各类数据，包括代码版本、Agent 交互记录、会话信息等。该模块采用分层设计，确保数据的类型安全、持久化和高效检索。
+
+---
+
+## 2. 技术选型
+
+### 2.1 核心技术栈
+
+| 技术/库 | 用途 | 选择理由 |
+|--------|-----|---------|
+| Pydantic | 数据模型定义与验证 | 提供运行时类型验证，自动序列化/反序列化，与现代Python类型注解系统完美配合 |
+| JSON | 数据序列化格式 | 人类可读性强，与LLM接口天然兼容，序列化/反序列化性能良好 |
+| Python标准库 | 文件操作、路径管理等 | 减少外部依赖，提高可移植性 |
+| UUID | 唯一标识符生成 | 保证各类数据实体的唯一性 |
+
+### 2.2 可选优化技术
+
+| 技术/库 | 用途 | 备注 |
+|--------|-----|------|
+| orjson | 高性能JSON序列化 | 比标准json库更高效，可选依赖 |
+| aiofiles | 异步文件IO | 如需异步操作可引入 |
+
+---
+
+## 3. 模块架构
+
+### 3.1 整体架构
+
+```
+memory/
+├── __init__.py
+├── models/
+│   ├── __init__.py
+│   ├── base.py           # 基础数据模型
+│   ├── code.py           # 代码版本模型
+│   ├── session.py        # 会话模型
+│   ├── agent_memories.py # Agent内存模型
+│   ├── prompt.py         # 提示模板模型
+│   └── knowledge.py      # 知识库模型
+├── manager.py            # 内存管理器
+├── store.py              # 存储实现
+└── metrics.py            # 性能指标收集
+```
+
+### 3.2 会话管理架构
+
+```
+session/
+├── __init__.py
+├── models.py         # 会话模型定义
+├── manager.py        # 会话管理器
+└── context.py        # 会话上下文
+```
+
+---
+
+## 4. 数据模型设计
+
+### 4.1 基础数据模型
+
+```python
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional, Any
+from datetime import datetime
+import uuid
+
+class BaseMemory(BaseModel):
+    """所有内存记录的基类"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    session_id: str  # 关联的会话ID
+```
+
+### 4.2 代码版本模型
+
+```python
+class CodeVersion(BaseModel):
+    """代码版本记录"""
+    version_id: str  # 版本ID，自动生成
+    code: str  # 代码内容
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    source_agent: str  # 产生代码的Agent类型：generator或debugger
+    parent_version_id: Optional[str] = None  # 父版本ID
+    description: str = ""  # 版本描述
+    metadata: Dict[str, Any] = Field(default_factory=dict)  # 元数据
+    
+    @classmethod
+    def create_new_version(cls, code: str, source_agent: str, parent_version_id: Optional[str] = None, description: str = ""):
+        """创建新版本"""
+        # 使用代码内容生成一个唯一的版本ID
+        hash_object = hashlib.sha256(code.encode())
+        version_id = hash_object.hexdigest()[:12]
+        
+        return cls(
+            version_id=version_id,
+            code=code,
+            source_agent=source_agent,
+            parent_version_id=parent_version_id,
+            description=description
+        )
+
+class CodeMemory(BaseModel):
+    """代码版本历史"""
+    session_id: str  # 会话ID
+    versions: Dict[str, CodeVersion] = Field(default_factory=dict)  # 版本ID -> 版本对象
+    current_version_id: Optional[str] = None  # 当前版本ID
+```
+
+### 4.3 Agent内存模型
+
+```python
+class BaseAgentMemory(BaseModel):
+    """基础Agent内存模型"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str  # 会话ID
+    agent_type: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    input_data: Dict[str, Any]
+    output_data: Dict[str, Any]
+    processing_time_ms: int
+    status: str = "success"  # success, error
+    error_details: Optional[Dict[str, Any]] = None
+    code_version_id: Optional[str] = None  # 关联的代码版本ID
+
+class GeneratorMemory(BaseAgentMemory):
+    """生成器内存"""
+    agent_type: str = "generator"
+    generation_strategy: str  # 使用的生成策略
+
+class DebuggerMemory(BaseAgentMemory):
+    """调试器内存"""
+    agent_type: str = "debugger"
+    identified_issues: List[Dict[str, Any]]  # 识别的问题列表
+    fixed_issues: List[Dict[str, Any]]  # 修复的问题列表
+    remaining_issues: List[Dict[str, Any]] = Field(default_factory=list)  # 剩余问题
+    compilation_success: bool  # 编译是否成功
+    compilation_errors: Optional[List[str]] = None  # 编译错误信息
+
+class OptimizerMemory(BaseAgentMemory):
+    """优化器内存"""
+    agent_type: str = "optimizer"
+    optimization_patterns: List[Dict[str, Any]]  # 识别的优化模式
+    selected_pattern: Optional[Dict[str, Any]] = None  # 选择应用的优化模式
+    recommendation: str  # 优化建议
+
+class EvaluatorMemory(BaseAgentMemory):
+    """评估器内存"""
+    agent_type: str = "evaluator"
+    evaluation_criteria: List[str]  # 评估标准
+    performance_metrics: Dict[str, float]  # 性能指标
+    execution_time_ms: int  # 执行时间
+    scores: Dict[str, float]  # 各项评分
+    overall_score: float  # 总体评分
+    recommendations: List[str] = Field(default_factory=list)  # 改进建议
+```
+
+### 4.4 提示模板模型
+
+```python
+class PromptTemplate(BaseModel):
+    """提示模板版本"""
+    version_id: str
+    template_name: str
+    content: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    description: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+class PromptMemory(BaseModel):
+    """提示模板版本管理"""
+    templates: Dict[str, Dict[str, PromptTemplate]] = Field(default_factory=dict)  # template_name -> {version_id -> template}
+    current_versions: Dict[str, str] = Field(default_factory=dict)  # template_name -> current_version_id
+```
+
+### 4.5 知识库模型
+
+```python
+class KnowledgeItem(BaseModel):
+    """知识条目版本"""
+    version_id: str
+    knowledge_id: str
+    content: Dict[str, Any]  # 结构化知识内容
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    source: str = ""  # 知识来源
+    confidence: float = 1.0  # 置信度
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+class KnowledgeMemory(BaseModel):
+    """知识库版本管理"""
+    knowledge_items: Dict[str, Dict[str, KnowledgeItem]] = Field(default_factory=dict)  # knowledge_id -> {version_id -> item}
+    current_versions: Dict[str, str] = Field(default_factory=dict)  # knowledge_id -> current_version_id
+```
+
+### 4.6 会话模型
+
+```python
+class SessionMetadata(BaseModel):
+    """会话元数据"""
+    session_id: str
+    name: str
+    creation_time: datetime = Field(default_factory=datetime.utcnow)
+    task_description: str
+    status: str = "active"  # active, completed, failed
+    end_time: Optional[datetime] = None
+    runtime_seconds: Optional[float] = None
+    user_inputs: Dict[str, Any] = Field(default_factory=dict)
+    system_info: Dict[str, Any] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
+```
+
+---
+
+## 5. 核心接口设计
+
+### 5.1 内存管理器接口
+
+```python
+class MemoryManager:
+    """内存管理器"""
+    
+    def __init__(self, store_dir: str = "./memory_store"):
+        """初始化内存管理器"""
+        pass
+    
+    def store_agent_memory(self, memory: BaseAgentMemory) -> str:
+        """存储Agent内存"""
+        pass
+    
+    def log_generator_interaction(self, 
+                                input_data: Dict[str, Any],
+                                output_data: Dict[str, Any],
+                                processing_time_ms: int,
+                                generation_strategy: str,
+                                status: str = "success",
+                                error_details: Optional[Dict[str, Any]] = None) -> Tuple[str, Optional[str]]:
+        """记录生成器交互"""
+        pass
+    
+    def log_debugger_interaction(self,
+                               input_data: Dict[str, Any],
+                               output_data: Dict[str, Any],
+                               processing_time_ms: int,
+                               identified_issues: List[Dict[str, Any]],
+                               fixed_issues: List[Dict[str, Any]],
+                               remaining_issues: List[Dict[str, Any]],
+                               compilation_success: bool,
+                               compilation_errors: Optional[List[str]] = None,
+                               status: str = "success",
+                               error_details: Optional[Dict[str, Any]] = None) -> Tuple[str, Optional[str]]:
+        """记录调试器交互"""
+        pass
+    
+    def log_optimizer_interaction(self,
+                                input_data: Dict[str, Any],
+                                output_data: Dict[str, Any],
+                                processing_time_ms: int,
+                                optimization_patterns: List[Dict[str, Any]],
+                                selected_pattern: Optional[Dict[str, Any]],
+                                recommendation: str,
+                                code_version_id: str,
+                                status: str = "success",
+                                error_details: Optional[Dict[str, Any]] = None) -> str:
+        """记录优化器交互"""
+        pass
+    
+    def log_evaluator_interaction(self,
+                                input_data: Dict[str, Any],
+                                output_data: Dict[str, Any],
+                                processing_time_ms: int,
+                                evaluation_criteria: List[str],
+                                performance_metrics: Dict[str, float],
+                                execution_time_ms: int,
+                                scores: Dict[str, float],
+                                overall_score: float,
+                                recommendations: List[str],
+                                code_version_id: str,
+                                status: str = "success",
+                                error_details: Optional[Dict[str, Any]] = None) -> str:
+        """记录评估器交互"""
+        pass
+    
+    def add_code_version(self, code: str, source_agent: str, description: str = "") -> str:
+        """添加新代码版本"""
+        pass
+    
+    def get_current_code(self) -> Optional[str]:
+        """获取当前代码"""
+        pass
+    
+    def get_code_version(self, version_id: Optional[str] = None) -> Optional[CodeVersion]:
+        """获取指定代码版本"""
+        pass
+    
+    def query_agent_memories(self, 
+                           agent_type: Optional[str] = None, 
+                           filter_func = None,
+                           limit: int = 10) -> List[BaseAgentMemory]:
+        """查询Agent内存记录"""
+        pass
+    
+    def export_logs(self, output_file: Optional[str] = None) -> str:
+        """导出日志"""
+        pass
+```
+
+### 5.2 会话管理器接口
+
+```python
+class SessionManager:
+    """会话管理器"""
+    
+    def __init__(self, base_dir: str = "./sessions"):
+        """初始化会话管理器"""
+        pass
+    
+    def create_session(self, task_description: str, name: Optional[str] = None, 
+                      tags: Optional[List[str]] = None) -> str:
+        """创建新会话"""
+        pass
+    
+    def load_session(self, session_id: str) -> bool:
+        """加载已有会话"""
+        pass
+    
+    def save_session(self) -> bool:
+        """保存当前会话状态"""
+        pass
+    
+    def complete_session(self, status: str = "completed") -> bool:
+        """完成当前会话"""
+        pass
+    
+    def get_current_session_id(self) -> Optional[str]:
+        """获取当前会话ID"""
+        pass
+    
+    def list_sessions(self, filter_func=None, limit: int = 100) -> List[SessionMetadata]:
+        """列出会话"""
+        pass
+    
+    def search_sessions(self, query: str, search_in_task: bool = True, 
+                       search_in_tags: bool = True, case_sensitive: bool = False) -> List[SessionMetadata]:
+        """搜索会话"""
+        pass
+    
+    def delete_session(self, session_id: str) -> bool:
+        """删除会话"""
+        pass
+    
+    def export_session(self, session_id: Optional[str] = None, output_file: Optional[str] = None) -> str:
+        """导出会话"""
+        pass
+    
+    def import_session(self, zip_file: str) -> Optional[str]:
+        """导入会话"""
+        pass
+```
+
+### 5.3 会话上下文接口
+
+```python
+class SessionContext:
+    """会话上下文管理器"""
+    
+    @property
+    def session_manager(self) -> SessionManager:
+        """获取会话管理器"""
+        pass
+    
+    @property
+    def current_session_id(self) -> Optional[str]:
+        """获取当前会话ID"""
+        pass
+    
+    @property
+    def memory_manager(self):
+        """获取内存管理器"""
+        pass
+    
+    @property
+    def code_memory(self):
+        """获取代码内存"""
+        pass
+    
+    @property
+    def prompt_memory(self):
+        """获取提示内存"""
+        pass
+    
+    @property
+    def knowledge_memory(self):
+        """获取知识内存"""
+        pass
+    
+    def ensure_session_active(self):
+        """确保会话处于活动状态"""
+        pass
+```
+
+### 5.4 Memory-Prompt桥接接口
+
+```python
+class MemoryPromptBridge:
+    """连接Memory和Prompt的桥接器"""
+    
+    def __init__(self, template_loader, memory_manager: MemoryManager):
+        """初始化桥接器"""
+        pass
+    
+    def create_generator_prompt(self, task_description: str, requirements: Dict[str, Any]) -> Dict[str, Any]:
+        """创建生成器Prompt"""
+        pass
+    
+    def create_debugger_prompt(self, code_version_id: Optional[str] = None) -> Dict[str, Any]:
+        """创建调试器Prompt"""
+        pass
+    
+    def create_optimizer_prompt(self, code_version_id: Optional[str] = None) -> Dict[str, Any]:
+        """创建优化器Prompt"""
+        pass
+    
+    def create_evaluator_prompt(self, code_version_id: Optional[str] = None) -> Dict[str, Any]:
+        """创建评估器Prompt"""
+        pass
+```
+
+---
+
+## 6. 存储策略
+
+### 6.1 文件结构
+
+```
+sessions/
+├── session_{timestamp}_{random}/  # 会话目录
+│   ├── metadata.json              # 会话元数据
+│   ├── code_memory.json           # 代码版本历史
+│   ├── prompt_memory.json         # 提示模板版本
+│   ├── knowledge_memory.json      # 知识库版本
+│   └── memories/                  # Agent内存目录
+│       ├── generator_{uuid}.json  # 生成器内存
+│       ├── debugger_{uuid}.json   # 调试器内存
+│       ├── optimizer_{uuid}.json  # 优化器内存
+│       └── evaluator_{uuid}.json  # 评估器内存
+└── session_{timestamp}_{random}/  # 另一个会话目录
+    └── ...
+```
+
+### 6.2 序列化策略
+
+- 使用Pydantic的`json()`方法序列化模型
+- 文件写入采用原子操作，确保数据一致性
+- 大文件采用分块写入，避免内存占用过高
+
+### 6.3 缓存策略
+
+- 活跃会话的内存保持在内存中
+- 使用简单的内存缓存加速查询
+- 定期将内存数据刷新到磁盘
+
+---
+
+## 7. 代码示例
+
+### 7.1 创建会话并记录Agent交互
+
+```python
+from session import SessionContext
+import time
+
+# 获取会话上下文
+context = SessionContext()
+
+# 创建新会话
+session_id = context.session_manager.create_session(
+    task_description="优化矩阵乘法算子",
+    name="MatMul优化任务",
+    tags=["Choreo", "MatMul", "优化"]
+)
+
+# 获取内存管理器
+memory_manager = context.memory_manager
+
+# 模拟Generator交互
+generator_input = {
+    "task_description": "实现高效的矩阵乘法算子",
+    "requirements": {"language": "Choreo DSL", "optimize_for": "performance"}
+}
+
+generator_output = {
+    "code": "def matmul(A, B):\n    C = alloc(A.shape[0], B.shape[1])\n    for i in range(A.shape[0]):\n        for j in range(B.shape[1]):\n            for k in range(A.shape[1]):\n                C[i, j] += A[i, k] * B[k, j]\n    return C",
+    "strategy": "naive_implementation"
+}
+
+# 记录Generator交互
+generator_memory_id, code_version_id = memory_manager.log_generator_interaction(
+    input_data=generator_input,
+    output_data=generator_output,
+    processing_time_ms=1200,
+    generation_strategy="naive_implementation"
+)
+
+print(f"Generator memory ID: {generator_memory_id}")
+print(f"Code version ID: {code_version_id}")
+
+# 模拟Debugger交互
+debugger_input = {
+    "code": memory_manager.get_current_code(),
+    "code_version_id": code_version_id
+}
+
+debugger_output = {
+    "identified_issues": [{"line": 3, "issue": "Missing initialization of C"}],
+    "fixed_issues": [{"line": 3, "fix": "Initialize C with zeros"}],
+    "fixed_code": "def matmul(A, B):\n    C = alloc(A.shape[0], B.shape[1])\n    C.fill(0)  # Initialize with zeros\n    for i in range(A.shape[0]):\n        for j in range(B.shape[1]):\n            for k in range(A.shape[1]):\n                C[i, j] += A[i, k] * B[k, j]\n    return C"
+}
+
+# 记录Debugger交互
+debugger_memory_id, new_code_version_id = memory_manager.log_debugger_interaction(
+    input_data=debugger_input,
+    output_data=debugger_output,
+    processing_time_ms=800,
+    identified_issues=debugger_output["identified_issues"],
+    fixed_issues=debugger_output["fixed_issues"],
+    remaining_issues=[],
+    compilation_success=True,
+    compilation_errors=None
+)
+
+print(f"Debugger memory ID: {debugger_memory_id}")
+print(f"New code version ID: {new_code_version_id}")
+
+# 保存会话
+context.session_manager.save_session()
+```
+
+### 7.2 查询和导出会话
+
+```python
+from session import SessionContext
+
+# 获取会话上下文
+context = SessionContext()
+
+# 列出最近的会话
+sessions = context.session_manager.list_sessions(limit=5)
+for session in sessions:
+    print(f"Session: {session.session_id} - {session.name} [{session.status}]")
+    print(f"  Task: {session.task_description}")
+    print(f"  Created: {session.creation_time}")
+    if session.tags:
+        print(f"  Tags: {', '.join(session.tags)}")
+    print()
+
+# 加载特定会话
+if sessions:
+    session_id = sessions[0].session_id
+    context.session_manager.load_session(session_id)
+    
+    # 获取代码版本历史
+    code_memory = context.code_memory
+    history = code_memory.get_version_history()
+    
+    print(f"Code version history for session {session_id}:")
+    for version in history:
+        print(f"  {version['version_id']} - {version['source_agent']} - {version['description']}")
+    
+    # 导出会话日志
+    export_path = context.session_manager.export_session()
+    print(f"Session exported to: {export_path}")
+```
+
+### 7.3 创建Agent Prompt
+
+```python
+from session import SessionContext
+from memory.bridge import MemoryPromptBridge
+
+# 获取会话上下文
+context = SessionContext()
+
+# 创建桥接器
+bridge = MemoryPromptBridge(template_loader, context.memory_manager)
+
+# 获取当前代码版本ID
+code_version_id = context.code_memory.current_version_id
+
+# 创建优化器Prompt
+optimizer_prompt = bridge.create_optimizer_prompt(code_version_id)
+
+print("Optimizer Prompt:")
+print(json.dumps(optimizer_prompt, indent=2))
+
+# 创建评估器Prompt
+evaluator_prompt = bridge.create_evaluator_prompt(code_version_id)
+
+print("\nEvaluator Prompt:")
+print(json.dumps(evaluator_prompt, indent=2))
+```
+
+---
+
+## 8. 性能考虑
+
+### 8.1 内存占用优化
+
+- 大型代码版本按需加载
+- 历史记录采用惰性加载
+- 会话数据定期归档
+
+### 8.2 IO性能优化
+
+- 批量写入而非频繁单条写入
+- 使用缓冲区减少IO操作
+- 文件分割避免单文件过大
+
+### 8.3 查询性能优化
+
+- 内存索引加速常用查询
+- 按时间倒序组织数据
+- 缓存最近访问的记录
+
+---
+
+## 9. 扩展性考虑
+
+虽然当前设计专注于单机实现，但保留了未来扩展的可能性：
+
+### 9.1 接口抽象
+
+- 存储接口与实现分离
+- 会话管理与内存管理解耦
+- 统一的序列化/反序列化策略
+
+### 9.2 可扩展点
+
+- 存储后端可替换为分布式存储
+- 缓存策略可升级为分布式缓存
+- 会话管理可扩展为多用户支持
+
+---
+
+## 10. 总结
+
+Memory模块设计采用了分层架构，通过Pydantic提供类型安全，通过会话隔离保证数据独立性，通过专门的代码版本管理支持代码追踪。该设计专注于单机环境，优化了文件IO和内存使用，同时保持了良好的扩展性。
+
+核心特点包括：
+
+1. **会话隔离**：每次运行系统创建独立会话，确保任务间数据不混淆
+2. **代码版本管理**：专门的代码版本跟踪，支持版本历史和回溯
+3. **角色特定内存**：为不同Agent角色设计特定内存结构
+4. **Memory-Prompt桥接**：明确定义Memory和Prompt之间的关系
+5. **类型安全**：使用Pydantic确保数据一致性和类型安全
+6. **持久化存储**：JSON格式持久化，支持导入/导出
+
+该设计满足了Pinocchio系统的需求，提供了高效、可靠的内存管理，支持多智能体协作过程中的数据存储、检索和共享。
+
+---
+
+## 11. 测试策略
+
+### 11.1 测试范围
+
+Memory模块的测试应覆盖以下关键方面：
+
+1. **数据模型测试**
+   - 验证所有Pydantic模型的序列化/反序列化
+   - 测试模型字段验证和默认值
+   - 验证模型方法（如`CodeVersion.create_new_version`）
+
+2. **存储操作测试**
+   - 文件写入/读取操作
+   - 原子性和并发安全性
+   - 错误处理和恢复
+
+3. **管理器接口测试**
+   - 所有公共API的功能验证
+   - 边界条件和异常处理
+   - 不同Agent类型的内存记录
+
+4. **版本管理测试**
+   - 代码版本创建和检索
+   - 版本历史和关系维护
+   - 版本ID生成的一致性
+
+### 11.2 测试夹具
+
+```python
+@pytest.fixture
+def temp_memory_store(tmp_path):
+    """创建临时内存存储目录"""
+    store_dir = tmp_path / "memory_store"
+    store_dir.mkdir()
+    return store_dir
+
+@pytest.fixture
+def memory_manager(temp_memory_store):
+    """创建内存管理器实例"""
+    from memory.manager import MemoryManager
+    return MemoryManager(store_dir=str(temp_memory_store))
+
+@pytest.fixture
+def sample_code():
+    """提供样本代码"""
+    return "def example():\n    return 'Hello, World!'"
+
+@pytest.fixture
+def code_memory_with_version(memory_manager, sample_code):
+    """创建包含版本的代码内存"""
+    code_version_id = memory_manager.add_code_version(
+        code=sample_code,
+        source_agent="generator",
+        description="Initial version"
+    )
+    return memory_manager.code_memory, code_version_id
+```
+
+### 11.3 测试用例示例
+
+#### 11.3.1 模型测试
+
+```python
+def test_code_version_creation():
+    """测试代码版本创建"""
+    code = "def example(): pass"
+    version = CodeVersion.create_new_version(
+        code=code,
+        source_agent="generator",
+        description="Test version"
+    )
+    
+    assert version.code == code
+    assert version.source_agent == "generator"
+    assert version.description == "Test version"
+    assert version.version_id is not None
+    assert version.parent_version_id is None
+
+def test_code_version_serialization():
+    """测试代码版本序列化"""
+    version = CodeVersion.create_new_version(
+        code="def test(): pass",
+        source_agent="generator"
+    )
+    
+    json_str = version.json()
+    deserialized = CodeVersion.parse_raw(json_str)
+    
+    assert deserialized.version_id == version.version_id
+    assert deserialized.code == version.code
+```
+
+#### 11.3.2 存储测试
+
+```python
+def test_store_agent_memory(memory_manager):
+    """测试存储Agent内存"""
+    memory = GeneratorMemory(
+        session_id="test_session",
+        input_data={"prompt": "Generate code"},
+        output_data={"code": "def test(): pass"},
+        processing_time_ms=100,
+        generation_strategy="default"
+    )
+    
+    memory_id = memory_manager.store_agent_memory(memory)
+    
+    assert memory_id is not None
+    # 验证文件是否已创建
+    memory_file = memory_manager.store_dir / "test_session" / "agent_memories" / f"generator_{memory_id}.json"
+    assert memory_file.exists()
+
+def test_memory_retrieval(memory_manager):
+    """测试内存检索"""
+    # 先存储一条内存记录
+    memory = GeneratorMemory(
+        session_id="test_session",
+        input_data={"prompt": "Generate code"},
+        output_data={"code": "def test(): pass"},
+        processing_time_ms=100,
+        generation_strategy="default"
+    )
+    memory_id = memory_manager.store_agent_memory(memory)
+    
+    # 检索并验证
+    retrieved = memory_manager.get_agent_memory(memory_id)
+    assert retrieved is not None
+    assert retrieved.id == memory_id
+    assert retrieved.input_data == memory.input_data
+```
+
+#### 11.3.3 管理器接口测试
+
+```python
+def test_log_generator_interaction(memory_manager):
+    """测试记录生成器交互"""
+    input_data = {"prompt": "Generate matrix multiplication code"}
+    output_data = {"code": "def matmul(A, B): pass", "strategy": "naive"}
+    
+    memory_id, code_version_id = memory_manager.log_generator_interaction(
+        input_data=input_data,
+        output_data=output_data,
+        processing_time_ms=200,
+        generation_strategy="naive"
+    )
+    
+    assert memory_id is not None
+    assert code_version_id is not None
+    
+    # 验证代码版本
+    code_version = memory_manager.get_code_version(code_version_id)
+    assert code_version is not None
+    assert code_version.code == output_data["code"]
+    assert code_version.source_agent == "generator"
+
+def test_query_agent_memories(memory_manager):
+    """测试查询Agent内存"""
+    # 创建多条内存记录
+    for i in range(5):
+        memory_manager.log_generator_interaction(
+            input_data={"prompt": f"Task {i}"},
+            output_data={"code": f"def func{i}(): pass"},
+            processing_time_ms=100 + i,
+            generation_strategy="default"
+        )
+    
+    # 查询并验证
+    memories = memory_manager.query_agent_memories(agent_type="generator", limit=3)
+    assert len(memories) == 3
+    assert all(m.agent_type == "generator" for m in memories)
+    # 验证按时间倒序排列
+    assert memories[0].processing_time_ms > memories[1].processing_time_ms
+```
+
+### 11.4 集成测试重点
+
+1. **与Session模块集成**
+   - 验证会话创建时内存初始化
+   - 测试会话加载/保存对内存的影响
+   - 验证跨会话的内存隔离
+
+2. **与Agent模块集成**
+   - 测试Agent交互记录的完整流程
+   - 验证不同Agent类型的内存记录差异
+   - 测试Memory-Prompt桥接功能
+
+3. **文件系统交互**
+   - 验证大量数据的性能表现
+   - 测试并发访问的安全性
+   - 验证错误恢复机制
+
+### 11.5 性能测试
+
+1. **大数据量测试**
+   - 测试处理大型代码文件的性能
+   - 验证大量Agent交互记录的存储和检索性能
+   - 测试内存占用随数据增长的变化
+
+2. **并发测试**
+   - 验证多线程环境下的数据一致性
+   - 测试并发读写操作的性能
+   - 验证锁机制的有效性
+
+通过全面的测试策略，确保Memory模块的稳定性、正确性和性能，为Pinocchio系统提供可靠的数据管理基础。

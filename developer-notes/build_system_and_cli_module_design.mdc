@@ -1,0 +1,810 @@
+---
+description: 构建系统和命令行工具设计
+globs: 
+alwaysApply: false
+---
+# Pinocchio 多智能体系统构建系统与CLI模块设计
+
+## 1. 概述
+
+本文档描述了Pinocchio多智能体系统的构建系统和命令行接口(CLI)设计。构建系统基于Poetry提供依赖管理、包发布和环境管理功能，CLI模块基于Invoke提供用户友好的命令行交互界面，使用户能够方便地操作和控制多智能体系统的各项功能。
+
+---
+
+## 2. 技术选型
+
+### 2.1 构建系统
+
+| 技术/工具 | 用途 | 选择理由 |
+|----------|-----|---------|
+| Poetry | 依赖管理与打包 | 现代Python包管理工具，提供依赖锁定、虚拟环境管理、版本控制和发布功能 |
+| pyproject.toml | 项目配置 | PEP 518标准，集中管理项目元数据、依赖和工具配置 |
+| setuptools | 构建后端 | 通过Poetry配置，提供稳定的构建支持 |
+
+### 2.2 CLI框架
+
+| 技术/工具 | 用途 | 选择理由 |
+|----------|-----|---------|
+| Invoke | 任务执行与CLI | 轻量级任务执行库，易于组织和扩展命令 |
+| Rich | 终端格式化 | 提供丰富的终端输出格式，改善用户体验 |
+| typer | CLI参数解析 (可选) | 基于类型注解的CLI工具，可与Invoke集成提供更好的参数处理 |
+
+---
+
+## 3. 目录结构
+
+```
+pinocchio/
+├── pyproject.toml            # 项目配置和依赖定义
+├── poetry.lock               # 依赖锁定文件
+├── README.md                 # 项目说明
+├── LICENSE                   # 许可证
+├── pinocchio/               # 主包目录
+│   ├── __init__.py          # 包初始化，包含版本信息
+│   ├── cli/                 # CLI模块目录
+│   │   ├── __init__.py      # CLI包初始化
+│   │   ├── main.py          # CLI主入口
+│   │   ├── commands/        # 命令模块
+│   │   │   ├── __init__.py
+│   │   │   ├── session.py   # 会话相关命令
+│   │   │   ├── generate.py  # 代码生成命令
+│   │   │   ├── debug.py     # 调试命令
+│   │   │   ├── optimize.py  # 优化命令
+│   │   │   └── evaluate.py  # 评估命令
+│   │   └── utils/           # CLI工具函数
+│   │       ├── __init__.py
+│   │       ├── formatting.py # 输出格式化
+│   │       └── validators.py # 输入验证
+│   ├── session/             # 会话模块
+│   ├── memory/              # 内存模块
+│   ├── agents/              # 智能体模块
+│   └── workflows/           # 工作流模块
+├── tests/                   # 测试目录
+└── scripts/                 # 辅助脚本目录
+    ├── install_dev.sh       # 开发环境安装脚本
+    └── publish.sh           # 发布脚本
+```
+
+---
+
+## 4. 构建系统配置
+
+### 4.1 pyproject.toml 设计
+
+```toml
+[tool.poetry]
+name = "pinocchio"
+version = "0.1.0"
+description = "Pinocchio多智能体协作系统"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/yourusername/pinocchio"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+packages = [{include = "pinocchio"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pydantic = "^2.4.0"
+invoke = "^2.2.0"
+rich = "^13.5.0"
+typer = {optional = true, version = "^0.9.0"}
+openai = "^1.1.0"
+anthropic = "^0.5.0"
+requests = "^2.31.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.11.1"
+black = "^23.7.0"
+isort = "^5.12.0"
+mypy = "^1.5.0"
+flake8 = "^6.1.0"
+pre-commit = "^3.3.3"
+
+[tool.poetry.scripts]
+pinocchio = "pinocchio.cli.main:program"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+```
+
+### 4.2 依赖管理策略
+
+1. **核心依赖**
+   - pydantic: 数据验证和序列化
+   - invoke: 任务执行和CLI框架
+   - rich: 终端输出格式化
+   - openai/anthropic: LLM API客户端
+
+2. **开发依赖**
+   - pytest: 测试框架
+   - black/isort: 代码格式化
+   - mypy/flake8: 静态类型检查和代码质量
+   - pre-commit: Git钩子管理
+
+3. **可选依赖**
+   - typer: 增强的CLI参数处理
+
+4. **版本锁定**
+   - 使用poetry.lock确保依赖版本一致性
+   - 定期更新依赖以修复安全问题
+
+---
+
+## 5. CLI模块设计
+
+### 5.1 入口点设计
+
+```python
+# pinocchio/cli/main.py
+from invoke import Collection, Program
+from rich.console import Console
+
+from pinocchio.cli.commands import session, generate, debug, optimize, evaluate
+
+console = Console()
+
+# 创建命令集合
+ns = Collection()
+ns.add_collection(session.ns, name="session")
+ns.add_collection(generate.ns, name="generate")
+ns.add_collection(debug.ns, name="debug")
+ns.add_collection(optimize.ns, name="optimize")
+ns.add_collection(evaluate.ns, name="evaluate")
+
+# 配置程序
+program = Program(
+    namespace=ns,
+    version="0.1.0",
+    name="pinocchio"
+)
+
+if __name__ == "__main__":
+    program.run()
+```
+
+### 5.2 命令模块设计
+
+以会话命令模块为例：
+
+```python
+# pinocchio/cli/commands/session.py
+from invoke import task, Collection
+from rich.console import Console
+from rich.table import Table
+
+from pinocchio.session import SessionContext
+
+console = Console()
+
+@task(help={
+    "task_description": "会话任务描述",
+    "name": "会话名称(可选)",
+    "tags": "会话标签，逗号分隔(可选)"
+})
+def create(ctx, task_description, name=None, tags=None):
+    """创建新会话"""
+    # 解析标签
+    tag_list = tags.split(',') if tags else []
+    
+    # 创建会话
+    session_context = SessionContext()
+    session_id = session_context.session_manager.create_session(
+        task_description=task_description,
+        name=name,
+        tags=tag_list
+    )
+    
+    console.print(f"[green]创建会话成功:[/green] {session_id}")
+    return session_id
+
+@task(help={
+    "limit": "显示数量限制",
+    "status": "会话状态过滤(active/completed/failed)"
+})
+def list(ctx, limit=10, status=None):
+    """列出会话"""
+    # 创建过滤器
+    filter_func = None
+    if status:
+        filter_func = lambda s: s.status == status
+    
+    # 列出会话
+    session_context = SessionContext()
+    sessions = session_context.session_manager.list_sessions(
+        filter_func=filter_func,
+        limit=int(limit)
+    )
+    
+    # 创建表格
+    table = Table(title="会话列表")
+    table.add_column("ID", style="cyan")
+    table.add_column("名称", style="green")
+    table.add_column("状态", style="magenta")
+    table.add_column("运行时间", style="yellow")
+    table.add_column("任务描述", style="blue")
+    
+    # 添加数据行
+    for session in sessions:
+        runtime = f"{session.runtime_seconds:.1f}s" if session.runtime_seconds else "运行中"
+        table.add_row(
+            session.session_id,
+            session.name,
+            session.status,
+            runtime,
+            session.task_description[:50] + ("..." if len(session.task_description) > 50 else "")
+        )
+    
+    console.print(table)
+
+@task(help={
+    "session_id": "要加载的会话ID"
+})
+def load(ctx, session_id):
+    """加载会话"""
+    session_context = SessionContext()
+    success = session_context.session_manager.load_session(session_id)
+    
+    if success:
+        console.print(f"[green]加载会话成功:[/green] {session_id}")
+    else:
+        console.print(f"[red]加载会话失败:[/red] {session_id}")
+    
+    return success
+
+# 更多会话相关命令...
+
+# 创建命令集合
+ns = Collection("session")
+ns.add_task(create)
+ns.add_task(list)
+ns.add_task(load)
+# 添加更多命令...
+```
+
+### 5.3 代码生成命令示例
+
+```python
+# pinocchio/cli/commands/generate.py
+from invoke import task, Collection
+from rich.console import Console
+from rich.syntax import Syntax
+import os
+
+from pinocchio.session import SessionContext
+from pinocchio.workflows.generation import GenerationWorkflow
+
+console = Console()
+
+@task(help={
+    "task": "代码生成任务描述",
+    "output": "输出文件路径(可选)",
+    "session_id": "使用现有会话ID(可选)"
+})
+def code(ctx, task, output=None, session_id=None):
+    """生成代码"""
+    # 获取会话上下文
+    session_context = SessionContext()
+    
+    # 加载或创建会话
+    if session_id:
+        success = session_context.session_manager.load_session(session_id)
+        if not success:
+            console.print(f"[red]加载会话失败:[/red] {session_id}")
+            return False
+    else:
+        session_id = session_context.session_manager.create_session(
+            task_description=f"代码生成: {task}"
+        )
+        console.print(f"[green]创建会话:[/green] {session_id}")
+    
+    # 创建工作流
+    workflow = GenerationWorkflow(session_context)
+    
+    # 执行代码生成
+    console.print("[yellow]正在生成代码...[/yellow]")
+    result = workflow.execute(task=task)
+    
+    # 处理结果
+    if "code" in result:
+        # 显示代码
+        syntax = Syntax(result["code"], "python", theme="monokai", line_numbers=True)
+        console.print(syntax)
+        
+        # 保存到文件
+        if output:
+            with open(output, "w") as f:
+                f.write(result["code"])
+            console.print(f"[green]代码已保存到:[/green] {output}")
+        
+        return True
+    else:
+        console.print("[red]代码生成失败[/red]")
+        return False
+
+# 创建命令集合
+ns = Collection("generate")
+ns.add_task(code)
+# 添加更多命令...
+```
+
+### 5.4 工作流命令示例
+
+```python
+# pinocchio/cli/commands/workflows.py
+from invoke import task, Collection
+from rich.console import Console
+import os
+
+from pinocchio.session import SessionContext
+from pinocchio.workflows.complete import CompleteWorkflow
+
+console = Console()
+
+@task(help={
+    "task": "任务描述",
+    "output": "输出文件路径",
+    "optimize": "是否优化代码(默认: True)",
+})
+def complete(ctx, task, output, optimize=True):
+    """完整工作流：生成、调试、优化和评估代码"""
+    # 获取会话上下文
+    session_context = SessionContext()
+    
+    # 创建会话
+    session_id = session_context.session_manager.create_session(
+        task_description=f"完整工作流: {task}"
+    )
+    console.print(f"[green]创建会话:[/green] {session_id}")
+    
+    # 创建工作流
+    workflow = CompleteWorkflow(session_context)
+    
+    # 执行工作流
+    console.print("[yellow]正在执行完整工作流...[/yellow]")
+    result = workflow.execute(
+        task=task,
+        optimize=optimize
+    )
+    
+    # 处理结果
+    if "final_code" in result:
+        # 保存到文件
+        with open(output, "w") as f:
+            f.write(result["final_code"])
+        console.print(f"[green]代码已保存到:[/green] {output}")
+        
+        # 显示评估结果
+        if "evaluation" in result:
+            console.print("\n[blue]代码评估结果:[/blue]")
+            for key, value in result["evaluation"].items():
+                console.print(f"  [cyan]{key}:[/cyan] {value}")
+        
+        return True
+    else:
+        console.print("[red]工作流执行失败[/red]")
+        return False
+
+# 创建命令集合
+ns = Collection("workflows")
+ns.add_task(complete)
+# 添加更多命令...
+```
+
+---
+
+## 6. 安装与分发
+
+### 6.1 开发环境安装
+
+```bash
+# scripts/install_dev.sh
+#!/bin/bash
+
+# 安装Poetry（如果尚未安装）
+if ! command -v poetry &> /dev/null; then
+    echo "Installing Poetry..."
+    curl -sSL https://install.python-poetry.org | python3 -
+fi
+
+# 安装项目依赖
+echo "Installing project dependencies..."
+poetry install
+
+# 安装pre-commit钩子
+echo "Setting up pre-commit hooks..."
+poetry run pre-commit install
+
+echo "Development environment setup complete!"
+```
+
+### 6.2 用户安装方式
+
+```bash
+# 从PyPI安装
+pip install pinocchio
+
+# 或使用Poetry安装
+poetry add pinocchio
+
+# 从源代码安装
+git clone https://github.com/yourusername/pinocchio.git
+cd pinocchio
+pip install .
+```
+
+### 6.3 发布流程
+
+```bash
+# scripts/publish.sh
+#!/bin/bash
+
+# 确保所有测试通过
+echo "Running tests..."
+poetry run pytest
+if [ $? -ne 0 ]; then
+    echo "Tests failed. Aborting publish."
+    exit 1
+fi
+
+# 构建包
+echo "Building package..."
+poetry build
+
+# 发布到PyPI
+echo "Publishing to PyPI..."
+poetry publish
+
+echo "Publish complete!"
+```
+
+---
+
+## 7. 命令行接口设计
+
+### 7.1 主要命令组织
+
+| 命令组 | 子命令 | 功能描述 |
+|-------|-------|---------|
+| session | create | 创建新会话 |
+|        | list | 列出会话 |
+|        | load | 加载会话 |
+|        | export | 导出会话 |
+|        | import | 导入会话 |
+| generate | code | 生成代码 |
+|         | docs | 生成文档 |
+|         | test | 生成测试 |
+| debug | analyze | 分析代码问题 |
+|       | fix | 修复代码问题 |
+| optimize | performance | 性能优化 |
+|         | readability | 可读性优化 |
+| evaluate | quality | 代码质量评估 |
+|         | test | 运行测试评估 |
+| workflows | complete | 完整工作流 |
+|          | iterate | 迭代改进工作流 |
+
+### 7.2 命令行帮助示例
+
+```
+$ pinocchio --help
+
+Pinocchio多智能体协作系统
+
+Usage: pinocchio [--core-opts] <subcommand> [--subcommand-opts] ...
+
+Core options:
+  --help, -h      显示帮助信息
+  --version, -V   显示版本信息
+
+Subcommands:
+  session.create    创建新会话
+  session.list      列出会话
+  session.load      加载会话
+  generate.code     生成代码
+  debug.analyze     分析代码问题
+  optimize.performance  性能优化
+  evaluate.quality  代码质量评估
+  workflows.complete    完整工作流
+```
+
+### 7.3 命令行交互设计
+
+1. **彩色输出**
+   - 使用Rich库提供彩色和格式化输出
+   - 错误信息使用红色，成功信息使用绿色
+   - 代码使用语法高亮显示
+
+2. **进度指示**
+   - 长时间操作显示进度条或旋转指示器
+   - LLM调用过程中显示等待动画
+
+3. **交互式输入**
+   - 对于复杂输入，提供交互式提示
+   - 支持历史记录和自动补全
+
+4. **输出格式化**
+   - 表格形式展示列表数据
+   - 树形结构展示层次数据
+   - 支持导出为JSON或其他格式
+
+---
+
+## 8. 配置管理
+
+### 8.1 配置文件结构
+
+```
+~/.config/pinocchio/
+├── config.toml       # 用户配置
+├── credentials.toml  # API密钥等凭证
+└── sessions/         # 会话数据目录
+```
+
+### 8.2 配置文件示例
+
+```toml
+# ~/.config/pinocchio/config.toml
+[general]
+default_output_dir = "~/pinocchio_output"
+log_level = "info"
+
+[llm]
+provider = "openai"  # 或 "anthropic"
+model = "gpt-4"
+temperature = 0.7
+max_tokens = 4000
+
+[agents]
+generator_strategy = "default"
+debugger_strategy = "thorough"
+optimizer_strategy = "balanced"
+
+[session]
+auto_save = true
+save_interval_seconds = 300
+```
+
+### 8.3 配置管理实现
+
+```python
+# pinocchio/config.py
+import os
+import toml
+from pathlib import Path
+from pydantic import BaseModel, Field
+from typing import Optional, Literal
+
+class LLMConfig(BaseModel):
+    provider: Literal["openai", "anthropic"] = "openai"
+    model: str = "gpt-4"
+    temperature: float = 0.7
+    max_tokens: int = 4000
+    api_key: Optional[str] = None
+
+class AgentsConfig(BaseModel):
+    generator_strategy: str = "default"
+    debugger_strategy: str = "thorough"
+    optimizer_strategy: str = "balanced"
+
+class SessionConfig(BaseModel):
+    auto_save: bool = True
+    save_interval_seconds: int = 300
+
+class GeneralConfig(BaseModel):
+    default_output_dir: str = "~/pinocchio_output"
+    log_level: Literal["debug", "info", "warning", "error"] = "info"
+
+class PinocchioConfig(BaseModel):
+    general: GeneralConfig = Field(default_factory=GeneralConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    agents: AgentsConfig = Field(default_factory=AgentsConfig)
+    session: SessionConfig = Field(default_factory=SessionConfig)
+
+def get_config_dir() -> Path:
+    """获取配置目录"""
+    if os.name == "nt":  # Windows
+        config_dir = Path(os.environ.get("APPDATA", "")) / "pinocchio"
+    else:  # Linux/Mac
+        config_dir = Path.home() / ".config" / "pinocchio"
+    
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+def load_config() -> PinocchioConfig:
+    """加载配置"""
+    config_dir = get_config_dir()
+    config_file = config_dir / "config.toml"
+    
+    # 创建默认配置
+    config = PinocchioConfig()
+    
+    # 如果配置文件存在，加载它
+    if config_file.exists():
+        try:
+            config_data = toml.load(config_file)
+            config = PinocchioConfig.parse_obj(config_data)
+        except Exception as e:
+            print(f"Error loading config: {e}")
+    else:
+        # 创建默认配置文件
+        with open(config_file, "w") as f:
+            toml.dump(config.dict(), f)
+    
+    # 加载凭证
+    creds_file = config_dir / "credentials.toml"
+    if creds_file.exists():
+        try:
+            creds_data = toml.load(creds_file)
+            if "llm" in creds_data and "api_key" in creds_data["llm"]:
+                config.llm.api_key = creds_data["llm"]["api_key"]
+        except Exception as e:
+            print(f"Error loading credentials: {e}")
+    
+    return config
+```
+
+---
+
+## 9. 测试策略
+
+### 9.1 CLI测试
+
+```python
+# tests/cli/test_main.py
+from click.testing import CliRunner
+import pytest
+from unittest.mock import patch
+
+def test_version():
+    """测试版本命令"""
+    from pinocchio.cli.main import program
+    
+    runner = CliRunner()
+    result = runner.invoke(program, ["--version"])
+    
+    assert result.exit_code == 0
+    assert "pinocchio" in result.output
+    assert "0.1.0" in result.output
+
+@patch("pinocchio.session.SessionContext")
+def test_session_create(mock_context):
+    """测试会话创建命令"""
+    from pinocchio.cli.main import program
+    
+    # 设置模拟返回值
+    mock_manager = mock_context.return_value.session_manager
+    mock_manager.create_session.return_value = "test_session_id"
+    
+    runner = CliRunner()
+    result = runner.invoke(program, ["session.create", "--task-description", "Test task"])
+    
+    assert result.exit_code == 0
+    assert "test_session_id" in result.output
+    mock_manager.create_session.assert_called_once_with(
+        task_description="Test task",
+        name=None,
+        tags=[]
+    )
+```
+
+### 9.2 构建系统测试
+
+```python
+# tests/test_build.py
+import subprocess
+import sys
+import os
+from pathlib import Path
+import pytest
+
+@pytest.mark.skipif(not os.environ.get("RUN_BUILD_TESTS"), reason="Build tests disabled")
+def test_package_build():
+    """测试包构建"""
+    # 运行构建命令
+    result = subprocess.run(
+        ["poetry", "build"],
+        check=False,
+        capture_output=True,
+        text=True
+    )
+    
+    # 验证构建成功
+    assert result.returncode == 0
+    
+    # 验证构建产物
+    dist_dir = Path("dist")
+    assert dist_dir.exists()
+    
+    # 检查是否有wheel和sdist
+    wheel_files = list(dist_dir.glob("*.whl"))
+    sdist_files = list(dist_dir.glob("*.tar.gz"))
+    
+    assert len(wheel_files) > 0
+    assert len(sdist_files) > 0
+```
+
+### 9.3 配置管理测试
+
+```python
+# tests/test_config.py
+import os
+import toml
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+def test_config_loading():
+    """测试配置加载"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # 创建测试配置
+        config_dir = Path(temp_dir) / "config"
+        config_dir.mkdir()
+        
+        config_data = {
+            "general": {"log_level": "debug"},
+            "llm": {"provider": "anthropic", "model": "claude-2"}
+        }
+        
+        with open(config_dir / "config.toml", "w") as f:
+            toml.dump(config_data, f)
+        
+        # 模拟配置目录
+        with patch("pinocchio.config.get_config_dir", return_value=config_dir):
+            from pinocchio.config import load_config
+            
+            config = load_config()
+            
+            # 验证配置值
+            assert config.general.log_level == "debug"
+            assert config.llm.provider == "anthropic"
+            assert config.llm.model == "claude-2"
+            # 默认值应保持不变
+            assert config.session.auto_save == True
+```
+
+---
+
+## 10. 总结
+
+构建系统和CLI模块设计为Pinocchio多智能体系统提供了现代化的依赖管理和用户友好的命令行接口。通过Poetry实现依赖管理、环境隔离和包发布，通过Invoke实现灵活的命令行任务组织，使系统易于安装、配置和使用。
+
+核心特点包括：
+
+1. **现代化构建系统**：使用Poetry提供依赖管理、虚拟环境和发布功能
+2. **模块化CLI设计**：基于Invoke的模块化命令组织，易于扩展
+3. **丰富的用户体验**：使用Rich提供彩色输出和格式化展示
+4. **灵活的配置管理**：支持用户配置和凭证管理
+5. **完整的测试覆盖**：包含CLI和构建系统的测试策略
+
+该设计满足了Pinocchio系统的构建和交互需求，提供了稳定、可靠的开发和用户体验。通过清晰的命令组织和直观的接口，使系统各功能易于访问和使用，同时保持了良好的可维护性和可扩展性。

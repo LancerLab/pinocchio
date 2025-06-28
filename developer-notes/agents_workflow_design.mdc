@@ -1,0 +1,536 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Pinocchio 多智能体系统 Agent 工作流与状态转换设计
+
+## 1. 概述
+
+本文档详细设计 Pinocchio 多智能体系统中各 Agent 的状态转换、工作流程和 Prompt 模板设计。系统采用有限状态机模型来管理 Agent 之间的协作，确保高效实现人工智能算子的生成、调试和优化。设计遵循精简原则，避免不必要的复杂性，同时保持系统的可扩展性和鲁棒性。
+
+## 2. 多智能体系统状态机设计
+
+### 2.1 状态机模型的适用性分析
+
+在多智能体系统中，状态机模型具有以下优势：
+
+1. **明确的状态定义**：每个 Agent 处于明确定义的状态，便于追踪和管理
+2. **可预测的转换**：状态转换规则明确，系统行为可预测
+3. **错误恢复**：可以定义错误状态和恢复路径
+4. **简化复杂流程**：将复杂流程分解为简单状态和转换
+
+经分析，状态机模型是实现多智能体协作的最佳实践，特别适合算子开发这类需要多轮迭代的任务。
+
+### 2.2 系统整体状态图
+
+```mermaid
+stateDiagram-v2
+    [*] --> 需求分析
+    需求分析 --> 代码生成
+    代码生成 --> 代码验证
+    代码验证 --> 代码调试: 验证失败
+    代码验证 --> 性能评估: 验证成功
+    代码调试 --> 代码验证
+    性能评估 --> 性能优化: 性能不达标
+    性能评估 --> 完成: 性能达标
+    性能优化 --> 代码验证
+    完成 --> [*]
+```
+
+### 2.3 Agent 角色与职责
+
+| Agent 类型 | 主要职责 | 输入 | 输出 |
+|-----------|---------|------|------|
+| Generator | 根据需求生成初始算子代码 | 算子需求描述、约束条件 | 算子代码、设计说明 |
+| Debugger | 调试和修复代码中的错误 | 有问题的代码、错误信息 | 修复后的代码、修复说明 |
+| Optimizer | 分析代码并提出性能优化建议 | 功能正确的代码、性能指标 | 优化建议、优化后代码 |
+| Evaluator | 评估代码的正确性和性能 | 代码、测试用例 | 评估报告、性能指标 |
+
+## 3. Agent 状态转换设计
+
+### 3.1 Generator Agent 状态转换
+
+```mermaid
+stateDiagram-v2
+    [*] --> 需求解析
+    需求解析 --> 算法选择
+    算法选择 --> 代码生成
+    代码生成 --> 自检
+    自检 --> 代码生成: 发现问题
+    自检 --> 完成: 无问题
+    完成 --> [*]
+```
+
+#### 3.1.1 状态说明
+
+1. **需求解析**：分析算子需求，提取关键功能点和约束条件
+2. **算法选择**：根据需求选择适合的算法实现方案
+3. **代码生成**：实现算子代码
+4. **自检**：检查代码是否符合基本要求
+5. **完成**：输出最终代码和说明
+
+### 3.2 Debugger Agent 状态转换
+
+```mermaid
+stateDiagram-v2
+    [*] --> 错误分析
+    错误分析 --> 问题定位
+    问题定位 --> 修复方案生成
+    修复方案生成 --> 代码修复
+    代码修复 --> 验证
+    验证 --> 问题定位: 仍有错误
+    验证 --> 完成: 修复成功
+    完成 --> [*]
+```
+
+#### 3.2.1 状态说明
+
+1. **错误分析**：分析编译错误或运行时错误信息
+2. **问题定位**：定位代码中的问题位置
+3. **修复方案生成**：设计修复方案
+4. **代码修复**：实施修复
+5. **验证**：验证修复是否成功
+6. **完成**：输出修复后的代码和修复说明
+
+### 3.3 Optimizer Agent 状态转换
+
+```mermaid
+stateDiagram-v2
+    [*] --> 性能分析
+    性能分析 --> 瓶颈识别
+    瓶颈识别 --> 优化策略生成
+    优化策略生成 --> 建议生成
+    建议生成 --> 代码优化: 自动优化模式
+    建议生成 --> 完成: 建议模式
+    代码优化 --> 完成
+    完成 --> [*]
+```
+
+#### 3.3.1 状态说明
+
+1. **性能分析**：分析代码的性能特征
+2. **瓶颈识别**：识别性能瓶颈
+3. **优化策略生成**：生成针对瓶颈的优化策略
+4. **建议生成**：生成优化建议
+5. **代码优化**：（可选）实施优化
+6. **完成**：输出优化建议或优化后的代码
+
+### 3.4 Evaluator Agent 状态转换
+
+```mermaid
+stateDiagram-v2
+    [*] --> 测试准备
+    测试准备 --> 功能测试
+    功能测试 --> 性能测试: 功能正确
+    功能测试 --> 完成: 功能错误
+    性能测试 --> 结果分析
+    结果分析 --> 完成
+    完成 --> [*]
+```
+
+#### 3.4.1 状态说明
+
+1. **测试准备**：准备测试环境和测试用例
+2. **功能测试**：测试代码功能正确性
+3. **性能测试**：测试代码性能指标
+4. **结果分析**：分析测试结果
+5. **完成**：输出评估报告
+
+## 4. 工作流程设计
+
+### 4.1 算子开发基本工作流
+
+```mermaid
+flowchart TD
+    开始[开始] --> 需求分析
+    需求分析 --> Generator
+    Generator -- 初始代码 --> Evaluator
+    Evaluator -- 功能错误 --> Debugger
+    Debugger -- 修复代码 --> Evaluator
+    Evaluator -- 功能正确但性能不达标 --> Optimizer
+    Optimizer -- 优化建议 --> Generator
+    Generator -- 优化后代码 --> Evaluator
+    Evaluator -- 功能正确且性能达标 --> 完成[完成]
+```
+
+### 4.2 调试循环设计
+
+Debugger Agent 可能需要多轮调试才能修复所有问题。设计一个内部循环机制：
+
+```mermaid
+flowchart TD
+    代码[有问题的代码] --> 错误分析
+    错误分析 --> 问题定位
+    问题定位 --> 修复方案
+    修复方案 --> 代码修复
+    代码修复 --> 验证
+    验证 -- 仍有错误 --> 错误分析
+    验证 -- 修复成功 --> 输出[修复后的代码]
+```
+
+关键设计点：
+- 每轮调试专注于一个或少量相关问题
+- 保留调试历史，避免重复错误
+- 设置最大调试轮数，防止无限循环
+
+### 4.3 优化流程设计
+
+Optimizer Agent 采用"建议模式"而非直接修改代码：
+
+```mermaid
+flowchart TD
+    代码[功能正确的代码] --> 性能分析
+    性能分析 --> 瓶颈识别
+    瓶颈识别 --> 优化策略
+    优化策略 --> 生成建议
+    生成建议 --> Generator[返回给Generator实施]
+```
+
+关键设计点：
+- 清晰描述优化建议及其理由
+- 提供具体的代码示例
+- 按优化收益排序建议
+
+## 5. Prompt 模板设计
+
+### 5.1 Generator Agent Prompt 模板
+
+```
+# 算子生成器
+
+## 任务描述
+你是一位专业的算子开发工程师，负责根据需求生成高性能的计算算子。
+
+## 输入
+- 算子名称: {{ operator_name }}
+- 功能描述: {{ description }}
+- 输入参数: {{ input_params | tojson }}
+- 输出参数: {{ output_params | tojson }}
+- 性能要求: {{ performance_requirements }}
+- 约束条件: {{ constraints | join('\n- ') }}
+{% if optimization_suggestions %}
+- 优化建议: {{ optimization_suggestions | join('\n- ') }}
+{% endif %}
+
+## 背景知识
+{{ knowledge_context }}
+
+## 输出要求
+请生成符合要求的算子代码，包括：
+1. 代码实现
+2. 设计思路说明
+3. 时间复杂度和空间复杂度分析
+
+## 代码格式
+```{{ language }}
+// 在此处实现算子代码
+```
+```
+
+### 5.2 Debugger Agent Prompt 模板
+
+```
+# 算子调试器
+
+## 任务描述
+你是一位专业的算子调试工程师，负责修复代码中的错误。
+
+## 输入
+- 算子名称: {{ operator_name }}
+- 功能描述: {{ description }}
+- 有问题的代码:
+```{{ language }}
+{{ code }}
+```
+
+- 错误信息:
+```
+{{ error_message }}
+```
+
+{% if debug_history %}
+## 调试历史
+{% for entry in debug_history %}
+### 尝试 {{ loop.index }}
+- 问题: {{ entry.issue }}
+- 修复尝试: {{ entry.fix }}
+- 结果: {{ entry.result }}
+{% endfor %}
+{% endif %}
+
+## 背景知识
+{{ knowledge_context }}
+
+## 输出要求
+请分析并修复代码中的错误，包括：
+1. 错误分析：解释错误的原因
+2. 修复后的完整代码
+3. 修复说明：解释你所做的更改及其原因
+
+## 代码格式
+```{{ language }}
+// 在此处提供修复后的完整代码
+```
+```
+
+### 5.3 Optimizer Agent Prompt 模板
+
+```
+# 算子优化器
+
+## 任务描述
+你是一位专业的算子优化工程师，负责分析代码并提供性能优化建议。
+
+## 输入
+- 算子名称: {{ operator_name }}
+- 功能描述: {{ description }}
+- 当前代码:
+```{{ language }}
+{{ code }}
+```
+
+- 性能指标:
+```
+{{ performance_metrics | tojson }}
+```
+
+- 优化目标: {{ optimization_goals | join('\n- ') }}
+
+## 背景知识
+{{ knowledge_context }}
+
+## 输出要求
+请分析代码并提供优化建议，包括：
+1. 性能分析：识别当前代码的性能瓶颈
+2. 优化建议：按优先级排序的具体优化建议
+3. 代码示例：每个建议对应的代码修改示例
+
+## 建议格式
+对于每个优化建议，请使用以下格式：
+
+### 建议 [编号]: [建议标题]
+- **问题**：[描述性能问题]
+- **建议**：[优化建议]
+- **预期收益**：[预期性能提升]
+- **代码示例**：
+```{{ language }}
+// 示例代码
+```
+```
+
+### 5.4 Evaluator Agent Prompt 模板
+
+```
+# 算子评估器
+
+## 任务描述
+你是一位专业的算子评估工程师，负责评估算子代码的正确性和性能。
+
+## 输入
+- 算子名称: {{ operator_name }}
+- 功能描述: {{ description }}
+- 评估代码:
+```{{ language }}
+{{ code }}
+```
+
+- 测试用例:
+```
+{{ test_cases | tojson }}
+```
+
+- 性能基准: {{ performance_baseline | tojson }}
+
+## 背景知识
+{{ knowledge_context }}
+
+## 输出要求
+请评估代码的正确性和性能，包括：
+1. 功能评估：代码是否正确实现了所需功能
+2. 性能评估：代码的性能指标
+3. 综合评分：基于功能正确性和性能的综合评分
+4. 改进建议：如有必要，提供改进建议
+
+## 评估格式
+```json
+{
+  "functionality": {
+    "correct": true|false,
+    "issues": ["问题1", "问题2", ...],
+    "score": 0-10
+  },
+  "performance": {
+    "metrics": {
+      "time_complexity": "O(...)",
+      "space_complexity": "O(...)",
+      "estimated_runtime": "..."
+    },
+    "meets_requirements": true|false,
+    "score": 0-10
+  },
+  "overall_score": 0-10,
+  "recommendations": ["建议1", "建议2", ...]
+}
+```
+```
+
+## 6. 多轮交互设计
+
+### 6.1 Debugger 多轮调试设计
+
+Debugger Agent 可能需要多轮调试才能解决所有问题。设计如下：
+
+1. **状态保持**：维护调试会话状态，记录已尝试的修复方案
+2. **增量修复**：每轮专注于一个或少量相关问题
+3. **历史追踪**：记录每轮调试的问题、修复尝试和结果
+4. **终止条件**：设置最大调试轮数或成功条件
+
+```python
+# 调试循环伪代码
+def debug_loop(code, error_message, max_rounds=5):
+    debug_history = []
+    current_code = code
+    current_error = error_message
+    
+    for round in range(max_rounds):
+        # 准备 Prompt
+        prompt = create_debugger_prompt(
+            code=current_code,
+            error_message=current_error,
+            debug_history=debug_history
+        )
+        
+        # 获取调试结果
+        debug_result = debugger_agent.process(prompt)
+        
+        # 验证修复
+        verification = verify_code(debug_result.fixed_code)
+        
+        # 记录历史
+        debug_history.append({
+            "issue": debug_result.issue,
+            "fix": debug_result.fix_description,
+            "result": verification.status
+        })
+        
+        if verification.success:
+            return debug_result.fixed_code, debug_history
+            
+        # 更新当前代码和错误
+        current_code = debug_result.fixed_code
+        current_error = verification.error_message
+    
+    # 达到最大轮数，返回最新状态
+    return current_code, debug_history
+```
+
+### 6.2 Generator-Optimizer 协作设计
+
+Generator 和 Optimizer 之间的协作采用建议模式：
+
+1. **Optimizer 提供建议**：分析代码并提供优化建议
+2. **Generator 实施优化**：根据建议修改代码
+3. **Evaluator 验证优化**：验证优化后的代码是否符合要求
+
+```python
+# Generator-Optimizer 协作伪代码
+def optimize_code(code, performance_metrics, optimization_goals):
+    # 获取优化建议
+    optimization_suggestions = optimizer_agent.process({
+        "code": code,
+        "performance_metrics": performance_metrics,
+        "optimization_goals": optimization_goals
+    })
+    
+    # Generator 实施优化
+    optimized_code = generator_agent.process({
+        "code": code,
+        "optimization_suggestions": optimization_suggestions.suggestions
+    })
+    
+    # 评估优化结果
+    evaluation = evaluator_agent.process({
+        "code": optimized_code,
+        "performance_baseline": performance_metrics
+    })
+    
+    return optimized_code, evaluation
+```
+
+## 7. 工作流程优化
+
+### 7.1 并行评估
+
+为提高效率，可以在适当的阶段并行执行评估：
+
+```mermaid
+flowchart TD
+    Generator -- 初始代码 --> 并行评估
+    并行评估 --> 功能评估
+    并行评估 --> 性能评估
+    功能评估 -- 功能错误 --> Debugger
+    性能评估 -- 性能不达标 --> Optimizer
+```
+
+### 7.2 增量开发
+
+对于复杂算子，采用增量开发策略：
+
+1. **先实现核心功能**：Generator 首先实现核心功能
+2. **验证核心功能**：Evaluator 验证核心功能正确性
+3. **添加高级功能**：Generator 在核心功能基础上添加高级功能
+4. **全面测试**：Evaluator 进行全面测试
+
+### 7.3 错误优先级
+
+在调试过程中，按以下优先级处理错误：
+
+1. **编译错误**：首先解决编译错误
+2. **运行时错误**：然后解决运行时错误
+3. **功能错误**：接着解决功能错误
+4. **性能问题**：最后解决性能问题
+
+## 8. 最佳实践与精简设计
+
+### 8.1 状态机设计最佳实践
+
+1. **状态最小化**：保持状态数量最少，避免状态爆炸
+2. **明确转换条件**：每个状态转换都有明确的条件
+3. **错误状态处理**：为每个关键状态定义错误处理路径
+4. **可观察性**：确保每个状态都可以被监控和记录
+
+### 8.2 精简设计原则
+
+1. **职责单一**：每个 Agent 只负责一种核心功能
+2. **接口简洁**：Agent 之间的接口保持简单明确
+3. **状态透明**：系统状态对所有组件可见
+4. **无状态服务**：尽可能设计无状态服务，状态集中管理
+5. **避免复杂依赖**：减少 Agent 之间的复杂依赖关系
+
+### 8.3 Prompt 模板精简原则
+
+1. **结构化输入**：使用结构化格式定义输入
+2. **明确指令**：提供清晰明确的指令
+3. **必要上下文**：只提供必要的上下文信息
+4. **格式规范**：定义严格的输出格式
+5. **示例引导**：在必要时提供少量高质量示例
+
+## 9. 总结与建议
+
+本设计采用状态机模型管理多智能体系统的工作流程，为实现高性能人工智能算子提供了清晰的路径。关键特点包括：
+
+1. **基于状态机的工作流**：使用状态机模型管理 Agent 状态转换，确保系统行为可预测
+2. **专业化 Agent 设计**：每个 Agent 专注于特定任务，职责明确
+3. **结构化 Prompt 模板**：为每个 Agent 设计专门的 Prompt 模板，确保输入输出一致
+4. **多轮交互机制**：支持 Debugger 多轮调试和 Generator-Optimizer 协作
+5. **精简高效设计**：遵循精简设计原则，避免不必要的复杂性
+
+经评估，本设计符合多智能体系统的最佳实践，提供了足够精简且高效的解决方案。建议在实现时关注以下方面：
+
+1. **状态持久化**：确保状态可以持久化，支持长时间运行和恢复
+2. **监控与可观察性**：实现全面的监控和日志记录
+3. **错误处理**：完善的错误处理机制，确保系统鲁棒性
+4. **可扩展性**：设计支持未来添加新的 Agent 类型和工作流
+
+通过这一设计，Pinocchio 系统能够高效地开发、调试和优化人工智能算子，同时保持系统的简洁性和可维护性。

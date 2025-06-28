@@ -1,0 +1,782 @@
+---
+description: session模块文档
+globs: 
+alwaysApply: false
+---
+# Pinocchio 多智能体系统 Session 模块设计文档
+
+## 1. 概述
+
+Session 模块是 Pinocchio 多智能体系统的顶层管理组件，负责创建和管理每次运行的会话上下文，提供会话生命周期管理，并协调各种内存模块的工作。每次系统运行都会创建一个唯一标识的会话，确保不同任务之间的数据隔离和追踪。
+
+---
+
+## 2. 技术选型
+
+### 2.1 核心技术栈
+
+| 技术/库 | 用途 | 选择理由 |
+|--------|-----|---------|
+| Pydantic | 数据模型定义与验证 | 提供运行时类型验证，自动序列化/反序列化，与现代Python类型注解系统完美配合 |
+| JSON | 数据序列化格式 | 人类可读性强，与LLM接口天然兼容，序列化/反序列化性能良好 |
+| Python标准库 | 文件操作、路径管理等 | 减少外部依赖，提高可移植性 |
+| UUID | 唯一标识符生成 | 保证各类数据实体的唯一性 |
+| 时间戳 | 会话ID生成 | 确保会话ID的唯一性和可排序性 |
+
+### 2.2 可选优化技术
+
+| 技术/库 | 用途 | 备注 |
+|--------|-----|------|
+| zipfile | 会话导入/导出 | 标准库，用于会话数据的打包和解包 |
+| tempfile | 临时文件处理 | 标准库，用于会话导入过程中的临时文件处理 |
+
+---
+
+## 3. 模块架构
+
+### 3.1 整体架构
+
+```
+session/
+├── __init__.py
+├── models.py         # 会话模型定义
+├── manager.py        # 会话管理器
+└── context.py        # 会话上下文
+```
+
+### 3.2 与其他模块的关系
+
+```
+pinocchio/
+├── session/          # 会话管理模块（顶层）
+│   └── ...
+├── memory/           # 内存管理模块（被会话模块依赖）
+│   └── ...
+├── agents/           # 智能体模块（使用会话上下文）
+│   └── ...
+└── workflows/        # 工作流模块（使用会话上下文）
+    └── ...
+```
+
+---
+
+## 4. 数据模型设计
+
+### 4.1 会话元数据模型
+
+```python
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional, Any
+from datetime import datetime
+import uuid
+import os
+import sys
+import time
+
+class SessionMetadata(BaseModel):
+    """会话元数据"""
+    session_id: str
+    name: str
+    creation_time: datetime = Field(default_factory=datetime.utcnow)
+    task_description: str
+    status: str = "active"  # active, completed, failed
+    end_time: Optional[datetime] = None
+    runtime_seconds: Optional[float] = None
+    user_inputs: Dict[str, Any] = Field(default_factory=dict)
+    system_info: Dict[str, Any] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
+    
+    @classmethod
+    def create_new_session(cls, task_description: str, name: Optional[str] = None, tags: Optional[List[str]] = None):
+        """创建新会话"""
+        # 使用时间戳和随机字符串生成唯一ID
+        timestamp = int(time.time())
+        random_suffix = uuid.uuid4().hex[:8]
+        session_id = f"session_{timestamp}_{random_suffix}"
+        
+        # 如果未提供名称，使用时间戳生成默认名称
+        if not name:
+            name = f"Session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # 收集系统信息
+        system_info = {
+            "platform": os.name,
+            "python_version": ".".join(map(str, sys.version_info[:3])),
+            "hostname": os.uname().nodename if hasattr(os, 'uname') else "unknown"
+        }
+        
+        return cls(
+            session_id=session_id,
+            name=name,
+            task_description=task_description,
+            tags=tags or [],
+            system_info=system_info
+        )
+    
+    def complete(self, status: str = "completed"):
+        """完成会话"""
+        self.status = status
+        self.end_time = datetime.utcnow()
+        if self.creation_time:
+            self.runtime_seconds = (self.end_time - self.creation_time).total_seconds()
+```
+
+---
+
+## 5. 核心接口设计
+
+### 5.1 会话管理器接口
+
+```python
+class SessionManager:
+    """会话管理器"""
+    
+    def __init__(self, base_dir: str = "./sessions"):
+        """初始化会话管理器"""
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(exist_ok=True, parents=True)
+        self.current_session: Optional[SessionMetadata] = None
+        self.memory_manager = None
+        self.code_memory = None
+        self.prompt_memory = None
+        self.knowledge_memory = None
+    
+    def create_session(self, task_description: str, name: Optional[str] = None, 
+                      tags: Optional[List[str]] = None) -> str:
+        """创建新会话"""
+        pass
+    
+    def load_session(self, session_id: str) -> bool:
+        """加载已有会话"""
+        pass
+    
+    def save_session(self) -> bool:
+        """保存当前会话状态"""
+        pass
+    
+    def complete_session(self, status: str = "completed") -> bool:
+        """完成当前会话"""
+        pass
+    
+    def get_current_session_id(self) -> Optional[str]:
+        """获取当前会话ID"""
+        pass
+    
+    def list_sessions(self, filter_func=None, limit: int = 100) -> List[SessionMetadata]:
+        """列出会话"""
+        pass
+    
+    def search_sessions(self, query: str, search_in_task: bool = True, 
+                       search_in_tags: bool = True, case_sensitive: bool = False) -> List[SessionMetadata]:
+        """搜索会话"""
+        pass
+    
+    def delete_session(self, session_id: str) -> bool:
+        """删除会话"""
+        pass
+    
+    def export_session(self, session_id: Optional[str] = None, output_file: Optional[str] = None) -> str:
+        """导出会话"""
+        pass
+    
+    def import_session(self, zip_file: str) -> Optional[str]:
+        """导入会话"""
+        pass
+```
+
+### 5.2 会话上下文接口
+
+```python
+class SessionContext:
+    """会话上下文管理器"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(SessionContext, cls).__new__(cls)
+            cls._instance._session_manager = None
+        return cls._instance
+    
+    @property
+    def session_manager(self) -> SessionManager:
+        """获取会话管理器"""
+        if self._session_manager is None:
+            self._session_manager = SessionManager()
+        return self._session_manager
+    
+    @property
+    def current_session_id(self) -> Optional[str]:
+        """获取当前会话ID"""
+        return self.session_manager.get_current_session_id()
+    
+    @property
+    def memory_manager(self):
+        """获取内存管理器"""
+        return self.session_manager.memory_manager
+    
+    @property
+    def code_memory(self):
+        """获取代码内存"""
+        return self.session_manager.code_memory
+    
+    @property
+    def prompt_memory(self):
+        """获取提示内存"""
+        return self.session_manager.prompt_memory
+    
+    @property
+    def knowledge_memory(self):
+        """获取知识内存"""
+        return self.session_manager.knowledge_memory
+    
+    def ensure_session_active(self):
+        """确保会话处于活动状态"""
+        if not self.current_session_id:
+            raise RuntimeError("No active session")
+```
+
+---
+
+## 6. 会话管理实现
+
+### 6.1 会话创建与加载
+
+```python
+def create_session(self, task_description: str, name: Optional[str] = None, 
+                  tags: Optional[List[str]] = None) -> str:
+    """创建新会话"""
+    # 创建会话元数据
+    session = SessionMetadata.create_new_session(
+        task_description=task_description,
+        name=name,
+        tags=tags
+    )
+    
+    # 创建会话目录
+    session_dir = self.base_dir / session.session_id
+    session_dir.mkdir(exist_ok=True)
+    
+    # 保存元数据
+    with open(session_dir / "metadata.json", "w") as f:
+        f.write(session.json())
+    
+    # 初始化各种内存
+    self._init_memories(session.session_id)
+    
+    # 设置为当前会话
+    self.current_session = session
+    
+    return session.session_id
+
+def _init_memories(self, session_id: str):
+    """初始化各种内存"""
+    session_dir = self.base_dir / session_id
+    
+    # 初始化内存管理器
+    from memory.manager import MemoryManager
+    self.memory_manager = MemoryManager(str(session_dir / "memories"))
+    
+    # 初始化代码内存
+    from memory.models.code import CodeMemory
+    self.code_memory = CodeMemory(session_id=session_id)
+    
+    # 初始化提示内存
+    from memory.models.prompt import PromptMemory
+    self.prompt_memory = PromptMemory()
+    
+    # 初始化知识内存
+    from memory.models.knowledge import KnowledgeMemory
+    self.knowledge_memory = KnowledgeMemory()
+
+def load_session(self, session_id: str) -> bool:
+    """加载已有会话"""
+    session_dir = self.base_dir / session_id
+    
+    if not (session_dir / "metadata.json").exists():
+        return False
+    
+    # 加载元数据
+    with open(session_dir / "metadata.json", "r") as f:
+        self.current_session = SessionMetadata.parse_raw(f.read())
+    
+    # 初始化各种内存
+    self._init_memories(session_id)
+    
+    # 加载已保存的内存数据
+    self._load_memories(session_id)
+    
+    return True
+```
+
+### 6.2 会话存储与导出
+
+```python
+def save_session(self) -> bool:
+    """保存当前会话状态"""
+    if not self.current_session:
+        return False
+    
+    session_dir = self.base_dir / self.current_session.session_id
+    
+    # 更新并保存元数据
+    with open(session_dir / "metadata.json", "w") as f:
+        f.write(self.current_session.json())
+    
+    # 保存代码内存
+    if self.code_memory:
+        with open(session_dir / "code_memory.json", "w") as f:
+            f.write(self.code_memory.json())
+    
+    # 保存提示内存
+    if self.prompt_memory:
+        with open(session_dir / "prompt_memory.json", "w") as f:
+            f.write(self.prompt_memory.json())
+    
+    # 保存知识内存
+    if self.knowledge_memory:
+        with open(session_dir / "knowledge_memory.json", "w") as f:
+            f.write(self.knowledge_memory.json())
+    
+    return True
+
+def export_session(self, session_id: Optional[str] = None, output_file: Optional[str] = None) -> str:
+    """导出会话"""
+    target_id = session_id or (self.current_session.session_id if self.current_session else None)
+    if not target_id:
+        raise ValueError("No session specified")
+    
+    session_dir = self.base_dir / target_id
+    if not session_dir.exists():
+        raise ValueError(f"Session {target_id} not found")
+    
+    # 如果是当前会话，先保存
+    if self.current_session and self.current_session.session_id == target_id:
+        self.save_session()
+    
+    # 确定输出文件
+    if output_file:
+        output_path = Path(output_file)
+    else:
+        output_path = self.base_dir / f"{target_id}_export.zip"
+    
+    # 创建ZIP文件
+    import zipfile
+    with zipfile.ZipFile(output_path, "w") as zipf:
+        for file_path in session_dir.rglob("*"):
+            if file_path.is_file():
+                zipf.write(file_path, file_path.relative_to(session_dir))
+    
+    return str(output_path)
+```
+
+---
+
+## 7. 命令行接口
+
+```python
+from invoke import task, Collection
+
+@task
+def create_session(ctx, task_description, name=None, tags=None):
+    """创建新会话"""
+    from session import SessionContext
+    
+    # 解析标签
+    tag_list = tags.split(',') if tags else []
+    
+    # 创建会话
+    session_context = SessionContext()
+    session_id = session_context.session_manager.create_session(
+        task_description=task_description,
+        name=name,
+        tags=tag_list
+    )
+    
+    print(f"Created new session: {session_id}")
+    return session_id
+
+@task
+def list_sessions(ctx, limit=10, status=None):
+    """列出会话"""
+    from session import SessionContext
+    
+    # 创建过滤器
+    filter_func = None
+    if status:
+        filter_func = lambda s: s.status == status
+    
+    # 列出会话
+    session_context = SessionContext()
+    sessions = session_context.session_manager.list_sessions(
+        filter_func=filter_func,
+        limit=int(limit)
+    )
+    
+    # 打印会话列表
+    print(f"Found {len(sessions)} sessions:")
+    for session in sessions:
+        runtime = f"{session.runtime_seconds:.1f}s" if session.runtime_seconds else "running"
+        print(f"  {session.session_id} - {session.name} [{session.status}] [{runtime}]")
+        print(f"    Task: {session.task_description[:50]}{'...' if len(session.task_description) > 50 else ''}")
+        if session.tags:
+            print(f"    Tags: {', '.join(session.tags)}")
+        print()
+
+@task
+def load_session(ctx, session_id):
+    """加载会话"""
+    from session import SessionContext
+    
+    # 加载会话
+    session_context = SessionContext()
+    success = session_context.session_manager.load_session(session_id)
+    
+    if success:
+        print(f"Loaded session: {session_id}")
+    else:
+        print(f"Failed to load session: {session_id}")
+    
+    return success
+
+# 更多命令行任务...
+```
+
+---
+
+## 8. 系统集成
+
+### 8.1 系统初始化
+
+```python
+def initialize_system():
+    """初始化系统"""
+    from session import SessionContext
+    
+    # 获取会话上下文
+    session_context = SessionContext()
+    
+    # 检查是否有活动会话
+    if not session_context.current_session_id:
+        # 创建默认会话
+        default_task = "Default Pinocchio session"
+        session_id = session_context.session_manager.create_session(default_task)
+        print(f"Created default session: {session_id}")
+    
+    return session_context
+```
+
+### 8.2 工作流集成
+
+```python
+def run_workflow(task_description: str, requirements: Dict[str, Any], session_name: Optional[str] = None):
+    """运行工作流"""
+    from session import SessionContext
+    
+    # 获取会话上下文
+    session_context = SessionContext()
+    
+    # 创建新会话
+    session_id = session_context.session_manager.create_session(
+        task_description=task_description,
+        name=session_name
+    )
+    print(f"Created new session: {session_id}")
+    
+    try:
+        # 运行工作流
+        result = _run_agent_workflow(task_description, requirements)
+        
+        # 完成会话
+        session_context.session_manager.complete_session("completed")
+        
+        return result
+    except Exception as e:
+        # 标记会话为失败
+        session_context.session_manager.complete_session("failed")
+        raise e
+```
+
+---
+
+## 9. 会话存储结构
+
+```
+sessions/
+├── session_{timestamp}_{random}/  # 会话目录
+│   ├── metadata.json              # 会话元数据
+│   ├── code_memory.json           # 代码版本历史
+│   ├── prompt_memory.json         # 提示模板版本
+│   ├── knowledge_memory.json      # 知识库版本
+│   └── memories/                  # Agent内存目录
+│       ├── generator_{uuid}.json  # 生成器内存
+│       ├── debugger_{uuid}.json   # 调试器内存
+│       ├── optimizer_{uuid}.json  # 优化器内存
+│       └── evaluator_{uuid}.json  # 评估器内存
+└── session_{timestamp}_{random}/  # 另一个会话目录
+    └── ...
+```
+
+---
+
+## 10. 总结
+
+Session模块作为Pinocchio系统的顶层组件，提供了会话生命周期管理、上下文维护和资源协调功能。通过唯一会话ID和隔离的存储结构，确保了不同任务之间的数据独立性。同时，通过单例模式的SessionContext，为系统各部分提供了统一的访问点，简化了多智能体系统的状态管理。
+
+核心特点包括：
+
+1. **唯一会话标识**：基于时间戳和随机字符串生成唯一会话ID
+2. **会话生命周期管理**：创建、加载、保存、完成会话的完整流程
+3. **资源协调**：统一管理内存、代码版本、提示模板等资源
+4. **会话隔离**：每个会话有独立的存储空间，确保任务间不互相干扰
+5. **上下文共享**：通过SessionContext提供全局访问点，简化状态管理
+6. **持久化与导出**：支持会话数据的持久化存储和打包导出
+
+该设计满足了Pinocchio系统对会话管理的需求，为多智能体协作提供了稳定可靠的上下文环境。
+
+## 11. 测试策略
+
+### 11.1 测试范围
+
+Session模块的测试应覆盖以下关键方面：
+
+1. **会话模型测试**
+   - 验证SessionMetadata模型的序列化/反序列化
+   - 测试会话创建和完成功能
+   - 验证会话ID生成的唯一性
+
+2. **会话管理器测试**
+   - 会话创建、加载、保存和删除功能
+   - 会话列表和搜索功能
+   - 会话导入/导出功能
+
+3. **会话上下文测试**
+   - 单例模式的正确实现
+   - 资源访问和初始化
+   - 会话状态检查
+
+4. **文件系统交互测试**
+   - 会话目录创建和管理
+   - 元数据和内存文件的读写
+   - 错误处理和恢复
+
+### 11.2 测试夹具
+
+```python
+@pytest.fixture
+def temp_sessions_dir(tmp_path):
+    """创建临时会话目录"""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir()
+    return sessions_dir
+
+@pytest.fixture
+def session_manager(temp_sessions_dir):
+    """创建会话管理器实例"""
+    from session.manager import SessionManager
+    return SessionManager(base_dir=str(temp_sessions_dir))
+
+@pytest.fixture
+def sample_session(session_manager):
+    """创建样本会话"""
+    session_id = session_manager.create_session(
+        task_description="Test session",
+        name="Test",
+        tags=["test", "sample"]
+    )
+    return session_id, session_manager.current_session
+
+@pytest.fixture
+def session_context(monkeypatch):
+    """创建会话上下文，并模拟其依赖"""
+    from session.context import SessionContext
+    
+    # 重置单例
+    SessionContext._instance = None
+    
+    # 创建上下文
+    context = SessionContext()
+    
+    # 模拟会话管理器
+    mock_manager = MagicMock()
+    monkeypatch.setattr(context, "_session_manager", mock_manager)
+    
+    return context, mock_manager
+```
+
+### 11.3 测试用例示例
+
+#### 11.3.1 会话模型测试
+
+```python
+def test_session_metadata_creation():
+    """测试会话元数据创建"""
+    session = SessionMetadata.create_new_session(
+        task_description="Test task",
+        name="Test Session",
+        tags=["test", "example"]
+    )
+    
+    assert session.task_description == "Test task"
+    assert session.name == "Test Session"
+    assert session.tags == ["test", "example"]
+    assert session.status == "active"
+    assert session.session_id.startswith("session_")
+    assert session.system_info is not None
+
+def test_session_metadata_serialization():
+    """测试会话元数据序列化"""
+    session = SessionMetadata.create_new_session("Test task")
+    
+    json_str = session.json()
+    deserialized = SessionMetadata.parse_raw(json_str)
+    
+    assert deserialized.session_id == session.session_id
+    assert deserialized.task_description == session.task_description
+    assert deserialized.creation_time == session.creation_time
+
+def test_session_completion():
+    """测试会话完成功能"""
+    session = SessionMetadata.create_new_session("Test task")
+    
+    # 完成会话
+    session.complete("completed")
+    
+    assert session.status == "completed"
+    assert session.end_time is not None
+    assert session.runtime_seconds is not None
+    assert session.runtime_seconds >= 0
+```
+
+#### 11.3.2 会话管理器测试
+
+```python
+def test_create_session(session_manager):
+    """测试创建会话"""
+    session_id = session_manager.create_session(
+        task_description="Test task",
+        name="Test Session"
+    )
+    
+    assert session_id is not None
+    assert session_manager.current_session is not None
+    assert session_manager.current_session.session_id == session_id
+    
+    # 验证会话目录和文件
+    session_dir = session_manager.base_dir / session_id
+    assert session_dir.exists()
+    assert (session_dir / "metadata.json").exists()
+
+def test_load_session(session_manager, sample_session):
+    """测试加载会话"""
+    session_id, _ = sample_session
+    
+    # 创建新的会话管理器实例
+    new_manager = SessionManager(base_dir=str(session_manager.base_dir))
+    
+    # 加载会话
+    result = new_manager.load_session(session_id)
+    
+    assert result is True
+    assert new_manager.current_session is not None
+    assert new_manager.current_session.session_id == session_id
+    assert new_manager.memory_manager is not None
+
+def test_list_sessions(session_manager):
+    """测试列出会话"""
+    # 创建多个会话
+    for i in range(5):
+        session_manager.create_session(
+            task_description=f"Task {i}",
+            name=f"Session {i}"
+        )
+    
+    # 列出会话
+    sessions = session_manager.list_sessions(limit=3)
+    
+    assert len(sessions) == 3
+    # 验证按时间倒序排列
+    assert sessions[0].creation_time >= sessions[1].creation_time
+```
+
+#### 11.3.3 会话上下文测试
+
+```python
+def test_session_context_singleton():
+    """测试会话上下文单例模式"""
+    # 重置单例
+    SessionContext._instance = None
+    
+    # 创建两个实例
+    context1 = SessionContext()
+    context2 = SessionContext()
+    
+    # 验证是同一个实例
+    assert context1 is context2
+
+def test_session_context_properties(session_context):
+    """测试会话上下文属性"""
+    context, mock_manager = session_context
+    
+    # 设置模拟返回值
+    mock_manager.get_current_session_id.return_value = "test_session"
+    mock_manager.memory_manager = "memory_manager"
+    mock_manager.code_memory = "code_memory"
+    
+    # 验证属性
+    assert context.current_session_id == "test_session"
+    assert context.memory_manager == "memory_manager"
+    assert context.code_memory == "code_memory"
+    
+    # 验证调用
+    mock_manager.get_current_session_id.assert_called_once()
+
+def test_ensure_session_active(session_context):
+    """测试确保会话活动状态"""
+    context, mock_manager = session_context
+    
+    # 情况1：有活动会话
+    mock_manager.get_current_session_id.return_value = "active_session"
+    context.ensure_session_active()  # 不应抛出异常
+    
+    # 情况2：无活动会话
+    mock_manager.get_current_session_id.return_value = None
+    with pytest.raises(RuntimeError):
+        context.ensure_session_active()
+```
+
+### 11.4 集成测试重点
+
+1. **与Memory模块集成**
+   - 验证会话创建时内存模块的初始化
+   - 测试会话加载时内存数据的恢复
+   - 验证会话保存时内存数据的持久化
+
+2. **与工作流集成**
+   - 测试工作流中的会话创建和管理
+   - 验证异常情况下的会话状态处理
+   - 测试工作流结束时的会话完成
+
+3. **命令行接口测试**
+   - 验证命令行参数解析
+   - 测试命令执行结果
+   - 验证输出格式和内容
+
+### 11.5 特殊场景测试
+
+1. **会话导入/导出**
+   - 测试会话数据的完整导出
+   - 验证导出文件格式和内容
+   - 测试从导出文件恢复会话
+
+2. **错误处理**
+   - 测试加载不存在的会话
+   - 验证导入损坏的会话文件
+   - 测试并发访问的处理
+
+3. **性能测试**
+   - 测试大量会话的管理性能
+   - 验证大型会话数据的加载和保存性能
+   - 测试会话搜索的响应时间
+
+通过全面的测试策略，确保Session模块的稳定性、正确性和性能，为Pinocchio系统提供可靠的会话管理基础。
