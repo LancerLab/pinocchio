@@ -3,27 +3,6 @@ description:
 globs: 
 alwaysApply: false
 ---
-# 比较两个开发计划并整合最佳方案
-
-我对比了两个开发计划文档（`development_pipeline.mdc`和`pinocchio_dev_pipeline_full.md`），发现它们各有优势：
-
-1. **development_pipeline.mdc** 优势：
-   - 更全面的步骤划分（39个详细步骤）
-   - 清晰的时间估计
-   - 完整的甘特图依赖关系
-   - 更详细的风险分析和质量保证措施
-
-2. **pinocchio_dev_pipeline_full.md** 优势：
-   - 更简洁的表达方式（使用emoji和格式化标记）
-   - 更清晰的步骤依赖标记（⛓️依赖步骤）
-   - 更明确的更新依赖标记（🔁更新依赖）
-   - 更适合驱动AI代理开发的提示格式
-
-## 整合后的最佳开发计划
-
-以下是整合两个计划的最佳方案，特别优化用于驱动Cursor代理开发：
-
-```markdown
 # Pinocchio 多智能体系统开发计划
 
 ## 📋 概述
@@ -33,7 +12,7 @@ alwaysApply: false
 ## 🔄 开发原则
 
 - 每步开发仅聚焦单一模块的单一功能点
-- 每步明确依赖的设计文档（@xxx.mdc）
+- 每步明确依赖的设计文档（@/.cursor/rules/xxx.mdc）
 - 遵循模块间依赖顺序，确保构建链完整
 - 后续模块若影响已开发模块，需显式进行更新步骤
 - 每步附带提示性 Prompt，便于驱动AI代理开发
@@ -60,12 +39,12 @@ pinocchio/
 ├── agents/
 ├── workflows/
 ├── tests/
-└── developer-notes/
+└── .cursor/rules/
 ```
 
 #### 步骤 1.2: 配置管理模块基础实现
 - 🧱 所属模块：config
-- 📄 依赖设计文档：@config_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/config_module_design.mdc
 - 🎯 开发目标：实现简化版 Config 模块
 - ⏱️ 预计时间：1 天
 - 🧠 Prompt:
@@ -79,7 +58,7 @@ pinocchio/
 
 #### 步骤 1.3: 错误处理模块基础实现
 - 🧱 所属模块：errors
-- 📄 依赖设计文档：@errors_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/errors_module_design.mdc
 - 🎯 开发目标：实现所有核心异常类
 - ⏱️ 预计时间：0.5 天
 - 🧠 Prompt:
@@ -92,7 +71,7 @@ pinocchio/
 
 #### 步骤 1.4: 基础模块单元测试
 - 🧱 所属模块：config, errors
-- 📄 依赖设计文档：@config_module_design.mdc, @errors_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/config_module_design.mdc, @/.cursor/rules/errors_module_design.mdc
 - 🎯 开发目标：为基础模块编写单元测试
 - ⏱️ 预计时间：0.5 天
 - ⛓️ 依赖步骤：1.2, 1.3
@@ -108,7 +87,7 @@ pinocchio/
 
 #### 步骤 2.1: Memory 模块基础数据模型
 - 🧱 所属模块：memory
-- 📄 依赖设计文档：@memory_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/memory_module_design.mdc
 - 🎯 开发目标：实现 Memory 模块的基础数据模型
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：1.3
@@ -123,7 +102,7 @@ pinocchio/
 
 #### 步骤 2.2: Memory 模块存储实现
 - 🧱 所属模块：memory
-- 📄 依赖设计文档：@memory_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/memory_module_design.mdc
 - 🎯 开发目标：实现 Memory 模块的文件存储功能
 - ⏱️ 预计时间：1.5 天
 - ⛓️ 依赖步骤：2.1
@@ -138,7 +117,7 @@ pinocchio/
 
 #### 步骤 2.3: Memory 模块日志功能
 - 🧱 所属模块：memory
-- 📄 依赖设计文档：@memory_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/memory_module_design.mdc
 - 🎯 开发目标：实现 Memory 模块的日志功能
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.2
@@ -153,7 +132,7 @@ pinocchio/
 
 #### 步骤 2.4: Memory 模块单元测试
 - 🧱 所属模块：memory
-- 📄 依赖设计文档：@memory_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/memory_module_design.mdc
 - 🎯 开发目标：为 Memory 模块编写单元测试
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.1-2.3
@@ -169,7 +148,7 @@ pinocchio/
 
 #### 步骤 2.5: Session 模块基础实现
 - 🧱 所属模块：session
-- 📄 依赖设计文档：@session_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/session_module_design.mdc
 - 🎯 开发目标：实现 Session 模块的基础功能
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.2
@@ -184,7 +163,7 @@ pinocchio/
 
 #### 步骤 2.6: 支持多会话并发环境
 - 🧱 所属模块：session
-- 📄 依赖设计文档：@session_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/session_module_design.mdc
 - 🎯 开发目标：为 SessionContext 添加并发会话支持
 - ⏱️ 预计时间：0.5 天
 - ⛓️ 依赖步骤：2.5
@@ -199,7 +178,7 @@ pinocchio/
 
 #### 步骤 2.7: Session 错误路径与错误恢复机制
 - 🧱 所属模块：session
-- 📄 依赖设计文档：@session_module_design.mdc, @errors_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/session_module_design.mdc, @/.cursor/rules/errors_module_design.mdc
 - 🎯 开发目标：引入错误状态标记与恢复钩子机制
 - ⏱️ 预计时间：0.5 天
 - ⛓️ 依赖步骤：2.6
@@ -214,7 +193,7 @@ pinocchio/
 
 #### 步骤 2.8: Session 模块单元测试
 - 🧱 所属模块：session
-- 📄 依赖设计文档：@session_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/session_module_design.mdc
 - 🎯 开发目标：为 Session 模块编写单元测试
 - ⏱️ 预计时间：0.5 天
 - ⛓️ 依赖步骤：2.5-2.7
@@ -230,7 +209,7 @@ pinocchio/
 
 #### 步骤 2.9: Knowledge 模块基础数据模型
 - 🧱 所属模块：knowledge
-- 📄 依赖设计文档：@knowledge_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/knowledge_module_design.mdc
 - 🎯 开发目标：实现 Knowledge 模块的基础数据模型
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：1.4
@@ -245,7 +224,7 @@ pinocchio/
 
 #### 步骤 2.10: Knowledge 模块存储实现
 - 🧱 所属模块：knowledge
-- 📄 依赖设计文档：@knowledge_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/knowledge_module_design.mdc
 - 🎯 开发目标：实现 Knowledge 模块的文件存储功能
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.9
@@ -260,7 +239,7 @@ pinocchio/
 
 #### 步骤 2.11: Knowledge 模块片段提取功能
 - 🧱 所属模块：knowledge
-- 📄 依赖设计文档：@knowledge_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/knowledge_module_design.mdc
 - 🎯 开发目标：实现从知识资源中提取特定片段的功能
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.10
@@ -274,7 +253,7 @@ pinocchio/
 
 #### 步骤 2.12: Knowledge 模块单元测试
 - 🧱 所属模块：knowledge
-- 📄 依赖设计文档：@knowledge_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/knowledge_module_design.mdc
 - 🎯 开发目标：为 Knowledge 模块编写单元测试
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.9-2.11
@@ -289,7 +268,7 @@ pinocchio/
 
 #### 步骤 2.13: LLM 模块基础实现
 - 🧱 所属模块：llm
-- 📄 依赖设计文档：@llm_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/llm_module_design.mdc
 - 🎯 开发目标：实现 LLM 模块的基础功能
 - ⏱️ 预计时间：1.5 天
 - ⛓️ 依赖步骤：1.4
@@ -304,7 +283,7 @@ pinocchio/
 
 #### 步骤 2.14: LLM 模块单元测试
 - 🧱 所属模块：llm
-- 📄 依赖设计文档：@llm_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/llm_module_design.mdc
 - 🎯 开发目标：为 LLM 模块编写单元测试
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.13
@@ -319,7 +298,7 @@ pinocchio/
 
 #### 步骤 2.15: Prompt 模块模板管理
 - 🧱 所属模块：prompt
-- 📄 依赖设计文档：@prompt_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc
 - 🎯 开发目标：实现 Prompt 模块的模板管理功能
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：1.4
@@ -334,7 +313,7 @@ pinocchio/
 
 #### 步骤 2.16: Prompt 模块格式化功能
 - 🧱 所属模块：prompt
-- 📄 依赖设计文档：@prompt_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc
 - 🎯 开发目标：实现 Prompt 模块的格式化功能
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.15
@@ -349,7 +328,7 @@ pinocchio/
 
 #### 步骤 2.17: Prompt 模块与 Knowledge 集成
 - 🧱 所属模块：prompt
-- 📄 依赖设计文档：@prompt_module_design.mdc, @knowledge_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/knowledge_module_design.mdc
 - 🎯 开发目标：实现 Prompt 模块与 Knowledge 模块的集成
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.11, 2.16
@@ -364,7 +343,7 @@ pinocchio/
 
 #### 步骤 2.18: Prompt 模块单元测试
 - 🧱 所属模块：prompt
-- 📄 依赖设计文档：@prompt_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc
 - 🎯 开发目标：为 Prompt 模块编写单元测试
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.15-2.17
@@ -381,7 +360,7 @@ pinocchio/
 
 #### 步骤 3.1: Agents 模块基础实现
 - 🧱 所属模块：agents
-- 📄 依赖设计文档：@agents_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现 Agents 模块的基础功能和基类
 - ⏱️ 预计时间：1 天
 - ⛓️ 依赖步骤：2.13
@@ -396,7 +375,7 @@ pinocchio/
 
 #### 步骤 3.2: Generator Agent 实现
 - 🧱 所属模块：agents
-- 📄 依赖设计文档：@agents_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现代码生成器 Agent
 - ⏱️ 预计时间：1.5 天
 - ⛓️ 依赖步骤：3.1
@@ -411,7 +390,7 @@ pinocchio/
 
 #### 步骤 3.3: Debugger Agent 实现
 - 🧱 所属模块：agents
-- 📄 依赖设计文档：@agents_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现代码调试器 Agent
 - ⏱️ 预计时间：1.5 天
 - ⛓️ 依赖步骤：3.1
@@ -426,7 +405,7 @@ pinocchio/
 
 #### 步骤 3.4: Optimizer Agent 实现
 - 🧱 所属模块：agents
-- 📄 依赖设计文档：@agents_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现代码优化器 Agent
 - ⏱️ 预计时间：1.5 天
 - ⛓️ 依赖步骤：3.1
@@ -441,7 +420,7 @@ pinocchio/
 
 #### 步骤 3.5: Evaluator Agent 实现
 - 🧱 所属模块：agents
-- 📄 依赖设计文档：@agents_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现代码评估器 Agent
 - ⏱️ 预计时间：1.5 天
 - ⛓️ 依赖步骤：3.1
@@ -456,7 +435,7 @@ pinocchio/
 
 #### 步骤 3.6: Agent Registry 与动态创建
 - 🧱 所属模块：agents
-- 📄 依赖设计文档：@agents_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc
 - 🎯 开发目标：支持注册/创建具体 agent 实例
 - ⏱️ 预计时间：0.5 天
 - ⛓️ 依赖步骤：3.1-3.5
@@ -470,7 +449,7 @@ pinocchio/
 
 #### 步骤 3.7: Agents 模块单元测试
 - 🧱 所属模块：agents
-- 📄 依赖设计文档：@agents_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：为 Agents 模块编写单元测试
 - ⏱️ 预计时间：2 天
 - ⛓️ 依赖步骤：3.1-3.6
@@ -485,7 +464,7 @@ pinocchio/
 
 #### 步骤 3.8: Prompt 模板实现 - Generator
 - 🧱 所属模块：prompt
-- 📄 依赖设计文档：@prompt_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现 Generator Agent 的 Prompt 模板
 - ⏱️ 预计时间：0.5 天
 - ⛓️ 依赖步骤：2.16, 3.2
@@ -501,7 +480,7 @@ pinocchio/
 
 #### 步骤 3.9: Prompt 模板实现 - Debugger
 - 🧱 所属模块：prompt
-- 📄 依赖设计文档：@prompt_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现 Debugger Agent 的 Prompt 模板
 - ⏱️ 预计时间：0.5 天
 - ⛓️ 依赖步骤：2.16, 3.3
@@ -517,7 +496,7 @@ pinocchio/
 
 #### 步骤 3.10: Prompt 模板实现 - Optimizer
 - 🧱 所属模块：prompt
-- 📄 依赖设计文档：@prompt_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现 Optimizer Agent 的 Prompt 模板
 - ⏱️ 预计时间：0.5 天
 - ⛓️ 依赖步骤：2.16, 3.4
@@ -533,7 +512,7 @@ pinocchio/
 
 #### 步骤 3.11: Prompt 模板实现 - Evaluator
 - 🧱 所属模块：prompt
-- 📄 依赖设计文档：@prompt_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现 Evaluator Agent 的 Prompt 模板
 - ⏱️ 预计时间：0.5 天
 - ⛓️ 依赖步骤：2.16, 3.5
@@ -551,7 +530,7 @@ pinocchio/
 
 #### 步骤 4.1: Workflows 模块基础实现
 - 🧱 所属模块：workflows
-- 📄 依赖设计文档：@workflows_module_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/workflows_module_design.mdc
 - 🎯 开发目标：实现 Workflows 模块的基础功能
 - ⏱️ 预计时间：1.5 天
 - ⛓️ 依赖步骤：3.7
@@ -566,7 +545,7 @@ pinocchio/
 
 #### 步骤 4.2: 状态机实现
 - 🧱 所属模块：workflows
-- 📄 依赖设计文档：@workflows_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/workflows_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现基于状态机的工作流控制
 - ⏱️ 预计时间：2 天
 - ⛓️ 依赖步骤：4.1
@@ -581,11 +560,9 @@ pinocchio/
 
 #### 步骤 4.3: 算子开发工作流实现
 - 🧱 所属模块：workflows
-- 📄 依赖设计文档：@workflows_module_design.mdc, @agents_workflow_design.mdc
+- 📄 依赖设计文档：@/.cursor/rules/workflows_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
 - 🎯 开发目标：实现算子开发的完整工作流
 - ⏱️ 预计时间：1.5 天
 - ⛓️ 依赖步骤：4.2
 - 🧠 Prompt:
 ```
-实现以下工作流:
-1. 需求分析 -> 代码生成 -> 代码验证 -> ... ->
