@@ -55,9 +55,10 @@ pinocchio/
 
 ## Development
 
-1. Install development dependencies:
+1. Setup development environment:
 ```bash
-poetry install --with dev
+# Run the setup script to install dependencies and pre-commit hooks
+bash scripts/setup_dev.sh
 ```
 
 2. Run code formatting:
@@ -69,6 +70,23 @@ poetry run isort .
 3. Run type checking:
 ```bash
 poetry run mypy .
+```
+
+4. Run linting:
+```bash
+poetry run flake8 pinocchio/ tests/
+```
+
+5. Pre-commit hooks:
+```bash
+# Install pre-commit hooks (already done by setup_dev.sh)
+poetry run pre-commit install
+
+# Run pre-commit hooks on all files
+poetry run pre-commit run --all-files
+
+# Run a specific hook
+poetry run pre-commit run black --all-files
 ```
 
 ## Unit Testing
