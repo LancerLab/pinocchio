@@ -2,7 +2,7 @@
 Configuration management module for Pinocchio.
 
 This module provides a centralized configuration management system that supports:
-1. Loading configuration from JSON files
+1. Loading configuration from JSON and YAML files
 2. Environment variable overrides
 3. Simple get/set interface
 4. Default value mechanism
@@ -35,7 +35,7 @@ class ConfigValidationError(ConfigError):
 class Settings:
     """Central configuration manager for Pinocchio."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the settings manager with empty configuration."""
         self._config: Dict[str, Any] = {}
         self._config_sources: Dict[str, str] = {}  # Tracks where each config came from
@@ -74,20 +74,79 @@ class Settings:
         """
         for key, value in os.environ.items():
             if key.startswith(prefix):
+                # Convert environment variable name to config key
+                # Example: PINOCCHIO_APP_NAME -> app.name
                 config_key = key[len(prefix) :].lower()
+                config_key = config_key.replace("_", ".")
+
                 # Try to parse JSON values from environment
                 try:
                     parsed_value = json.loads(value)
                 except json.JSONDecodeError:
                     parsed_value = value
+
                 self._set_value(config_key, parsed_value, "environment")
 
-    def load_from_file(self, filepath: Union[str, Path]) -> None:
+    def _load_json_file(self, filepath: Path) -> Dict[str, Any]:
         """
         Load configuration from a JSON file.
 
         Args:
-            filepath: Path to the JSON configuration file
+            filepath: Path to the JSON file
+
+        Returns:
+            Dictionary containing configuration values
+
+        Raises:
+            ConfigFileError: If file cannot be parsed as JSON
+        """
+        try:
+            with open(filepath, "r") as f:
+                result = json.load(f)
+                if not isinstance(result, dict):
+                    raise ConfigFileError("JSON file must contain a dictionary")
+                return dict(result)
+        except json.JSONDecodeError as e:
+            raise ConfigFileError(f"Invalid JSON in configuration file: {e}")
+
+    def _load_yaml_file(self, filepath: Path) -> Dict[str, Any]:
+        """
+        Load configuration from a YAML file.
+
+        Args:
+            filepath: Path to the YAML file
+
+        Returns:
+            Dictionary containing configuration values
+
+        Raises:
+            ConfigFileError: If PyYAML is not installed or file cannot be parsed
+        """
+        try:
+            import yaml
+        except ImportError:
+            raise ConfigFileError(
+                "PyYAML is required for YAML support. Install with: pip install pyyaml"
+            )
+
+        try:
+            with open(filepath, "r") as f:
+                result = yaml.safe_load(f)
+                if not isinstance(result, dict):
+                    raise ConfigFileError("YAML file must contain a dictionary")
+                return dict(result)
+        except Exception as e:
+            raise ConfigFileError(f"Error reading YAML configuration file: {e}")
+
+    def load_from_file(
+        self, filepath: Union[str, Path], format: Optional[str] = None
+    ) -> None:
+        """
+        Load configuration from a file (JSON or YAML).
+
+        Args:
+            filepath: Path to the configuration file
+            format: File format ('json', 'yaml', or None to infer from extension)
 
         Raises:
             ConfigFileError: If file cannot be read or parsed
@@ -96,12 +155,22 @@ class Settings:
         if not filepath.exists():
             raise ConfigFileError(f"Configuration file not found: {filepath}")
 
+        # Determine format from extension if not specified
+        if format is None:
+            format = filepath.suffix.lstrip(".").lower()
+            if format not in ["json", "yaml", "yml"]:
+                format = "json"  # Default to JSON if extension is not recognized
+
         try:
-            with open(filepath, "r") as f:
-                config_dict = json.load(f)
-        except json.JSONDecodeError as e:
-            raise ConfigFileError(f"Invalid JSON in configuration file: {e}")
-        except IOError as e:
+            if format == "json":
+                config_dict = self._load_json_file(filepath)
+            elif format in ["yaml", "yml"]:
+                config_dict = self._load_yaml_file(filepath)
+            else:
+                raise ConfigFileError(f"Unsupported configuration format: {format}")
+        except ConfigFileError:
+            raise
+        except Exception as e:
             raise ConfigFileError(f"Error reading configuration file: {e}")
 
         self.load_from_dict(config_dict, f"file:{filepath}")
@@ -199,6 +268,74 @@ class Settings:
             Source identifier or None if key not found
         """
         return self._config_sources.get(key)
+
+    def _export_json(self, filepath: str, config: Dict[str, Any]) -> None:
+        """
+        Write the configuration to a JSON file.
+
+        Args:
+            filepath: Path to export the configuration to
+            config: Configuration dictionary to export
+        """
+        with open(filepath, "w") as f:
+            json.dump(config, f, indent=2)
+
+    def _export_yaml(self, filepath: str, config: Dict[str, Any]) -> None:
+        """
+        Write the configuration to a YAML file.
+
+        Args:
+            filepath: Path to export configuration to
+            config: Configuration dictionary to export
+
+        Raises:
+            ConfigFileError: If PyYAML is not installed
+        """
+        try:
+            import yaml
+        except ImportError:
+            raise ConfigFileError(
+                "PyYAML is required for YAML support. Install with: pip install pyyaml"
+            )
+
+        with open(filepath, "w") as f:
+            yaml.dump(config, f, default_flow_style=False)
+
+    def export_config(
+        self, filepath: str, format: str = "json", include_defaults: bool = True
+    ) -> None:
+        """
+        Write current configuration to a file.
+
+        Args:
+            filepath: Path to export configuration to
+            format: File format ('json' or 'yaml')
+            include_defaults: Whether to include default values
+
+        Raises:
+            ConfigFileError: If export fails
+        """
+        config = (
+            self.get_all()
+            if include_defaults
+            else {
+                k: v
+                for k, v in self.get_all().items()
+                if self.get_source(k) != "default"
+            }
+        )
+
+        try:
+            if format.lower() == "json":
+                self._export_json(filepath, config)
+            elif format.lower() in ["yaml", "yml"]:
+                self._export_yaml(filepath, config)
+            else:
+                raise ConfigFileError(f"Unsupported format: {format}")
+        except ConfigFileError:
+            raise
+        except Exception as e:
+            raise ConfigFileError(f"Error exporting configuration: {e}")
 
 
 # Global settings instance

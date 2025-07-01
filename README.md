@@ -10,6 +10,7 @@ Pinocchio is a multi-agent system for automatically writing, debugging, and opti
 - Complete interaction logging
 - Knowledge base and Prompt template version management
 - Support for OpenAI and Anthropic LLM interfaces
+- Advanced configuration management with schema validation and multiple formats
 
 ## Installation
 
@@ -37,6 +38,64 @@ poetry run pytest
 poetry run invoke --list  # View available commands
 ```
 
+## Configuration
+
+Pinocchio supports flexible configuration management:
+
+### Loading Configuration
+
+```python
+from pinocchio.config import settings, ConfigLoader, AppConfig
+
+# Load from a file
+settings.load_from_file("config.json")
+settings.load_from_file("config.yaml")  # YAML support
+
+# Load from environment variables (PINOCCHIO_APP_NAME becomes app.name)
+settings.load_from_env()
+
+# Load with precedence using ConfigLoader
+loader = ConfigLoader(settings, AppConfig)
+config = loader.load_config(
+    default_config={"app": {"name": "default"}},
+    config_files=["config.json", "local_config.yaml"],
+    env_prefix="PINOCCHIO_"
+)
+```
+
+### Schema Validation
+
+```python
+from pinocchio.config import ConfigSchema
+from pydantic import BaseModel
+
+class MyConfig(ConfigSchema):
+    api_key: str
+    debug: bool = False
+    max_retries: int = 3
+
+# Validate configuration
+validated = MyConfig.validate_config({"api_key": "test", "debug": True})
+```
+
+### Credentials Management
+
+```python
+from pinocchio.config import credentials
+
+# Load from environment variables
+credentials.load_from_env()
+
+# Load from file
+credentials.load_from_file("~/.pinocchio/credentials.json")
+
+# Get a credential (raises error if not found)
+api_key = credentials.require("openai_api_key")
+
+# Save to file (with secure permissions)
+credentials.save_to_file("~/.pinocchio/credentials.json")
+```
+
 ## Project Structure
 
 ```
@@ -48,6 +107,11 @@ pinocchio/
 ├── prompt/           # Prompt template management and formatting
 ├── llm/              # LLM call encapsulation
 ├── config/           # Configuration management module
+│   ├── __init__.py   # Package exports
+│   ├── settings.py   # Core settings management
+│   ├── schema.py     # Schema validation with Pydantic
+│   ├── loader.py     # Multi-source config loader
+│   └── credentials.py # Secure credentials handling
 ├── session/          # Session management module
 ├── tests/            # Test code
 └── pyproject.toml    # Poetry project configuration
@@ -127,4 +191,4 @@ PYTHONPATH=. pytest tests/test_config.py -v
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details. 
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
