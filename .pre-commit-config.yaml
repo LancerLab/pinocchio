@@ -47,4 +47,16 @@ repos:
         entry: poetry check
         language: system
         pass_filenames: false
-        files: ^pyproject\.toml$ 
+        files: ^pyproject\.toml$
+
+  # Custom hook: Check for Chinese characters
+  - repo: local
+    hooks:
+      - id: check-chinese-chars
+        name: Check for Chinese characters
+        description: Ensure no Chinese characters in source code, comments, or scripts
+        entry: python scripts/check_chinese_chars.py
+        language: system
+        types: [text]
+        exclude: \.(md|mdc)$
+        # Add more file types to exclude here if needed

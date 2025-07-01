@@ -1,37 +1,37 @@
 #!/bin/bash
 
-# 脚本用于设置开发环境和安装pre-commit钩子
+# Script for setting up development environment and installing pre-commit hooks
 
-# 设置错误时退出
+# Exit on error
 set -e
 
-echo "=== 设置Pinocchio开发环境 ==="
+echo "=== Setting up Pinocchio development environment ==="
 
-# 检查是否安装了Poetry
+# Check if Poetry is installed
 if ! command -v poetry &> /dev/null; then
-    echo "Poetry未安装，正在安装..."
+    echo "Poetry not found, installing..."
     curl -sSL https://install.python-poetry.org | python3 -
 else
-    echo "Poetry已安装"
+    echo "Poetry is already installed"
 fi
 
-# 安装项目依赖
-echo "安装项目依赖..."
+# Install project dependencies
+echo "Installing project dependencies..."
 poetry install
 
-# 安装pre-commit钩子
-echo "安装pre-commit钩子..."
+# Install pre-commit hooks
+echo "Installing pre-commit hooks..."
 poetry run pre-commit install
 
-# 运行pre-commit钩子
-echo "运行pre-commit钩子初始化..."
+# Run pre-commit hooks initialization
+echo "Running pre-commit hooks initialization..."
 poetry run pre-commit run --all-files || true
 
-echo "=== 开发环境设置完成 ==="
-echo "可以使用以下命令运行测试:"
+echo "=== Development environment setup complete ==="
+echo "You can run tests with:"
 echo "  poetry run pytest"
-echo "可以使用以下命令格式化代码:"
+echo "You can format code with:"
 echo "  poetry run black ."
 echo "  poetry run isort ."
 echo ""
-echo "Git提交前会自动运行pre-commit钩子进行代码检查和格式化" 
+echo "Pre-commit hooks will automatically run on git commit to check and format code"
