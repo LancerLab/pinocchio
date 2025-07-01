@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: false
 ---
 # Pinocchio 多智能体系统模块间接口设计文档
@@ -47,11 +47,11 @@ Config 模块为系统提供统一的配置管理，被所有其他模块依赖�
 ```python
 class Settings:
     """配置管理器"""
-    
+
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值"""
         pass
-        
+
     def set(self, key: str, value: Any) -> None:
         """设置配置值"""
         pass
@@ -96,10 +96,10 @@ class KnowledgeResource(BaseModel):
 # Knowledge 到 Prompt 的接口适配器
 class KnowledgeAdapter:
     """知识适配器"""
-    
+
     def __init__(self, knowledge_base: KnowledgeBase):
         self.knowledge_base = knowledge_base
-        
+
     def extract_for_prompt(self, query: str, template_vars: Dict[str, Any]) -> Dict[str, Any]:
         """提取知识并添加到模板变量"""
         pass
@@ -146,11 +146,11 @@ class SessionMetadata(BaseModel):
 # Session 模块对 Memory 模块的依赖
 class SessionManager:
     """会话管理器"""
-    
+
     def __init__(self, base_dir: str = "./sessions"):
         self.memory_manager = None  # 将被初始化为 MemoryManager 实例
-        
-    def create_session(self, task_description: str, name: Optional[str] = None, 
+
+    def create_session(self, task_description: str, name: Optional[str] = None,
                       tags: Optional[List[str]] = None) -> str:
         """创建新会话并初始化相关内存管理器"""
         pass
@@ -194,12 +194,12 @@ class LLMRequest(BaseModel):
 # Prompt 到 LLM 的接口
 class PromptManager:
     """提示管理器"""
-    
+
     def __init__(self, llm_client: LLMClient, template_registry: TemplateRegistry = None):
         self.llm_client = llm_client
         self.template_registry = template_registry or TemplateRegistry()
         self.formatter = TemplateFormatter()
-        
+
     async def process_template(self, template_name: str, variables: dict) -> dict:
         """处理模板并发送到 LLM"""
         pass
@@ -221,11 +221,11 @@ Memory 模块存储系统运行记录，Prompt 模块需要从中提取信息构
 # Memory 到 Prompt 的桥接器
 class MemoryPromptBridge:
     """内存-提示桥接器"""
-    
+
     def __init__(self, template_loader, memory_manager):
         self.template_loader = template_loader
         self.memory_manager = memory_manager
-        
+
     def create_prompt_with_memory(self, template_name: str, memory_filter: Dict[str, Any], variables: Dict[str, Any]) -> str:
         """创建包含内存内容的提示"""
         pass
@@ -272,11 +272,11 @@ class AgentResponse(BaseModel):
 # Agent 基类
 class AgentBase(ABC):
     """Agent 基类"""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.llm_client = self._get_llm_client()
-    
+
     @abstractmethod
     async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """处理请求"""
@@ -301,7 +301,7 @@ class Task(BaseModel):
     """任务定义"""
     name: str
     description: Optional[str]
-    
+
 class Workflow(BaseModel):
     """工作流定义"""
     name: str
@@ -317,10 +317,10 @@ class Workflow(BaseModel):
 # 工作流执行器
 class WorkflowExecutor:
     """工作流执行器"""
-    
+
     def __init__(self, message_queue = None):
         self.message_queue = message_queue or MessageQueue()
-        
+
     async def execute_workflow(self, workflow: Workflow, initial_context: Dict[str, Any] = None) -> Dict[str, Any]:
         """执行工作流"""
         pass

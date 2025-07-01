@@ -1,6 +1,6 @@
 ---
 description: memory模块设计
-globs: 
+globs:
 alwaysApply: false
 ---
 # Pinocchio 多智能体系统 Memory 模块设计文档
@@ -92,14 +92,14 @@ class CodeVersion(BaseModel):
     parent_version_id: Optional[str] = None  # 父版本ID
     description: str = ""  # 版本描述
     metadata: Dict[str, Any] = Field(default_factory=dict)  # 元数据
-    
+
     @classmethod
     def create_new_version(cls, code: str, source_agent: str, parent_version_id: Optional[str] = None, description: str = ""):
         """创建新版本"""
         # 使用代码内容生成一个唯一的版本ID
         hash_object = hashlib.sha256(code.encode())
         version_id = hash_object.hexdigest()[:12]
-        
+
         return cls(
             version_id=version_id,
             code=code,
@@ -226,16 +226,16 @@ class SessionMetadata(BaseModel):
 ```python
 class MemoryManager:
     """内存管理器"""
-    
+
     def __init__(self, store_dir: str = "./memory_store"):
         """初始化内存管理器"""
         pass
-    
+
     def store_agent_memory(self, memory: BaseAgentMemory) -> str:
         """存储Agent内存"""
         pass
-    
-    def log_generator_interaction(self, 
+
+    def log_generator_interaction(self,
                                 input_data: Dict[str, Any],
                                 output_data: Dict[str, Any],
                                 processing_time_ms: int,
@@ -244,7 +244,7 @@ class MemoryManager:
                                 error_details: Optional[Dict[str, Any]] = None) -> Tuple[str, Optional[str]]:
         """记录生成器交互"""
         pass
-    
+
     def log_debugger_interaction(self,
                                input_data: Dict[str, Any],
                                output_data: Dict[str, Any],
@@ -258,7 +258,7 @@ class MemoryManager:
                                error_details: Optional[Dict[str, Any]] = None) -> Tuple[str, Optional[str]]:
         """记录调试器交互"""
         pass
-    
+
     def log_optimizer_interaction(self,
                                 input_data: Dict[str, Any],
                                 output_data: Dict[str, Any],
@@ -271,7 +271,7 @@ class MemoryManager:
                                 error_details: Optional[Dict[str, Any]] = None) -> str:
         """记录优化器交互"""
         pass
-    
+
     def log_evaluator_interaction(self,
                                 input_data: Dict[str, Any],
                                 output_data: Dict[str, Any],
@@ -287,26 +287,26 @@ class MemoryManager:
                                 error_details: Optional[Dict[str, Any]] = None) -> str:
         """记录评估器交互"""
         pass
-    
+
     def add_code_version(self, code: str, source_agent: str, description: str = "") -> str:
         """添加新代码版本"""
         pass
-    
+
     def get_current_code(self) -> Optional[str]:
         """获取当前代码"""
         pass
-    
+
     def get_code_version(self, version_id: Optional[str] = None) -> Optional[CodeVersion]:
         """获取指定代码版本"""
         pass
-    
-    def query_agent_memories(self, 
-                           agent_type: Optional[str] = None, 
+
+    def query_agent_memories(self,
+                           agent_type: Optional[str] = None,
                            filter_func = None,
                            limit: int = 10) -> List[BaseAgentMemory]:
         """查询Agent内存记录"""
         pass
-    
+
     def export_logs(self, output_file: Optional[str] = None) -> str:
         """导出日志"""
         pass
@@ -317,49 +317,49 @@ class MemoryManager:
 ```python
 class SessionManager:
     """会话管理器"""
-    
+
     def __init__(self, base_dir: str = "./sessions"):
         """初始化会话管理器"""
         pass
-    
-    def create_session(self, task_description: str, name: Optional[str] = None, 
+
+    def create_session(self, task_description: str, name: Optional[str] = None,
                       tags: Optional[List[str]] = None) -> str:
         """创建新会话"""
         pass
-    
+
     def load_session(self, session_id: str) -> bool:
         """加载已有会话"""
         pass
-    
+
     def save_session(self) -> bool:
         """保存当前会话状态"""
         pass
-    
+
     def complete_session(self, status: str = "completed") -> bool:
         """完成当前会话"""
         pass
-    
+
     def get_current_session_id(self) -> Optional[str]:
         """获取当前会话ID"""
         pass
-    
+
     def list_sessions(self, filter_func=None, limit: int = 100) -> List[SessionMetadata]:
         """列出会话"""
         pass
-    
-    def search_sessions(self, query: str, search_in_task: bool = True, 
+
+    def search_sessions(self, query: str, search_in_task: bool = True,
                        search_in_tags: bool = True, case_sensitive: bool = False) -> List[SessionMetadata]:
         """搜索会话"""
         pass
-    
+
     def delete_session(self, session_id: str) -> bool:
         """删除会话"""
         pass
-    
+
     def export_session(self, session_id: Optional[str] = None, output_file: Optional[str] = None) -> str:
         """导出会话"""
         pass
-    
+
     def import_session(self, zip_file: str) -> Optional[str]:
         """导入会话"""
         pass
@@ -370,37 +370,37 @@ class SessionManager:
 ```python
 class SessionContext:
     """会话上下文管理器"""
-    
+
     @property
     def session_manager(self) -> SessionManager:
         """获取会话管理器"""
         pass
-    
+
     @property
     def current_session_id(self) -> Optional[str]:
         """获取当前会话ID"""
         pass
-    
+
     @property
     def memory_manager(self):
         """获取内存管理器"""
         pass
-    
+
     @property
     def code_memory(self):
         """获取代码内存"""
         pass
-    
+
     @property
     def prompt_memory(self):
         """获取提示内存"""
         pass
-    
+
     @property
     def knowledge_memory(self):
         """获取知识内存"""
         pass
-    
+
     def ensure_session_active(self):
         """确保会话处于活动状态"""
         pass
@@ -411,23 +411,23 @@ class SessionContext:
 ```python
 class MemoryPromptBridge:
     """连接Memory和Prompt的桥接器"""
-    
+
     def __init__(self, template_loader, memory_manager: MemoryManager):
         """初始化桥接器"""
         pass
-    
+
     def create_generator_prompt(self, task_description: str, requirements: Dict[str, Any]) -> Dict[str, Any]:
         """创建生成器Prompt"""
         pass
-    
+
     def create_debugger_prompt(self, code_version_id: Optional[str] = None) -> Dict[str, Any]:
         """创建调试器Prompt"""
         pass
-    
+
     def create_optimizer_prompt(self, code_version_id: Optional[str] = None) -> Dict[str, Any]:
         """创建优化器Prompt"""
         pass
-    
+
     def create_evaluator_prompt(self, code_version_id: Optional[str] = None) -> Dict[str, Any]:
         """创建评估器Prompt"""
         pass
@@ -565,15 +565,15 @@ for session in sessions:
 if sessions:
     session_id = sessions[0].session_id
     context.session_manager.load_session(session_id)
-    
+
     # 获取代码版本历史
     code_memory = context.code_memory
     history = code_memory.get_version_history()
-    
+
     print(f"Code version history for session {session_id}:")
     for version in history:
         print(f"  {version['version_id']} - {version['source_agent']} - {version['description']}")
-    
+
     # 导出会话日志
     export_path = context.session_manager.export_session()
     print(f"Session exported to: {export_path}")
@@ -737,7 +737,7 @@ def test_code_version_creation():
         source_agent="generator",
         description="Test version"
     )
-    
+
     assert version.code == code
     assert version.source_agent == "generator"
     assert version.description == "Test version"
@@ -750,10 +750,10 @@ def test_code_version_serialization():
         code="def test(): pass",
         source_agent="generator"
     )
-    
+
     json_str = version.json()
     deserialized = CodeVersion.parse_raw(json_str)
-    
+
     assert deserialized.version_id == version.version_id
     assert deserialized.code == version.code
 ```
@@ -770,9 +770,9 @@ def test_store_agent_memory(memory_manager):
         processing_time_ms=100,
         generation_strategy="default"
     )
-    
+
     memory_id = memory_manager.store_agent_memory(memory)
-    
+
     assert memory_id is not None
     # 验证文件是否已创建
     memory_file = memory_manager.store_dir / "test_session" / "agent_memories" / f"generator_{memory_id}.json"
@@ -789,7 +789,7 @@ def test_memory_retrieval(memory_manager):
         generation_strategy="default"
     )
     memory_id = memory_manager.store_agent_memory(memory)
-    
+
     # 检索并验证
     retrieved = memory_manager.get_agent_memory(memory_id)
     assert retrieved is not None
@@ -804,17 +804,17 @@ def test_log_generator_interaction(memory_manager):
     """测试记录生成器交互"""
     input_data = {"prompt": "Generate matrix multiplication code"}
     output_data = {"code": "def matmul(A, B): pass", "strategy": "naive"}
-    
+
     memory_id, code_version_id = memory_manager.log_generator_interaction(
         input_data=input_data,
         output_data=output_data,
         processing_time_ms=200,
         generation_strategy="naive"
     )
-    
+
     assert memory_id is not None
     assert code_version_id is not None
-    
+
     # 验证代码版本
     code_version = memory_manager.get_code_version(code_version_id)
     assert code_version is not None
@@ -831,7 +831,7 @@ def test_query_agent_memories(memory_manager):
             processing_time_ms=100 + i,
             generation_strategy="default"
         )
-    
+
     # 查询并验证
     memories = memory_manager.query_agent_memories(agent_type="generator", limit=3)
     assert len(memories) == 3

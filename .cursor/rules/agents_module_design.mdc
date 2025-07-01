@@ -1,6 +1,6 @@
 ---
 description: agents design
-globs: 
+globs:
 alwaysApply: false
 ---
 # Pinocchio 多智能体系统 Agents 模块设计文档
@@ -124,21 +124,21 @@ class GeneratorRequest(AgentRequest):
     requirements: str
     constraints: Optional[List[str]] = None
     examples: Optional[List[Dict[str, str]]] = None
-    
+
 class GeneratorResponse(AgentResponse):
     """生成器响应"""
     agent_type: AgentType = AgentType.GENERATOR
     code: str
     explanation: str
     generation_strategy: str
-    
+
 class DebuggerRequest(AgentRequest):
     """调试器请求"""
     agent_type: AgentType = AgentType.DEBUGGER
     code: str
     error_message: Optional[str] = None
     test_cases: Optional[List[Dict[str, Any]]] = None
-    
+
 class DebuggerResponse(AgentResponse):
     """调试器响应"""
     agent_type: AgentType = AgentType.DEBUGGER
@@ -160,80 +160,80 @@ from pydantic import BaseModel
 
 class AgentBase(ABC):
     """Agent基类"""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """初始化Agent"""
         self.config = config or {}
         self.llm_client = self._get_llm_client()
-    
+
     def _get_llm_client(self):
         """获取LLM客户端"""
         from llm import get_llm_client
         return get_llm_client(self.config.get("llm_provider", "default"))
-    
+
     @property
     @abstractmethod
     def agent_type(self) -> str:
         """返回Agent类型"""
         pass
-    
+
     @property
     @abstractmethod
     def request_model(self) -> Type[BaseModel]:
         """返回请求数据模型类"""
         pass
-    
+
     @property
     @abstractmethod
     def response_model(self) -> Type[BaseModel]:
         """返回响应数据模型类"""
         pass
-    
+
     def validate_request(self, request_data: Dict[str, Any]) -> BaseModel:
         """验证请求数据"""
         return self.request_model(**request_data)
-    
+
     def validate_response(self, response_data: Dict[str, Any]) -> BaseModel:
         """验证响应数据"""
         return self.response_model(**response_data)
-    
+
     @abstractmethod
     def _process_implementation(self, request: BaseModel) -> Dict[str, Any]:
         """具体处理逻辑实现"""
         pass
-    
+
     def process(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """处理请求并返回响应"""
         try:
             # 请求验证
             request = self.validate_request(request_data)
-            
+
             # 记录开始时间
             start_time = time.time()
-            
+
             # 调用具体实现
             response_data = self._process_implementation(request)
-            
+
             # 计算处理时间
             processing_time = int((time.time() - start_time) * 1000)
             response_data["processing_time_ms"] = processing_time
             response_data["success"] = True
-            
+
             # 响应验证
             response = self.validate_response(response_data)
-            
+
             return response.dict()
         except Exception as e:
             # 错误处理
             return self.handle_error(e, request_data)
-    
+
     def handle_error(self, error: Exception, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """处理执行过程中的错误"""
         try:
             # 尝试提取会话ID和请求ID
             session_id = request_data.get("session_id", "unknown")
             request_id = request_data.get("request_id", "unknown")
-            
+
             # 构建错误响应
             error_response = {
                 "session_id": session_id,
@@ -249,10 +249,10 @@ class AgentBase(ABC):
                     "traceback": traceback.format_exc()
                 }
             }
-            
+
             # 记录错误
             logging.error(f"Agent error: {error}", exc_info=True)
-            
+
             return error_response
         except Exception as e:
             # 兜底错误处理
@@ -269,45 +269,45 @@ class AgentBase(ABC):
 ```python
 class GeneratorAgent(AgentBase):
     """代码生成器Agent"""
-    
+
     @property
     def agent_type(self) -> str:
         return "generator"
-    
+
     @property
     def request_model(self) -> Type[BaseModel]:
         from .models.generator import GeneratorRequest
         return GeneratorRequest
-    
+
     @property
     def response_model(self) -> Type[BaseModel]:
         from .models.generator import GeneratorResponse
         return GeneratorResponse
-    
+
     def _process_implementation(self, request: BaseModel) -> Dict[str, Any]:
         """生成器处理逻辑实现"""
         # 构建提示
         from prompt import get_prompt_template
         template = get_prompt_template("generator")
-        
+
         prompt_variables = {
             "task_description": request.task_description,
             "requirements": request.requirements,
             "constraints": request.constraints or [],
             "examples": request.examples or []
         }
-        
+
         # 格式化提示
         from prompt import format_prompt
         formatted_prompt = format_prompt(template, prompt_variables)
-        
+
         # 调用LLM
         llm_response = self.llm_client.send_request(formatted_prompt)
-        
+
         # 解析响应
         from .utils.parsing import parse_generator_response
         parsed_response = parse_generator_response(llm_response)
-        
+
         # 构建响应
         response = {
             "session_id": request.session_id,
@@ -325,7 +325,7 @@ class GeneratorAgent(AgentBase):
                 "completion_tokens": parsed_response.get("completion_tokens", 0)
             }
         }
-        
+
         return response
 ```
 
@@ -334,45 +334,45 @@ class GeneratorAgent(AgentBase):
 ```python
 class DebuggerAgent(AgentBase):
     """代码调试器Agent"""
-    
+
     @property
     def agent_type(self) -> str:
         return "debugger"
-    
+
     @property
     def request_model(self) -> Type[BaseModel]:
         from .models.debugger import DebuggerRequest
         return DebuggerRequest
-    
+
     @property
     def response_model(self) -> Type[BaseModel]:
         from .models.debugger import DebuggerResponse
         return DebuggerResponse
-    
+
     def _process_implementation(self, request: BaseModel) -> Dict[str, Any]:
         """调试器处理逻辑实现"""
         # 构建提示
         from prompt import get_prompt_template
         template = get_prompt_template("debugger")
-        
+
         prompt_variables = {
             "task_description": request.task_description,
             "code": request.code,
             "error_message": request.error_message or "",
             "test_cases": request.test_cases or []
         }
-        
+
         # 格式化提示
         from prompt import format_prompt
         formatted_prompt = format_prompt(template, prompt_variables)
-        
+
         # 调用LLM
         llm_response = self.llm_client.send_request(formatted_prompt)
-        
+
         # 解析响应
         from .utils.parsing import parse_debugger_response
         parsed_response = parse_debugger_response(llm_response)
-        
+
         # 构建响应
         response = {
             "session_id": request.session_id,
@@ -390,7 +390,7 @@ class DebuggerAgent(AgentBase):
                 "completion_tokens": parsed_response.get("completion_tokens", 0)
             }
         }
-        
+
         return response
 ```
 
@@ -401,23 +401,23 @@ class DebuggerAgent(AgentBase):
 ```python
 class AgentRegistry:
     """Agent注册表"""
-    
+
     _registry = {}
-    
+
     @classmethod
     def register(cls, agent_type: str, agent_class: Type[AgentBase]) -> None:
         """注册Agent类"""
         cls._registry[agent_type] = agent_class
-    
+
     @classmethod
     def get_agent(cls, agent_type: str, config: Optional[Dict[str, Any]] = None) -> AgentBase:
         """获取Agent实例"""
         if agent_type not in cls._registry:
             raise ValueError(f"Unknown agent type: {agent_type}")
-        
+
         agent_class = cls._registry[agent_type]
         return agent_class(config)
-    
+
     @classmethod
     def list_agents(cls) -> List[str]:
         """列出所有已注册的Agent类型"""
@@ -449,13 +449,13 @@ def extract_json_from_response(response: str) -> Dict[str, Any]:
     """从LLM响应中提取JSON"""
     json_pattern = r'```json\s*([\s\S]*?)\s*```'
     matches = re.findall(json_pattern, response)
-    
+
     if matches:
         try:
             return json.loads(matches[0])
         except json.JSONDecodeError:
             pass
-    
+
     # 尝试直接解析整个响应
     try:
         return json.loads(response)
@@ -466,7 +466,7 @@ def extract_json_from_response(response: str) -> Dict[str, Any]:
 def parse_generator_response(response: str) -> Dict[str, Any]:
     """解析生成器响应"""
     data = extract_json_from_response(response)
-    
+
     # 提取代码
     code = data.get("code", "")
     if not code and "raw_response" in data:
@@ -475,19 +475,19 @@ def parse_generator_response(response: str) -> Dict[str, Any]:
         code_matches = re.findall(code_pattern, data["raw_response"])
         if code_matches:
             code = code_matches[0]
-    
+
     # 构建标准化响应
     result = {
         "code": code,
         "explanation": data.get("explanation", "No explanation provided"),
         "strategy": data.get("strategy", "default")
     }
-    
+
     # 添加可能的令牌计数
     if "usage" in data:
         result["prompt_tokens"] = data["usage"].get("prompt_tokens", 0)
         result["completion_tokens"] = data["usage"].get("completion_tokens", 0)
-    
+
     return result
 
 # 类似地实现其他Agent的响应解析函数...
@@ -532,7 +532,7 @@ def retry_on_llm_error(max_retries=3, backoff_factor=2):
                         time.sleep(sleep_time)
                     else:
                         logging.error(f"Max retries reached for LLM API call: {e}")
-            
+
             # 所有重试都失败
             raise last_exception
         return wrapper
@@ -560,13 +560,13 @@ def retry_on_llm_error(max_retries=3, backoff_factor=2):
 def load_agent_config(agent_type: str) -> Dict[str, Any]:
     """加载Agent配置"""
     from config import get_config
-    
+
     # 加载全局配置
     global_config = get_config().get("agents", {})
-    
+
     # 加载特定Agent配置
     agent_config = global_config.get(agent_type, {})
-    
+
     # 合并默认配置
     default_config = {
         "llm_provider": "openai",
@@ -576,7 +576,7 @@ def load_agent_config(agent_type: str) -> Dict[str, Any]:
         "timeout_seconds": 60,
         "retry_attempts": 3
     }
-    
+
     # 配置优先级：特定Agent配置 > 全局配置 > 默认配置
     return {**default_config, **global_config, **agent_config}
 ```
@@ -591,13 +591,13 @@ def load_agent_config(agent_type: str) -> Dict[str, Any]:
 def _get_llm_client(self):
     """获取LLM客户端"""
     from llm import get_llm_client
-    
+
     # 获取配置
     provider = self.config.get("llm_provider", "openai")
     model = self.config.get("model_name", "gpt-4")
     temperature = self.config.get("temperature", 0.7)
     max_tokens = self.config.get("max_tokens", 4000)
-    
+
     # 创建客户端
     return get_llm_client(
         provider=provider,
@@ -613,7 +613,7 @@ def _get_llm_client(self):
 def _log_interaction(self, request: Dict[str, Any], response: Dict[str, Any]) -> None:
     """记录交互到Memory"""
     from memory import get_memory_manager
-    
+
     memory_manager = get_memory_manager()
     memory_manager.log_detail(
         agent_name=self.agent_type,
@@ -632,7 +632,7 @@ def _log_interaction(self, request: Dict[str, Any], response: Dict[str, Any]) ->
 def _get_prompt(self, template_name: str, variables: Dict[str, Any]) -> str:
     """获取格式化的提示"""
     from prompt import get_prompt_template, format_prompt
-    
+
     template = get_prompt_template(template_name)
     return format_prompt(template, variables)
 ```
@@ -666,7 +666,7 @@ def test_generator_agent(mock_llm_client):
     # 创建Agent并注入模拟客户端
     agent = GeneratorAgent({"llm_provider": "mock"})
     agent.llm_client = mock_llm_client
-    
+
     # 创建请求
     request = {
         "session_id": "test_session",
@@ -675,10 +675,10 @@ def test_generator_agent(mock_llm_client):
         "task_description": "Create a simple function",
         "requirements": "Function should do nothing"
     }
-    
+
     # 处理请求
     response = agent.process(request)
-    
+
     # 验证结果
     assert response["success"] is True
     assert "code" in response
@@ -693,10 +693,10 @@ def test_agent_with_real_llm():
     """使用真实LLM的集成测试"""
     # 标记为集成测试，可选择性跳过
     pytest.skip_if(os.environ.get("SKIP_INTEGRATION_TESTS"), reason="Integration tests disabled")
-    
+
     # 创建Agent
     agent = create_agent("generator")
-    
+
     # 创建请求
     request = {
         "session_id": "test_session",
@@ -705,10 +705,10 @@ def test_agent_with_real_llm():
         "task_description": "Create a function to add two numbers",
         "requirements": "Function should take two parameters and return their sum"
     }
-    
+
     # 处理请求
     response = agent.process(request)
-    
+
     # 验证结果
     assert response["success"] is True
     assert "code" in response

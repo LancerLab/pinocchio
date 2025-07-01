@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: false
 ---
 # Pinocchio 多智能体系统 Agent 工作流与状态转换设计
@@ -392,7 +392,7 @@ def debug_loop(code, error_message, max_rounds=5):
     debug_history = []
     current_code = code
     current_error = error_message
-    
+
     for round in range(max_rounds):
         # 准备 Prompt
         prompt = create_debugger_prompt(
@@ -400,27 +400,27 @@ def debug_loop(code, error_message, max_rounds=5):
             error_message=current_error,
             debug_history=debug_history
         )
-        
+
         # 获取调试结果
         debug_result = debugger_agent.process(prompt)
-        
+
         # 验证修复
         verification = verify_code(debug_result.fixed_code)
-        
+
         # 记录历史
         debug_history.append({
             "issue": debug_result.issue,
             "fix": debug_result.fix_description,
             "result": verification.status
         })
-        
+
         if verification.success:
             return debug_result.fixed_code, debug_history
-            
+
         # 更新当前代码和错误
         current_code = debug_result.fixed_code
         current_error = verification.error_message
-    
+
     # 达到最大轮数，返回最新状态
     return current_code, debug_history
 ```
@@ -442,19 +442,19 @@ def optimize_code(code, performance_metrics, optimization_goals):
         "performance_metrics": performance_metrics,
         "optimization_goals": optimization_goals
     })
-    
+
     # Generator 实施优化
     optimized_code = generator_agent.process({
         "code": code,
         "optimization_suggestions": optimization_suggestions.suggestions
     })
-    
+
     # 评估优化结果
     evaluation = evaluator_agent.process({
         "code": optimized_code,
         "performance_baseline": performance_metrics
     })
-    
+
     return optimized_code, evaluation
 ```
 

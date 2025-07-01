@@ -1,6 +1,6 @@
 ---
 description: 构建系统和命令行工具设计
-globs: 
+globs:
 alwaysApply: false
 ---
 # Pinocchio 多智能体系统构建系统与CLI模块设计
@@ -219,7 +219,7 @@ def create(ctx, task_description, name=None, tags=None):
     """创建新会话"""
     # 解析标签
     tag_list = tags.split(',') if tags else []
-    
+
     # 创建会话
     session_context = SessionContext()
     session_id = session_context.session_manager.create_session(
@@ -227,7 +227,7 @@ def create(ctx, task_description, name=None, tags=None):
         name=name,
         tags=tag_list
     )
-    
+
     console.print(f"[green]创建会话成功:[/green] {session_id}")
     return session_id
 
@@ -241,14 +241,14 @@ def list(ctx, limit=10, status=None):
     filter_func = None
     if status:
         filter_func = lambda s: s.status == status
-    
+
     # 列出会话
     session_context = SessionContext()
     sessions = session_context.session_manager.list_sessions(
         filter_func=filter_func,
         limit=int(limit)
     )
-    
+
     # 创建表格
     table = Table(title="会话列表")
     table.add_column("ID", style="cyan")
@@ -256,7 +256,7 @@ def list(ctx, limit=10, status=None):
     table.add_column("状态", style="magenta")
     table.add_column("运行时间", style="yellow")
     table.add_column("任务描述", style="blue")
-    
+
     # 添加数据行
     for session in sessions:
         runtime = f"{session.runtime_seconds:.1f}s" if session.runtime_seconds else "运行中"
@@ -267,7 +267,7 @@ def list(ctx, limit=10, status=None):
             runtime,
             session.task_description[:50] + ("..." if len(session.task_description) > 50 else "")
         )
-    
+
     console.print(table)
 
 @task(help={
@@ -277,12 +277,12 @@ def load(ctx, session_id):
     """加载会话"""
     session_context = SessionContext()
     success = session_context.session_manager.load_session(session_id)
-    
+
     if success:
         console.print(f"[green]加载会话成功:[/green] {session_id}")
     else:
         console.print(f"[red]加载会话失败:[/red] {session_id}")
-    
+
     return success
 
 # 更多会话相关命令...
@@ -318,7 +318,7 @@ def code(ctx, task, output=None, session_id=None):
     """生成代码"""
     # 获取会话上下文
     session_context = SessionContext()
-    
+
     # 加载或创建会话
     if session_id:
         success = session_context.session_manager.load_session(session_id)
@@ -330,26 +330,26 @@ def code(ctx, task, output=None, session_id=None):
             task_description=f"代码生成: {task}"
         )
         console.print(f"[green]创建会话:[/green] {session_id}")
-    
+
     # 创建工作流
     workflow = GenerationWorkflow(session_context)
-    
+
     # 执行代码生成
     console.print("[yellow]正在生成代码...[/yellow]")
     result = workflow.execute(task=task)
-    
+
     # 处理结果
     if "code" in result:
         # 显示代码
         syntax = Syntax(result["code"], "python", theme="monokai", line_numbers=True)
         console.print(syntax)
-        
+
         # 保存到文件
         if output:
             with open(output, "w") as f:
                 f.write(result["code"])
             console.print(f"[green]代码已保存到:[/green] {output}")
-        
+
         return True
     else:
         console.print("[red]代码生成失败[/red]")
@@ -383,36 +383,36 @@ def complete(ctx, task, output, optimize=True):
     """完整工作流：生成、调试、优化和评估代码"""
     # 获取会话上下文
     session_context = SessionContext()
-    
+
     # 创建会话
     session_id = session_context.session_manager.create_session(
         task_description=f"完整工作流: {task}"
     )
     console.print(f"[green]创建会话:[/green] {session_id}")
-    
+
     # 创建工作流
     workflow = CompleteWorkflow(session_context)
-    
+
     # 执行工作流
     console.print("[yellow]正在执行完整工作流...[/yellow]")
     result = workflow.execute(
         task=task,
         optimize=optimize
     )
-    
+
     # 处理结果
     if "final_code" in result:
         # 保存到文件
         with open(output, "w") as f:
             f.write(result["final_code"])
         console.print(f"[green]代码已保存到:[/green] {output}")
-        
+
         # 显示评估结果
         if "evaluation" in result:
             console.print("\n[blue]代码评估结果:[/blue]")
             for key, value in result["evaluation"].items():
                 console.print(f"  [cyan]{key}:[/cyan] {value}")
-        
+
         return True
     else:
         console.print("[red]工作流执行失败[/red]")
@@ -639,7 +639,7 @@ def get_config_dir() -> Path:
         config_dir = Path(os.environ.get("APPDATA", "")) / "pinocchio"
     else:  # Linux/Mac
         config_dir = Path.home() / ".config" / "pinocchio"
-    
+
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
 
@@ -647,10 +647,10 @@ def load_config() -> PinocchioConfig:
     """加载配置"""
     config_dir = get_config_dir()
     config_file = config_dir / "config.toml"
-    
+
     # 创建默认配置
     config = PinocchioConfig()
-    
+
     # 如果配置文件存在，加载它
     if config_file.exists():
         try:
@@ -662,7 +662,7 @@ def load_config() -> PinocchioConfig:
         # 创建默认配置文件
         with open(config_file, "w") as f:
             toml.dump(config.dict(), f)
-    
+
     # 加载凭证
     creds_file = config_dir / "credentials.toml"
     if creds_file.exists():
@@ -672,7 +672,7 @@ def load_config() -> PinocchioConfig:
                 config.llm.api_key = creds_data["llm"]["api_key"]
         except Exception as e:
             print(f"Error loading credentials: {e}")
-    
+
     return config
 ```
 
@@ -691,10 +691,10 @@ from unittest.mock import patch
 def test_version():
     """测试版本命令"""
     from pinocchio.cli.main import program
-    
+
     runner = CliRunner()
     result = runner.invoke(program, ["--version"])
-    
+
     assert result.exit_code == 0
     assert "pinocchio" in result.output
     assert "0.1.0" in result.output
@@ -703,14 +703,14 @@ def test_version():
 def test_session_create(mock_context):
     """测试会话创建命令"""
     from pinocchio.cli.main import program
-    
+
     # 设置模拟返回值
     mock_manager = mock_context.return_value.session_manager
     mock_manager.create_session.return_value = "test_session_id"
-    
+
     runner = CliRunner()
     result = runner.invoke(program, ["session.create", "--task-description", "Test task"])
-    
+
     assert result.exit_code == 0
     assert "test_session_id" in result.output
     mock_manager.create_session.assert_called_once_with(
@@ -740,18 +740,18 @@ def test_package_build():
         capture_output=True,
         text=True
     )
-    
+
     # 验证构建成功
     assert result.returncode == 0
-    
+
     # 验证构建产物
     dist_dir = Path("dist")
     assert dist_dir.exists()
-    
+
     # 检查是否有wheel和sdist
     wheel_files = list(dist_dir.glob("*.whl"))
     sdist_files = list(dist_dir.glob("*.tar.gz"))
-    
+
     assert len(wheel_files) > 0
     assert len(sdist_files) > 0
 ```
@@ -772,21 +772,21 @@ def test_config_loading():
         # 创建测试配置
         config_dir = Path(temp_dir) / "config"
         config_dir.mkdir()
-        
+
         config_data = {
             "general": {"log_level": "debug"},
             "llm": {"provider": "anthropic", "model": "claude-2"}
         }
-        
+
         with open(config_dir / "config.toml", "w") as f:
             toml.dump(config_data, f)
-        
+
         # 模拟配置目录
         with patch("pinocchio.config.get_config_dir", return_value=config_dir):
             from pinocchio.config import load_config
-            
+
             config = load_config()
-            
+
             # 验证配置值
             assert config.general.log_level == "debug"
             assert config.llm.provider == "anthropic"

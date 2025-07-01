@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: false
 ---
 # Knowledge Module Design (Optimized)
@@ -39,11 +39,11 @@ class ContentFormat(Enum):
 
 class KnowledgeResource:
     """Lightweight base class for all knowledge resources."""
-    
-    def __init__(self, 
-                content: Union[str, Dict[str, Any]], 
+
+    def __init__(self,
+                content: Union[str, Dict[str, Any]],
                 format_type: ContentFormat,
-                title: str, 
+                title: str,
                 tags: Optional[List[str]] = None,
                 metadata: Optional[Dict[str, Any]] = None,
                 resource_id: Optional[str] = None):
@@ -55,10 +55,10 @@ class KnowledgeResource:
         self.resource_id = resource_id or str(uuid.uuid4())
         self.created_at = datetime.now().isoformat()
         self.updated_at = self.created_at
-        
-    def update(self, content: Optional[Union[str, Dict[str, Any]]] = None, 
-              title: Optional[str] = None, 
-              tags: Optional[List[str]] = None, 
+
+    def update(self, content: Optional[Union[str, Dict[str, Any]]] = None,
+              title: Optional[str] = None,
+              tags: Optional[List[str]] = None,
               metadata: Optional[Dict[str, Any]] = None) -> None:
         """Update the resource."""
         if content is not None:
@@ -70,7 +70,7 @@ class KnowledgeResource:
         if metadata is not None:
             self.metadata = {**self.metadata, **metadata}
         self.updated_at = datetime.now().isoformat()
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         return {
@@ -83,7 +83,7 @@ class KnowledgeResource:
             "created_at": self.created_at,
             "updated_at": self.updated_at
         }
-        
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'KnowledgeResource':
         """Create from dictionary representation."""
@@ -95,15 +95,15 @@ class KnowledgeResource:
             metadata=data["metadata"],
             resource_id=data["resource_id"]
         )
-    
+
     def extract_fragment(self, selector: Union[str, List[str], Dict[str, Any]]) -> Any:
         """
         Extract a specific fragment from the content.
-        
+
         Args:
             selector: For JSON content, this can be a key path (dot notation string or list).
                      For markdown/text, this can be a section title or regex pattern.
-        
+
         Returns:
             The extracted fragment or None if not found
         """
@@ -112,12 +112,12 @@ class KnowledgeResource:
         elif self.format_type in (ContentFormat.MARKDOWN, ContentFormat.TEXT):
             return self._extract_from_text(selector)
         return None
-    
+
     def _extract_from_json(self, selector: Union[str, List[str], Dict[str, Any]]) -> Any:
         """Extract data from JSON content using a selector."""
         if not isinstance(self.content, dict):
             return None
-            
+
         if isinstance(selector, str):
             # Handle dot notation (e.g., "data.items[0].name")
             keys = selector.replace(']', '').replace('[', '.').split('.')
@@ -154,21 +154,21 @@ class KnowledgeResource:
                 # Implement filtering logic here
                 # ...
         return None
-    
+
     def _extract_from_text(self, selector: str) -> str:
         """Extract section from markdown/text content using a section title or regex."""
         if not isinstance(self.content, str):
             return None
-            
+
         import re
-        
+
         # Try to extract by section header (e.g., "## Section Title")
         if selector.startswith('#'):
             pattern = f"{re.escape(selector)}(.*?)(?:^#|$)"
             match = re.search(pattern, self.content, re.MULTILINE | re.DOTALL)
             if match:
                 return match.group(1).strip()
-        
+
         # Try as regex pattern
         try:
             match = re.search(selector, self.content, re.MULTILINE | re.DOTALL)
@@ -176,7 +176,7 @@ class KnowledgeResource:
                 return match.group(0).strip()
         except re.error:
             pass
-            
+
         # Try as plain text search
         if selector in self.content:
             # Return the paragraph containing the text
@@ -184,7 +184,7 @@ class KnowledgeResource:
             for p in paragraphs:
                 if selector in p:
                     return p.strip()
-                    
+
         return None
 ```
 
@@ -205,124 +205,124 @@ T = TypeVar('T')
 
 class KnowledgeBase:
     """Lightweight repository for knowledge resources."""
-    
+
     def __init__(self, storage_path: Optional[str] = None, max_workers: int = 4):
         self.resources: Dict[str, KnowledgeResource] = {}
         self.storage_path = storage_path
         self.max_workers = max_workers
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
-        
+
     def add_resource(self, resource: KnowledgeResource) -> str:
         """Add a resource to the knowledge base."""
         self.resources[resource.resource_id] = resource
         self._save_resource_async(resource)
         return resource.resource_id
-        
+
     def get_resource(self, resource_id: str) -> Optional[KnowledgeResource]:
         """Get a resource by ID."""
         return self.resources.get(resource_id)
-        
-    def update_resource(self, resource_id: str, content: Optional[Union[str, Dict[str, Any]]] = None, 
-                       title: Optional[str] = None, tags: Optional[List[str]] = None, 
+
+    def update_resource(self, resource_id: str, content: Optional[Union[str, Dict[str, Any]]] = None,
+                       title: Optional[str] = None, tags: Optional[List[str]] = None,
                        metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Update a resource."""
         if resource_id not in self.resources:
             return False
-            
+
         resource = self.resources[resource_id]
         resource.update(content, title, tags, metadata)
         self._save_resource_async(resource)
         return True
-        
+
     def delete_resource(self, resource_id: str) -> bool:
         """Delete a resource."""
         if resource_id not in self.resources:
             return False
-            
+
         del self.resources[resource_id]
         self._delete_resource_file_async(resource_id)
         return True
-    
+
     @lru_cache(maxsize=128)
-    def search(self, query: str, format_type: Optional[ContentFormat] = None, 
+    def search(self, query: str, format_type: Optional[ContentFormat] = None,
               tags: Optional[List[str]] = None, limit: int = 10) -> List[KnowledgeResource]:
         """Search for resources using simple text matching."""
         results = []
         query = query.lower()
-        
+
         for resource in self.resources.values():
             # Filter by format type
             if format_type and resource.format_type != format_type:
                 continue
-                
+
             # Filter by tags
             if tags and not all(tag in resource.tags for tag in tags):
                 continue
-                
+
             # Check for query match
             if self._matches_query(resource, query):
                 results.append(resource)
-                
+
             # Limit results
             if len(results) >= limit:
                 break
-                
+
         return results
-    
+
     def _matches_query(self, resource: KnowledgeResource, query: str) -> bool:
         """Check if a resource matches the query."""
         if query in resource.title.lower():
             return True
-            
+
         if any(query in tag.lower() for tag in resource.tags):
             return True
-            
+
         if isinstance(resource.content, str):
             return query in resource.content.lower()
         elif isinstance(resource.content, dict):
             # Convert dict to string for simple text search
             content_str = json.dumps(resource.content).lower()
             return query in content_str
-            
+
         return False
-    
-    def extract_fragments(self, query: str, selector: Union[str, List[str], Dict[str, Any]], 
+
+    def extract_fragments(self, query: str, selector: Union[str, List[str], Dict[str, Any]],
                          limit: int = 5) -> List[Any]:
         """
         Search for resources and extract specific fragments.
-        
+
         Args:
             query: Search query to find relevant resources
             selector: Selector to extract specific fragments from each resource
             limit: Maximum number of results
-            
+
         Returns:
             List of extracted fragments
         """
         resources = self.search(query, limit=limit)
         fragments = []
-        
+
         for resource in resources:
             fragment = resource.extract_fragment(selector)
             if fragment is not None:
                 fragments.append(fragment)
-                
+
         return fragments
-    
+
     def compose_prompt_context(self, query: str, selectors: Dict[str, Union[str, List[str], Dict[str, Any]]]) -> Dict[str, Any]:
         """
         Compose a prompt context by extracting multiple fragments.
-        
+
         Args:
             query: Search query to find relevant resources
             selectors: Dict mapping context keys to selectors
-            
+
         Returns:
             Dict with extracted fragments
         """
         resources = self.search(query, limit=10)
         context = {}
-        
+
         for key, selector in selectors.items():
             for resource in resources:
                 fragment = resource.extract_fragment(selector)
@@ -336,24 +336,24 @@ class KnowledgeBase:
                     else:
                         context[key] = fragment
                     break
-                    
+
         return context
-        
+
     def load_resources(self) -> None:
         """Load resources from storage."""
         if not self.storage_path or not os.path.exists(self.storage_path):
             return
-            
+
         # Clear existing resources
         self.resources = {}
-        
+
         # Load resources from files using thread pool
-        file_paths = [os.path.join(self.storage_path, f) for f in os.listdir(self.storage_path) 
+        file_paths = [os.path.join(self.storage_path, f) for f in os.listdir(self.storage_path)
                      if f.endswith(".json")]
-        
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             executor.map(self._load_resource_file, file_paths)
-                
+
     def _load_resource_file(self, file_path: str) -> None:
         """Load a resource from a file."""
         try:
@@ -363,35 +363,35 @@ class KnowledgeBase:
                 self.resources[resource.resource_id] = resource
         except Exception as e:
             print(f"Error loading resource from {file_path}: {e}")
-                
+
     def _save_resource_async(self, resource: KnowledgeResource) -> None:
         """Save a resource to storage asynchronously."""
         if not self.storage_path:
             return
         self._executor.submit(self._save_resource, resource)
-            
+
     def _save_resource(self, resource: KnowledgeResource) -> None:
         """Save a resource to storage."""
         if not self.storage_path:
             return
-            
+
         os.makedirs(self.storage_path, exist_ok=True)
-        
+
         file_path = os.path.join(self.storage_path, f"{resource.resource_id}.json")
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(resource.to_dict(), f, indent=2)
-            
+
     def _delete_resource_file_async(self, resource_id: str) -> None:
         """Delete a resource file asynchronously."""
         if not self.storage_path:
             return
         self._executor.submit(self._delete_resource_file, resource_id)
-            
+
     def _delete_resource_file(self, resource_id: str) -> None:
         """Delete a resource file."""
         if not self.storage_path:
             return
-            
+
         file_path = os.path.join(self.storage_path, f"{resource_id}.json")
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -407,29 +407,29 @@ class KnowledgeAdapter:
     Adapter for integrating knowledge with prompt templates.
     Provides a lightweight interface for extracting and formatting knowledge.
     """
-    
+
     def __init__(self, knowledge_base: KnowledgeBase):
         self.knowledge_base = knowledge_base
-        
+
     def get_context(self, query: str, format_type: Optional[ContentFormat] = None,
                    max_items: int = 3, max_length: int = 1000) -> str:
         """
         Get relevant knowledge context as formatted text.
-        
+
         Args:
             query: Search query
             format_type: Optional filter by format type
             max_items: Maximum number of items to include
             max_length: Maximum total length of the context
-            
+
         Returns:
             Formatted context string
         """
         resources = self.knowledge_base.search(query, format_type=format_type, limit=max_items)
-        
+
         context_parts = []
         total_length = 0
-        
+
         for resource in resources:
             content = self._format_resource_content(resource)
             if total_length + len(content) > max_length:
@@ -439,12 +439,12 @@ class KnowledgeAdapter:
                     content = content[:available_length] + "..."
                     context_parts.append(content)
                 break
-            
+
             context_parts.append(content)
             total_length += len(content)
-            
+
         return "\n\n".join(context_parts)
-    
+
     def _format_resource_content(self, resource: KnowledgeResource) -> str:
         """Format a resource's content for inclusion in a prompt."""
         if resource.format_type == ContentFormat.JSON:
@@ -453,28 +453,28 @@ class KnowledgeAdapter:
             return f"# {resource.title}\n{resource.content}"
         else:
             return f"# {resource.title}\n{resource.content}"
-    
+
     def extract_for_prompt(self, query: str, template_vars: Dict[str, Any]) -> Dict[str, Any]:
         """
         Extract knowledge and add it to template variables.
-        
+
         Args:
             query: Search query
             template_vars: Template variables to augment
-            
+
         Returns:
             Augmented template variables
         """
         # Extract general context
         context = self.get_context(query)
         template_vars["knowledge_context"] = context
-        
+
         # Extract specific fragments if specified in template_vars
         if "knowledge_selectors" in template_vars:
             selectors = template_vars["knowledge_selectors"]
             fragments = self.knowledge_base.compose_prompt_context(query, selectors)
             template_vars.update(fragments)
-            
+
         return template_vars
 ```
 
@@ -488,21 +488,21 @@ from knowledge import KnowledgeBase, KnowledgeAdapter
 
 class KnowledgeAwarePromptManager:
     """Lightweight prompt manager with knowledge integration."""
-    
+
     def __init__(self, knowledge_base: KnowledgeBase, template_registry: TemplateRegistry = None):
         self.knowledge_adapter = KnowledgeAdapter(knowledge_base)
         self.template_registry = template_registry or TemplateRegistry()
         self.formatter = TemplateFormatter()
-        
+
     def create_prompt(self, template_name: str, query: str, variables: Dict[str, Any]) -> str:
         """
         Create a prompt with integrated knowledge.
-        
+
         Args:
             template_name: Name of the template to use
             query: Knowledge search query
             variables: Template variables
-            
+
         Returns:
             Formatted prompt with knowledge
         """
@@ -510,10 +510,10 @@ class KnowledgeAwarePromptManager:
         template = self.template_registry.get_template(template_name)
         if not template:
             raise ValueError(f"Template not found: {template_name}")
-        
+
         # Augment variables with knowledge
         augmented_vars = self.knowledge_adapter.extract_for_prompt(query, variables.copy())
-        
+
         # Format the template
         return self.formatter.format_string(template, augmented_vars)
 ```

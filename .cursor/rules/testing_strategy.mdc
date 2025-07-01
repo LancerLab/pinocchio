@@ -1,6 +1,6 @@
 ---
 description: testing模块设计
-globs: 
+globs:
 alwaysApply: false
 ---
 # Pinocchio 多智能体系统测试策略

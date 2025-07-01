@@ -1,6 +1,6 @@
 ---
 description: 系统设计
-globs: 
+globs:
 alwaysApply: false
 ---
 # Pinocchio 多智能体协作系统设计文档
@@ -89,7 +89,7 @@ pinocchio/
           接受规范化的Prompt JSON，返回Response JSON
           """
           pass
-          
+
       def handle_error(self, error: Exception) -> dict:
           """
           处理执行过程中的错误，返回标准错误响应
@@ -121,14 +121,14 @@ pinocchio/
 
       def receive(self) -> dict:
           ...
-          
+
   class Orchestrator:
       def define_workflow(self, workflow_config: dict) -> None:
           """
           定义工作流程，支持条件分支和并行执行
           """
           pass
-          
+
       def execute(self, input_data: dict) -> dict:
           """
           执行工作流程，处理分支逻辑和错误恢复
@@ -151,14 +151,14 @@ pinocchio/
 
   def load_json(filepath: str) -> dict:
       ...
-      
+
   class KnowledgeVersionManager:
       def get_version(self, resource_id: str) -> str:
           """
           获取知识资源的当前版本
           """
           pass
-          
+
       def update_knowledge(self, resource_id: str, content: str) -> str:
           """
           更新知识资源并创建新版本
@@ -187,26 +187,26 @@ pinocchio/
 
       def export_logs(self, filepath: str) -> None:
           ...
-          
+
   class MetricsCollector:
       def record_latency(self, operation: str, duration_ms: int) -> None:
           """
           记录操作延迟
           """
           pass
-          
+
       def record_success(self, operation: str) -> None:
           """
           记录操作成功
           """
           pass
-          
+
       def record_failure(self, operation: str, error_type: str) -> None:
           """
           记录操作失败
           """
           pass
-          
+
       def get_summary(self) -> dict:
           """
           获取性能指标摘要
@@ -231,14 +231,14 @@ pinocchio/
   class PromptFormatter:
       def fill_template(self, template_str: str, variables: dict) -> dict:
           ...
-          
+
   class PromptVersionControl:
       def get_template_version(self, template_name: str) -> str:
           """
           获取模板版本
           """
           pass
-          
+
       def update_template(self, template_name: str, content: str) -> str:
           """
           更新模板并创建新版本
@@ -258,7 +258,7 @@ pinocchio/
   class LLMClient:
       def send_request(self, prompt_text: str) -> str:
           ...
-          
+
   class RetryHandler:
       def execute_with_retry(self, func, *args, max_retries=3, **kwargs) -> Any:
           """
@@ -284,19 +284,19 @@ pinocchio/
           从环境变量加载配置
           """
           pass
-          
+
       def load_from_file(self, filepath: str) -> None:
           """
           从配置文件加载配置
           """
           pass
-          
+
       def get(self, key: str, default=None) -> Any:
           """
           获取配置项
           """
           pass
-          
+
   class CredentialManager:
       def get_api_key(self, service_name: str) -> str:
           """
@@ -317,15 +317,15 @@ pinocchio/
   class PinocchioError(Exception):
       """基础异常类"""
       pass
-      
+
   class LLMApiError(PinocchioError):
       """LLM API调用错误"""
       pass
-      
+
   class WorkflowError(PinocchioError):
       """工作流执行错误"""
       pass
-      
+
   def global_error_handler(func):
       """
       全局错误处理装饰器

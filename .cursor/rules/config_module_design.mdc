@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: false
 ---
 # Config Module Design
@@ -32,26 +32,26 @@ from pathlib import Path
 
 class Settings:
     """Central manager for all configuration settings."""
-    
+
     def __init__(self):
         self._config: Dict[str, Any] = {}
         self._config_sources: Dict[str, str] = {}  # Tracks where each config came from
-        
+
     def load_from_dict(self, config_dict: Dict[str, Any], source: str = "dict") -> None:
         """
         Load configuration from a dictionary.
-        
+
         Args:
             config_dict: Dictionary containing configuration values
             source: Source identifier for tracking
         """
         for key, value in config_dict.items():
             self._set_value(key, value, source)
-            
+
     def load_from_env(self, prefix: str = "PINOCCHIO_") -> None:
         """
         Load configuration from environment variables.
-        
+
         Args:
             prefix: Prefix for environment variables to consider
         """
@@ -59,11 +59,11 @@ class Settings:
             if key.startswith(prefix):
                 config_key = key[len(prefix):].lower()
                 self._set_value(config_key, value, "environment")
-                
+
     def load_from_file(self, filepath: Union[str, Path], format: Optional[str] = None) -> None:
         """
         Load configuration from a file.
-        
+
         Args:
             filepath: Path to the configuration file
             format: File format ('json', 'yaml', or None to infer from extension)
@@ -71,10 +71,10 @@ class Settings:
         filepath = Path(filepath)
         if not filepath.exists():
             raise FileNotFoundError(f"Configuration file not found: {filepath}")
-            
+
         if format is None:
             format = filepath.suffix.lstrip('.').lower()
-            
+
         with open(filepath, 'r') as f:
             if format == 'json':
                 config_dict = json.load(f)
@@ -83,46 +83,46 @@ class Settings:
                 config_dict = yaml.safe_load(f)
             else:
                 raise ValueError(f"Unsupported configuration format: {format}")
-                
+
         self.load_from_dict(config_dict, f"file:{filepath}")
-        
+
     def get(self, key: str, default: Any = None) -> Any:
         """
         Get a configuration value.
-        
+
         Args:
             key: Configuration key (supports dot notation for nested configs)
             default: Default value if key is not found
-            
+
         Returns:
             Configuration value or default
         """
         keys = key.split('.')
         value = self._config
-        
+
         for k in keys:
             if isinstance(value, dict) and k in value:
                 value = value[k]
             else:
                 return default
-                
+
         return value
-        
+
     def set(self, key: str, value: Any, source: str = "runtime") -> None:
         """
         Set a configuration value.
-        
+
         Args:
             key: Configuration key (supports dot notation for nested configs)
             value: Configuration value
             source: Source identifier for tracking
         """
         self._set_value(key, value, source)
-        
+
     def _set_value(self, key: str, value: Any, source: str) -> None:
         """
         Internal method to set a configuration value with source tracking.
-        
+
         Args:
             key: Configuration key (supports dot notation for nested configs)
             value: Configuration value
@@ -130,28 +130,28 @@ class Settings:
         """
         keys = key.split('.')
         config = self._config
-        
+
         # Navigate to the nested dictionary
         for k in keys[:-1]:
             if k not in config or not isinstance(config[k], dict):
                 config[k] = {}
             config = config[k]
-            
+
         # Set the value
         config[keys[-1]] = value
         self._config_sources[key] = source
-        
+
     def get_all(self) -> Dict[str, Any]:
         """Get all configuration values."""
         return self._config.copy()
-        
+
     def get_source(self, key: str) -> Optional[str]:
         """
         Get the source of a configuration value.
-        
+
         Args:
             key: Configuration key
-            
+
         Returns:
             Source identifier or None if key not found
         """
@@ -168,18 +168,18 @@ from pydantic import BaseModel, ValidationError, validator
 
 class ConfigSchema(BaseModel):
     """Base class for configuration schemas."""
-    
+
     @classmethod
     def validate_config(cls, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate configuration against the schema.
-        
+
         Args:
             config: Configuration dictionary to validate
-            
+
         Returns:
             Validated configuration dictionary
-            
+
         Raises:
             ConfigValidationError: If validation fails
         """
@@ -188,7 +188,7 @@ class ConfigSchema(BaseModel):
             return validated.dict()
         except ValidationError as e:
             raise ConfigValidationError(str(e))
-            
+
     @classmethod
     def get_schema(cls) -> Dict[str, Any]:
         """Get the JSON schema for this configuration."""
@@ -200,30 +200,30 @@ Example configuration schema:
 ```python
 class LLMConfig(ConfigSchema):
     """Configuration schema for LLM settings."""
-    
+
     provider: str
     api_key: Optional[str] = None
     model: str = "gpt-3.5-turbo"
     temperature: float = 0.7
     max_tokens: int = 1000
-    
+
     @validator('temperature')
     def temperature_must_be_valid(cls, v):
         if not 0.0 <= v <= 1.0:
             raise ValueError('temperature must be between 0.0 and 1.0')
         return v
-        
+
 class AgentsConfig(ConfigSchema):
     """Configuration schema for agents settings."""
-    
+
     generator: Dict[str, Any] = {}
     debugger: Dict[str, Any] = {}
     optimizer: Dict[str, Any] = {}
     evaluator: Dict[str, Any] = {}
-    
+
 class AppConfig(ConfigSchema):
     """Main application configuration schema."""
-    
+
     llm: LLMConfig
     agents: AgentsConfig
     log_level: str = "INFO"
@@ -243,17 +243,17 @@ from typing import Optional
 
 class CredentialManager:
     """Manager for secure handling of credentials and API keys."""
-    
+
     def __init__(self, service_name: str = "pinocchio"):
         self.service_name = service_name
-        
+
     def get_api_key(self, provider: str) -> Optional[str]:
         """
         Get an API key from the most secure available source.
-        
+
         Args:
             provider: The service provider (e.g., "openai", "anthropic")
-            
+
         Returns:
             API key if found, None otherwise
         """
@@ -261,7 +261,7 @@ class CredentialManager:
         env_var = f"{provider.upper()}_API_KEY"
         if env_var in os.environ:
             return os.environ[env_var]
-            
+
         # Then try system keyring
         try:
             key = keyring.get_password(self.service_name, f"{provider}_api_key")
@@ -269,7 +269,7 @@ class CredentialManager:
                 return key
         except Exception:
             pass
-            
+
         # Finally try credentials file
         try:
             creds_file = os.path.expanduser("~/.pinocchio/credentials.json")
@@ -280,13 +280,13 @@ class CredentialManager:
                         return creds[provider]["api_key"]
         except Exception:
             pass
-            
+
         return None
-        
+
     def set_api_key(self, provider: str, api_key: str, use_keyring: bool = True) -> None:
         """
         Store an API key securely.
-        
+
         Args:
             provider: The service provider (e.g., "openai", "anthropic")
             api_key: The API key to store
@@ -298,11 +298,11 @@ class CredentialManager:
                 return
             except Exception:
                 pass
-                
+
         # Fall back to credentials file
         creds_file = os.path.expanduser("~/.pinocchio/credentials.json")
         os.makedirs(os.path.dirname(creds_file), exist_ok=True)
-        
+
         creds = {}
         if os.path.exists(creds_file):
             try:
@@ -310,14 +310,14 @@ class CredentialManager:
                     creds = json.load(f)
             except Exception:
                 pass
-                
+
         if provider not in creds:
             creds[provider] = {}
         creds[provider]["api_key"] = api_key
-        
+
         with open(creds_file, 'w') as f:
             json.dump(creds, f)
-            
+
         # Set permissions to restrict access
         os.chmod(creds_file, 0o600)
 ```
@@ -333,39 +333,39 @@ from pathlib import Path
 
 class ConfigLoader:
     """Utility for loading configuration from multiple sources with precedence."""
-    
+
     def __init__(self, settings: Settings, config_schema: Optional[Type[ConfigSchema]] = None):
         self.settings = settings
         self.config_schema = config_schema
-        
-    def load_config(self, 
+
+    def load_config(self,
                    default_config: Dict[str, Any] = None,
                    config_files: List[str] = None,
                    env_prefix: str = "PINOCCHIO_",
                    validate: bool = True) -> Dict[str, Any]:
         """
         Load configuration from multiple sources with precedence.
-        
+
         Precedence order (highest to lowest):
         1. Environment variables
         2. Command-line arguments (if provided)
         3. User config file
         4. Default config file
         5. Default values
-        
+
         Args:
             default_config: Default configuration values
             config_files: List of configuration files to try (in order of precedence)
             env_prefix: Prefix for environment variables
             validate: Whether to validate the configuration
-            
+
         Returns:
             Complete configuration dictionary
         """
         # Start with default config
         if default_config:
             self.settings.load_from_dict(default_config, "defaults")
-            
+
         # Load from config files
         if config_files:
             for config_file in config_files:
@@ -373,17 +373,17 @@ class ConfigLoader:
                     self.settings.load_from_file(config_file)
                 except FileNotFoundError:
                     pass  # Skip missing files
-                    
+
         # Load from environment variables (highest precedence)
         self.settings.load_from_env(prefix=env_prefix)
-        
+
         # Get the complete config
         config = self.settings.get_all()
-        
+
         # Validate if requested and schema is available
         if validate and self.config_schema:
             config = self.config_schema.validate_config(config)
-            
+
         return config
 ```
 
@@ -514,7 +514,7 @@ def initialize_llm_client(settings: Settings):
     provider = settings.get("llm.provider")
     api_key = settings.get("llm.api_key")
     model = settings.get("llm.model")
-    
+
     # Initialize client with configuration
     return LLMClient(provider, api_key, model)
 ```
@@ -528,7 +528,7 @@ from config import ConfigContext
 with ConfigContext(override={"llm.temperature": 0.9}) as ctx:
     # Code in this block uses the overridden configuration
     client = initialize_llm_client(ctx.settings)
-    
+
 # Outside the block, original configuration is restored
 ```
 
@@ -545,15 +545,15 @@ class LLMClientFactory:
         # Get provider from config if not specified
         if provider is None:
             provider = settings.get("llm.provider", "openai")
-            
+
         # Get API key securely
         cred_manager = CredentialManager()
         api_key = cred_manager.get_api_key(provider)
-        
+
         # Get other configuration values
         model = settings.get(f"llm.{provider}.model")
         temperature = settings.get(f"llm.{provider}.temperature", 0.7)
-        
+
         # Create appropriate client
         if provider == "openai":
             return OpenAIClient(api_key=api_key, model=model, temperature=temperature)
@@ -609,13 +609,13 @@ def load_config_from_args(args: argparse.Namespace):
                     current[part] = {}
                 current = current[part]
             current[parts[-1]] = value
-    
+
     # Load configuration
     config_loader = ConfigLoader(settings)
     config_loader.load_config(
         config_files=[args.config] if hasattr(args, "config") else None
     )
-    
+
     # Apply command-line overrides
     settings.load_from_dict(config_dict, "command_line")
 ```
@@ -628,14 +628,14 @@ def load_config_from_args(args: argparse.Namespace):
 def export_config(filepath: str, format: str = "json", include_defaults: bool = True):
     """
     Export current configuration to a file.
-    
+
     Args:
         filepath: Path to export configuration to
         format: File format ('json' or 'yaml')
         include_defaults: Whether to include default values
     """
     config = settings.get_all() if include_defaults else settings.get_non_defaults()
-    
+
     with open(filepath, 'w') as f:
         if format == "json":
             json.dump(config, f, indent=2)
@@ -652,16 +652,16 @@ def export_config(filepath: str, format: str = "json", include_defaults: bool = 
 def config_diff(config1: Dict[str, Any], config2: Dict[str, Any]) -> Dict[str, Any]:
     """
     Calculate the difference between two configurations.
-    
+
     Args:
         config1: First configuration
         config2: Second configuration
-        
+
     Returns:
         Dictionary of differences
     """
     diff = {}
-    
+
     # Find keys in config2 that differ from config1
     for key, value in config2.items():
         if key not in config1:
@@ -672,12 +672,12 @@ def config_diff(config1: Dict[str, Any], config2: Dict[str, Any]) -> Dict[str, A
                 diff[key] = nested_diff
         elif config1[key] != value:
             diff[key] = {"from": config1[key], "to": value}
-    
+
     # Find keys in config1 that are not in config2
     for key in config1:
         if key not in config2:
             diff[key] = {"removed": config1[key]}
-    
+
     return diff
 ```
 

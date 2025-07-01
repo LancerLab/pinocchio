@@ -1,6 +1,6 @@
 ---
 description: prompt module
-globs: 
+globs:
 alwaysApply: false
 ---
 # Prompt Module Design
@@ -32,17 +32,17 @@ from pathlib import Path
 
 class TemplateLoader:
     """Loader for prompt templates from various sources."""
-    
+
     def __init__(self, template_dirs: Optional[list[str]] = None):
         self.template_dirs = template_dirs or ["./prompts"]
-        
+
     def load_template(self, template_name: str) -> Optional[str]:
         """
         Load a template by name.
-        
+
         Args:
             template_name: Name of the template to load
-            
+
         Returns:
             Template content or None if not found
         """
@@ -54,83 +54,83 @@ class TemplateLoader:
                 if os.path.exists(template_path):
                     with open(template_path, "r", encoding="utf-8") as f:
                         return f.read()
-                        
+
         return None
-        
+
     def load_template_from_file(self, file_path: Union[str, Path]) -> str:
         """
         Load a template from a specific file.
-        
+
         Args:
             file_path: Path to the template file
-            
+
         Returns:
             Template content
-            
+
         Raises:
             FileNotFoundError: If the file doesn't exist
         """
         file_path = Path(file_path)
         if not file_path.exists():
             raise FileNotFoundError(f"Template file not found: {file_path}")
-            
+
         with open(file_path, "r", encoding="utf-8") as f:
             return f.read()
-            
+
     def load_templates_from_directory(self, directory: Union[str, Path]) -> Dict[str, str]:
         """
         Load all templates from a directory.
-        
+
         Args:
             directory: Directory to load templates from
-            
+
         Returns:
             Dictionary mapping template names to content
         """
         templates = {}
         directory = Path(directory)
-        
+
         if not directory.exists() or not directory.is_dir():
             return templates
-            
+
         for file_path in directory.glob("*.*"):
             if file_path.suffix in [".txt", ".md", ".jinja", ".j2"]:
                 template_name = file_path.stem
                 templates[template_name] = self.load_template_from_file(file_path)
-                
+
         return templates
-        
+
     def load_templates_from_json(self, file_path: Union[str, Path]) -> Dict[str, str]:
         """
         Load templates from a JSON file.
-        
+
         Args:
             file_path: Path to the JSON file
-            
+
         Returns:
             Dictionary mapping template names to content
         """
         file_path = Path(file_path)
         if not file_path.exists():
             return {}
-            
+
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
-            
+
     def load_templates_from_yaml(self, file_path: Union[str, Path]) -> Dict[str, str]:
         """
         Load templates from a YAML file.
-        
+
         Args:
             file_path: Path to the YAML file
-            
+
         Returns:
             Dictionary mapping template names to content
         """
         file_path = Path(file_path)
         if not file_path.exists():
             return {}
-            
+
         with open(file_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
 ```
@@ -147,40 +147,40 @@ from jinja2 import Template, Environment, FileSystemLoader, select_autoescape
 
 class TemplateFormatter:
     """Formatter for prompt templates with variable substitution."""
-    
+
     def __init__(self, jinja_env: Optional[Environment] = None):
         self.jinja_env = jinja_env or Environment(
             autoescape=select_autoescape(['html', 'xml']),
             trim_blocks=True,
             lstrip_blocks=True
         )
-        
+
     def format_string(self, template_str: str, variables: Dict[str, Any]) -> str:
         """
         Format a template string with variables.
-        
+
         Args:
             template_str: Template string
             variables: Dictionary of variables for substitution
-            
+
         Returns:
             Formatted string
         """
         # Use Jinja2 for template formatting
         template = self.jinja_env.from_string(template_str)
         return template.render(**variables)
-        
+
     def format_to_json(self, template_str: str, variables: Dict[str, Any]) -> Dict[str, Any]:
         """
         Format a template string and parse the result as JSON.
-        
+
         Args:
             template_str: Template string
             variables: Dictionary of variables for substitution
-            
+
         Returns:
             Parsed JSON object
-            
+
         Raises:
             ValueError: If the formatted string is not valid JSON
         """
@@ -189,39 +189,39 @@ class TemplateFormatter:
             return json.loads(formatted)
         except json.JSONDecodeError as e:
             raise ValueError(f"Formatted template is not valid JSON: {e}")
-            
+
     def validate_template_variables(self, template_str: str) -> List[str]:
         """
         Extract and validate variables used in a template.
-        
+
         Args:
             template_str: Template string
-            
+
         Returns:
             List of variable names used in the template
         """
         # Use Jinja2's AST to extract variables
         ast = self.jinja_env.parse(template_str)
         variables = set()
-        
+
         def visit_node(node):
             if hasattr(node, 'name'):
                 variables.add(node.name)
             if hasattr(node, 'nodes'):
                 for child in node.nodes:
                     visit_node(child)
-                    
+
         visit_node(ast)
         return list(variables)
-        
+
     def check_missing_variables(self, template_str: str, variables: Dict[str, Any]) -> List[str]:
         """
         Check for missing variables in a template.
-        
+
         Args:
             template_str: Template string
             variables: Dictionary of available variables
-            
+
         Returns:
             List of variable names that are used in the template but not provided
         """
@@ -242,16 +242,16 @@ import time
 
 class TemplateRegistry:
     """Registry for managing prompt templates."""
-    
+
     def __init__(self, loader: Optional[TemplateLoader] = None):
         self.loader = loader or TemplateLoader()
         self.templates: Dict[str, str] = {}
         self.metadata: Dict[str, Dict[str, Any]] = {}
-        
+
     def register_template(self, name: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
         Register a template.
-        
+
         Args:
             name: Template name
             content: Template content
@@ -262,56 +262,56 @@ class TemplateRegistry:
             "created_at": time.time(),
             "updated_at": time.time()
         }
-        
+
     def get_template(self, name: str) -> Optional[str]:
         """
         Get a template by name.
-        
+
         Args:
             name: Template name
-            
+
         Returns:
             Template content or None if not found
         """
         if name in self.templates:
             return self.templates[name]
-            
+
         # Try to load from file
         template = self.loader.load_template(name)
         if template:
             self.register_template(name, template)
             return template
-            
+
         return None
-        
+
     def get_template_metadata(self, name: str) -> Optional[Dict[str, Any]]:
         """
         Get metadata for a template.
-        
+
         Args:
             name: Template name
-            
+
         Returns:
             Template metadata or None if not found
         """
         return self.metadata.get(name)
-        
+
     def list_templates(self) -> List[str]:
         """
         List all registered templates.
-        
+
         Returns:
             List of template names
         """
         return list(self.templates.keys())
-        
+
     def load_templates_from_directory(self, directory: Union[str, Path]) -> Set[str]:
         """
         Load all templates from a directory.
-        
+
         Args:
             directory: Directory to load templates from
-            
+
         Returns:
             Set of loaded template names
         """
@@ -319,22 +319,22 @@ class TemplateRegistry:
         for name, content in templates.items():
             self.register_template(name, content)
         return set(templates.keys())
-        
+
     def save_templates(self, directory: Union[str, Path]) -> None:
         """
         Save all templates to a directory.
-        
+
         Args:
             directory: Directory to save templates to
         """
         directory = Path(directory)
         os.makedirs(directory, exist_ok=True)
-        
+
         # Save templates
         for name, content in self.templates.items():
             with open(directory / f"{name}.txt", "w", encoding="utf-8") as f:
                 f.write(content)
-                
+
         # Save metadata
         with open(directory / "metadata.json", "w", encoding="utf-8") as f:
             json.dump(self.metadata, f, indent=2)
@@ -355,14 +355,14 @@ import difflib
 
 class TemplateVersion:
     """Represents a version of a prompt template."""
-    
-    def __init__(self, content: str, version_id: Optional[str] = None, 
+
+    def __init__(self, content: str, version_id: Optional[str] = None,
                  timestamp: Optional[float] = None, metadata: Optional[Dict[str, Any]] = None):
         self.content = content
         self.version_id = version_id or str(uuid.uuid4())
         self.timestamp = timestamp or time.time()
         self.metadata = metadata or {}
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         return {
@@ -371,7 +371,7 @@ class TemplateVersion:
             "metadata": self.metadata,
             "content": self.content
         }
-        
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TemplateVersion':
         """Create from dictionary representation."""
@@ -385,84 +385,84 @@ class TemplateVersion:
 
 class TemplateVersionControl:
     """Version control for prompt templates."""
-    
+
     def __init__(self, storage_path: Optional[str] = None):
         self.storage_path = storage_path
         self.template_versions: Dict[str, List[TemplateVersion]] = {}
-        
-    def add_version(self, template_name: str, content: str, 
+
+    def add_version(self, template_name: str, content: str,
                    metadata: Optional[Dict[str, Any]] = None) -> TemplateVersion:
         """
         Add a new version of a template.
-        
+
         Args:
             template_name: Template name
             content: Template content
             metadata: Optional metadata
-            
+
         Returns:
             The created version
         """
         if template_name not in self.template_versions:
             self.template_versions[template_name] = []
-            
+
         # Create new version
         version = TemplateVersion(content, metadata=metadata)
         self.template_versions[template_name].append(version)
-        
+
         # Save to storage if configured
         self._save_version(template_name, version)
-        
+
         return version
-        
+
     def get_latest_version(self, template_name: str) -> Optional[TemplateVersion]:
         """
         Get the latest version of a template.
-        
+
         Args:
             template_name: Template name
-            
+
         Returns:
             Latest version or None if not found
         """
         if template_name not in self.template_versions or not self.template_versions[template_name]:
             return None
-            
+
         return self.template_versions[template_name][-1]
-        
+
     def get_version(self, template_name: str, version_id: str) -> Optional[TemplateVersion]:
         """
         Get a specific version of a template.
-        
+
         Args:
             template_name: Template name
             version_id: Version ID
-            
+
         Returns:
             The specified version or None if not found
         """
         if template_name not in self.template_versions:
             return None
-            
+
         for version in self.template_versions[template_name]:
             if version.version_id == version_id:
                 return version
-                
+
         return None
-        
+
     def get_version_history(self, template_name: str) -> List[Dict[str, Any]]:
         """
         Get the version history of a template.
-        
+
         Args:
             template_name: Template name
-            
+
         Returns:
             List of version metadata
         """
         if template_name not in self.template_versions:
             return []
-            
+
         return [
             {
                 "version_id": version.version_id,
@@ -471,25 +471,25 @@ class TemplateVersionControl:
             }
             for version in self.template_versions[template_name]
         ]
-        
+
     def diff_versions(self, template_name: str, version_id1: str, version_id2: str) -> List[str]:
         """
         Get the diff between two versions of a template.
-        
+
         Args:
             template_name: Template name
             version_id1: First version ID
             version_id2: Second version ID
-            
+
         Returns:
             List of diff lines
         """
         version1 = self.get_version(template_name, version_id1)
         version2 = self.get_version(template_name, version_id2)
-        
+
         if not version1 or not version2:
             return []
-            
+
         return list(difflib.unified_diff(
             version1.content.splitlines(),
             version2.content.splitlines(),
@@ -497,54 +497,54 @@ class TemplateVersionControl:
             f"v2:{version_id2}",
             lineterm=""
         ))
-        
+
     def _save_version(self, template_name: str, version: TemplateVersion) -> None:
         """
         Save a version to storage.
-        
+
         Args:
             template_name: Template name
             version: Template version
         """
         if not self.storage_path:
             return
-            
+
         # Create directory structure
         template_dir = os.path.join(self.storage_path, template_name)
         os.makedirs(template_dir, exist_ok=True)
-        
+
         # Save version metadata and content
         version_file = os.path.join(template_dir, f"{version.version_id}.json")
         with open(version_file, "w", encoding="utf-8") as f:
             json.dump(version.to_dict(), f, indent=2)
-            
+
     def load_versions(self) -> None:
         """Load versions from storage."""
         if not self.storage_path or not os.path.exists(self.storage_path):
             return
-            
+
         # Clear existing versions
         self.template_versions = {}
-        
+
         # Iterate through template directories
         for template_name in os.listdir(self.storage_path):
             template_dir = os.path.join(self.storage_path, template_name)
             if not os.path.isdir(template_dir):
                 continue
-                
+
             self.template_versions[template_name] = []
-            
+
             # Load version files
             for version_file in os.listdir(template_dir):
                 if not version_file.endswith(".json"):
                     continue
-                    
+
                 version_path = os.path.join(template_dir, version_file)
                 with open(version_path, "r", encoding="utf-8") as f:
                     version_data = json.load(f)
                     version = TemplateVersion.from_dict(version_data)
                     self.template_versions[template_name].append(version)
-                    
+
             # Sort versions by timestamp
             self.template_versions[template_name].sort(key=lambda v: v.timestamp)
 ```
@@ -559,20 +559,20 @@ import re
 
 class TemplateComponent:
     """A reusable component for prompt templates."""
-    
+
     def __init__(self, name: str, content: str, required_variables: Optional[List[str]] = None):
         self.name = name
         self.content = content
         self.required_variables = required_variables or []
-        
+
     def render(self, variables: Dict[str, Any], formatter: TemplateFormatter) -> str:
         """
         Render the component with variables.
-        
+
         Args:
             variables: Variables for substitution
             formatter: Template formatter
-            
+
         Returns:
             Rendered component
         """
@@ -581,98 +581,98 @@ class TemplateComponent:
 
 class TemplateComposer:
     """Composer for building templates from components."""
-    
-    def __init__(self, registry: Optional[TemplateRegistry] = None, 
+
+    def __init__(self, registry: Optional[TemplateRegistry] = None,
                 formatter: Optional[TemplateFormatter] = None):
         self.registry = registry or TemplateRegistry()
         self.formatter = formatter or TemplateFormatter()
         self.components: Dict[str, TemplateComponent] = {}
-        
+
     def register_component(self, component: TemplateComponent) -> None:
         """
         Register a template component.
-        
+
         Args:
             component: Template component
         """
         self.components[component.name] = component
-        
+
     def compose_template(self, template_str: str, variables: Dict[str, Any]) -> str:
         """
         Compose a template by including components and substituting variables.
-        
+
         Args:
             template_str: Template string with component references
             variables: Variables for substitution
-            
+
         Returns:
             Composed template
         """
         # First pass: include components
         included_template = self._include_components(template_str, variables)
-        
+
         # Second pass: substitute variables
         return self.formatter.format_string(included_template, variables)
-        
+
     def _include_components(self, template_str: str, variables: Dict[str, Any]) -> str:
         """
         Include components in a template.
-        
+
         Args:
             template_str: Template string with component references
             variables: Variables for substitution
-            
+
         Returns:
             Template with components included
         """
         # Process includes
         pattern = r"{%\s*include\s+['"]([^'"]+)['"]\s*%}"
-        
+
         def replace_include(match):
             component_name = match.group(1)
-            
+
             # Check if component exists
             if component_name in self.components:
                 component = self.components[component_name]
                 return component.render(variables, self.formatter)
-                
+
             # Try to load from registry
             template = self.registry.get_template(component_name)
             if template:
                 return self._include_components(template, variables)
-                
+
             # Component not found
             return f"{{# Component not found: {component_name} #}}"
-            
+
         # Replace all includes
         result = template_str
         while re.search(pattern, result):
             result = re.sub(pattern, replace_include, result)
-            
+
         return result
-        
+
     def get_required_variables(self, template_str: str) -> Set[str]:
         """
         Get all variables required by a template and its included components.
-        
+
         Args:
             template_str: Template string
-            
+
         Returns:
             Set of required variable names
         """
         # Get variables from the template itself
         template_vars = set(self.formatter.validate_template_variables(template_str))
-        
+
         # Get variables from included components
         pattern = r"{%\s*include\s+['"]([^'"]+)['"]\s*%}"
         for match in re.finditer(pattern, template_str):
             component_name = match.group(1)
-            
+
             if component_name in self.components:
                 component = self.components[component_name]
                 template_vars.update(component.required_variables)
-                
+
         return template_vars
 ```
 
@@ -840,10 +840,10 @@ The module supports comparing different versions of a template:
 +++ v2:def456
 @@ -1,5 +1,5 @@
  Hello, {{ name }}!
- 
+
 -I am an AI assistant designed to help with {{ task }}.
 +I am an advanced AI assistant designed to help with {{ task }} efficiently.
- 
+
  Let me provide you with information about {{ topic }}.
 ```
 
@@ -860,19 +860,19 @@ class PromptBasedAgent(AgentBase):
         self.template_name = template_name
         self.template_registry = template_registry or TemplateRegistry()
         self.formatter = TemplateFormatter()
-        
+
     async def process(self, prompt_json: dict) -> dict:
         # Get the template
         template = self.template_registry.get_template(self.template_name)
         if not template:
             raise ValueError(f"Template not found: {self.template_name}")
-            
+
         # Format the template with input variables
         formatted_prompt = self.formatter.format_string(template, prompt_json)
-        
+
         # Process the formatted prompt (e.g., send to LLM)
         # ...
-        
+
         return {"response": "..."}
 ```
 
@@ -887,19 +887,19 @@ class PromptManager:
         self.llm_client = llm_client
         self.template_registry = template_registry or TemplateRegistry()
         self.formatter = TemplateFormatter()
-        
+
     async def process_template(self, template_name: str, variables: dict) -> dict:
         # Get the template
         template = self.template_registry.get_template(template_name)
         if not template:
             raise ValueError(f"Template not found: {template_name}")
-            
+
         # Format the template with variables
         formatted_prompt = self.formatter.format_string(template, variables)
-        
+
         # Send to LLM
         response = await self.llm_client.complete(formatted_prompt)
-        
+
         return response
 ```
 
@@ -914,19 +914,19 @@ class KnowledgeAwarePromptManager:
         self.knowledge_base = knowledge_base
         self.template_registry = template_registry or TemplateRegistry()
         self.formatter = TemplateFormatter()
-        
+
     def create_prompt_with_knowledge(self, template_name: str, query: str, variables: dict) -> str:
         # Retrieve relevant knowledge
         knowledge_items = self.knowledge_base.search(query)
-        
+
         # Add knowledge to variables
         variables["knowledge"] = [item.content for item in knowledge_items]
-        
+
         # Get and format the template
         template = self.template_registry.get_template(template_name)
         if not template:
             raise ValueError(f"Template not found: {template_name}")
-            
+
         return self.formatter.format_string(template, variables)
 ```
 
