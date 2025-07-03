@@ -2,20 +2,21 @@
 Unit tests for the errors module.
 """
 import logging
-import pytest
 from contextlib import contextmanager
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
+
+import pytest
 
 from pinocchio.errors import (
-    PinocchioError,
     ConfigError,
-    LLMError,
-    WorkflowError,
-    handle_errors,
-    error_context,
-    retry,
-    ErrorReporter,
     ErrorMetricsCollector,
+    ErrorReporter,
+    LLMError,
+    PinocchioError,
+    WorkflowError,
+    error_context,
+    handle_errors,
+    retry,
 )
 
 
@@ -40,7 +41,7 @@ class TestExceptions:
         details = {"key": "value"}
         error = PinocchioError("Test error", error_code="CUSTOM_ERROR", details=details)
         error_dict = error.to_dict()
-        
+
         assert error_dict["error_code"] == "CUSTOM_ERROR"
         assert error_dict["message"] == "Test error"
         assert error_dict["details"] == details
@@ -68,6 +69,7 @@ class TestErrorHandlers:
 
     def test_handle_errors_decorator(self):
         """Test the handle_errors decorator."""
+
         @handle_errors(fallback_value="fallback")
         def function_that_raises():
             raise ValueError("Test error")
@@ -140,28 +142,30 @@ class TestErrorReporting:
     def test_error_reporter(self):
         """Test the ErrorReporter class."""
         reporter = ErrorReporter()
-        
+
         # Test recording errors
         error = ValueError("Test error")
         reporter.record_error(error)
         assert len(reporter.errors) == 1
-        
+
         # Test error summary
         summary = reporter.get_error_summary()
         assert summary["total_errors"] == 1
         assert summary["error_counts"]["ValueError"] == 1
         assert summary["latest_error"]["error_type"] == "ValueError"
-        
+
         # Test recording PinocchioError
-        pinocchio_error = PinocchioError("Pinocchio error", "TEST_ERROR", {"detail": "value"})
+        pinocchio_error = PinocchioError(
+            "Pinocchio error", "TEST_ERROR", {"detail": "value"}
+        )
         reporter.record_error(pinocchio_error)
         assert len(reporter.errors) == 2
-        
+
         # Test get_errors_by_type
         value_errors = reporter.get_errors_by_type("ValueError")
         assert len(value_errors) == 1
         assert value_errors[0]["message"] == "Test error"
-        
+
         # Test clear_errors
         reporter.clear_errors()
         assert len(reporter.errors) == 0
@@ -170,23 +174,23 @@ class TestErrorReporting:
     def test_error_metrics_collector(self):
         """Test the ErrorMetricsCollector class."""
         collector = ErrorMetricsCollector()
-        
+
         # Test recording error metrics
         collector.record_error("ValueError")
         collector.record_error("ValueError")
         collector.record_error("TypeError")
-        
+
         # Test calculate_error_rates
         rates = collector.calculate_error_rates()
         assert len(rates["ValueError"]) == 1
         assert len(rates["TypeError"]) == 1
-        
+
         # Test clear_metrics
         collector.clear_metrics()
         rates = collector.calculate_error_rates()
         assert not rates
-        
+
         # Test recording after clearing
         collector.record_error("ValueError")
         rates = collector.calculate_error_rates()
-        assert len(rates["ValueError"]) == 1 
+        assert len(rates["ValueError"]) == 1
