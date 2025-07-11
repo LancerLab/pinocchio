@@ -1,6 +1,7 @@
 """Main CLI logic for Pinocchio."""
 
 import asyncio
+import logging
 import sys
 from datetime import datetime
 from typing import AsyncGenerator
@@ -8,10 +9,11 @@ from typing import AsyncGenerator
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 from rich.console import Console
-from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+logger = logging.getLogger(__name__)
 
 # Color themes configuration
 THEMES = {
@@ -58,12 +60,15 @@ class PinocchioCLI:
         self.history: list = []
         self.is_running: bool = True
 
-        # Initialize Coordinator (placeholder for now)
-        # from pinocchio.coordinator import Coordinator
-        # self.coordinator = Coordinator()
+        # Initialize real Coordinator
+        try:
+            from pinocchio.coordinator import Coordinator
 
-        # For now, we'll use a mock coordinator
-        self.coordinator = MockCoordinator()
+            self.coordinator = Coordinator()
+            logger.info("Real Coordinator initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Coordinator, using mock: {e}")
+            self.coordinator = MockCoordinator()
 
     async def start(self) -> None:
         """Start the CLI."""
@@ -140,14 +145,10 @@ class PinocchioCLI:
         # Show user input
         self._show_message("user", user_input)
 
-        # Show progress indicator
-        with Live(
-            self._create_progress_panel("Processing request..."), console=self.console
-        ):
-            # Process request
-            async for message in self.coordinator.process_user_request(user_input):
-                # Show system message
-                self._show_message("system", message)
+        # Process request with real-time streaming
+        async for message in self.coordinator.process_user_request(user_input):
+            # Show system message
+            self._show_message("system", message)
 
         # Record system response
         self.history.append(
@@ -253,3 +254,6 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
+
+
+cli = PinocchioCLI()

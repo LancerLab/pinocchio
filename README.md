@@ -6,6 +6,72 @@
 
 Pinocchio 是一个用于自动编写、调试、优化 Choreo 计算核编程 DSL 算子的多智能体协作系统。系统采用简洁的架构设计，以 Coordinator 为总指挥，Session 为结构化 logger，支持流式输出和完整的交互历史记录。
 
+## 🎭 交互式 CLI 体验
+
+Pinocchio 提供了丰富的交互式命令行界面，支持实时流式输出和完整的会话管理。以下是 MVP 典型需求的完整交互流程：
+
+### 启动界面
+```
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                     │
+│  🎭 Pinocchio CLI                                                                                   │
+│                                                                                                     │
+│  Welcome to Pinocchio - Multi-Agent Collaboration System                                            │
+│                                                                                                     │
+│  Type your request and press Enter to start...                                                      │
+│  Type 'help' for available commands                                                                 │
+│  Type 'quit' to exit                                                                                │
+│                                                                                                     │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────╯
+>
+```
+
+### MVP 典型需求交互流程
+
+**用户输入**: `编写一个矩阵加法算子`
+
+**系统响应**:
+```
+👤 You: 编写一个矩阵加法算子
+
+🤖 Pinocchio: [session_f8ffb8ae] Session started
+🤖 Pinocchio: [session_f8ffb8ae] Plan generated: 1 steps
+🤖 Pinocchio: [session_f8ffb8ae] Executing step 1: generator
+🤖 Pinocchio: [session_f8ffb8ae] Step 1 completed successfully
+
+🤖 Pinocchio:
+🎉 Code generation completed!
+
+```choreo
+// Generated Choreo DSL operator for convolution operation
+func conv_kernel(input: tensor, output: tensor) {
+    // Basic implementation
+    for i in range(input.shape[0]) {
+        for j in range(input.shape[1]) {
+            output[i][j] = compute(input[i][j]);
+        }
+    }
+}
+```
+
+🤖 Pinocchio:
+📋 Explanation: Generated a basic Choreo DSL operator with optimized memory access patterns.
+
+🤖 Pinocchio:
+⚡ Optimizations applied: loop_tiling, memory_coalescing
+
+🤖 Pinocchio: [session_f8ffb8ae] Session completed successfully
+🤖 Pinocchio: [session_f8ffb8ae] Session saved to: session_f8ffb8ae_20250711_180521.json
+```
+
+### 核心特性展示
+
+- **🎭 美观界面**: 使用 Rich 库构建的现代化 CLI 界面
+- **📊 实时反馈**: 流式输出显示每个步骤的进度和状态
+- **🤖 多智能体协作**: 自动规划、执行和优化代码生成流程
+- **💾 完整记录**: 自动保存会话日志，支持历史查询和调试
+- **⚡ 智能优化**: 自动应用性能优化技术（循环分块、内存合并等）
+
 ## 🚀 核心特性
 
 - **简洁架构**：清晰的模块职责和通信路径
@@ -55,6 +121,16 @@ Pinocchio 是一个用于自动编写、调试、优化 Choreo 计算核编程 D
 
 - Python 3.9+
 - Poetry (推荐) 或 pip
+- uv (可选，极快的包管理器，需单独安装)
+
+### 安装 uv（可选）
+
+```bash
+# 推荐使用 pip 安装 uv
+pip install uv
+# 或使用官方安装脚本
+curl -Ls https://astral.sh/uv/install.sh | sh
+```
 
 ### 安装步骤
 
@@ -63,7 +139,10 @@ Pinocchio 是一个用于自动编写、调试、优化 Choreo 计算核编程 D
 git clone https://github.com/your-org/pinocchio.git
 cd pinocchio
 
-# 使用 Poetry 安装
+# 使用 uv 安装依赖（推荐，极快）
+uv pip install -r requirements.txt
+
+# 或使用 Poetry 安装
 poetry install
 
 # 设置开发环境（包含pre-commit钩子）
@@ -90,7 +169,19 @@ pip install -e .
 
 ## 🚀 快速开始
 
-### 基础使用
+### 交互式 CLI 使用（推荐）
+
+```bash
+# 启动交互式 CLI
+python -m pinocchio.cli.main
+
+# 在 CLI 中输入你的需求
+> 编写一个矩阵加法算子
+> 优化现有的卷积算子
+> 调试内存访问问题
+```
+
+### 程序化使用
 
 ```python
 from pinocchio.coordinator import Coordinator
@@ -100,7 +191,7 @@ coordinator = Coordinator()
 
 # 处理用户请求
 async def main():
-    async for message in coordinator.process_user_request("编写一个conv 2d算子"):
+    async for message in coordinator.process_user_request("编写一个矩阵加法算子"):
         print(message)  # 流式输出进度信息
 
 # 运行
@@ -108,37 +199,60 @@ import asyncio
 asyncio.run(main())
 ```
 
-### 命令行使用
+### 直接命令行使用
 
 ```bash
-# 基础使用
-python -m pinocchio --prompt "编写一个conv 2d算子"
+# 单次请求处理
+echo "编写一个矩阵加法算子" | python -m pinocchio.cli.main
 
-# 指定配置文件
-python -m pinocchio --config config.json --prompt "优化现有的算子"
+# 或者使用 Python 模块
+python -c "
+import asyncio
+from pinocchio.coordinator import Coordinator
+
+async def main():
+    coordinator = Coordinator()
+    async for msg in coordinator.process_user_request('编写一个矩阵加法算子'):
+        print(msg)
+
+asyncio.run(main())
+"
 ```
 
 ## 📁 项目结构
 
 ```
 pinocchio/
-├── coordinator.py          # 总指挥
-├── session_logger.py      # 结构化logger
-├── prompt_manager.py      # 综合prompt构建器
-├── agent.py              # Agent基类和实现
-├── memory_manager.py     # 记忆管理
-├── knowledge_manager.py  # 知识管理
-├── llm_client.py        # LLM客户端
-├── models/              # 数据模型
+├── coordinator.py          # 总指挥 - 多智能体协作核心
+├── session_logger.py      # 结构化logger - 会话管理
+├── agents/               # 智能体模块
 │   ├── __init__.py
-│   ├── session.py
-│   ├── memory.py
-│   ├── knowledge.py
-│   └── agent.py
+│   ├── base.py           # 智能体基类
+│   ├── generator.py      # 代码生成智能体
+│   └── planner.py        # 规划智能体
+├── cli/                  # 命令行界面
+│   ├── __init__.py
+│   └── main.py          # CLI 主程序
+├── memory/               # 记忆管理
+│   ├── __init__.py
+│   ├── manager.py        # 记忆管理器
+│   └── models/          # 记忆数据模型
+├── session/              # 会话管理
+│   ├── __init__.py
+│   └── manager.py        # 会话管理器
+├── llm/                  # LLM 客户端
+│   ├── __init__.py
+│   └── mock_client.py    # Mock LLM 客户端
+├── prompt/               # 提示词管理
+│   ├── __init__.py
+│   └── models/          # 提示词模型
+├── data_models/          # 数据模型
+│   ├── __init__.py
+│   └── agent.py         # 智能体数据模型
 └── utils/               # 工具函数
     ├── __init__.py
-    ├── json_parser.py
-    └── file_utils.py
+    ├── file_utils.py    # 文件操作工具
+    └── json_parser.py   # JSON 解析工具
 
 # 数据存储目录
 sessions/               # Session日志文件
@@ -213,31 +327,60 @@ pytest --cov=pinocchio --cov-report=html
 
 ## 📚 开发指南
 
-### 添加新的Agent
+### 添加新的智能体
 
 ```python
-from pinocchio.agent import Agent
+from pinocchio.agents.base import Agent
 
 class CustomAgent(Agent):
     def __init__(self, agent_type: str, llm_client):
         super().__init__(agent_type, llm_client)
 
-    async def execute(self, prompt: Dict) -> Dict:
+    async def execute(self, request: Dict[str, Any]) -> AgentResponse:
         # 实现自定义逻辑
-        result = await self.llm_client.complete(prompt["prompt_string"])
-        return self._parse_llm_response(result)
+        prompt = self._build_prompt(request)
+        result = await self._call_llm(prompt)
+        return self._create_response(
+            request_id=request["request_id"],
+            success=True,
+            output=result
+        )
+
+    def _get_agent_instructions(self) -> str:
+        return "You are a custom agent specialized in..."
+
+    def _get_output_format(self) -> str:
+        return """
+        Please provide your response in JSON format:
+        {
+            "agent_type": "custom",
+            "success": true,
+            "output": {
+                // Custom output fields
+            }
+        }
+        """
 ```
 
-### 扩展知识库
+### 扩展记忆管理
 
 ```python
-from pinocchio.knowledge_manager import KnowledgeManager
+from pinocchio.memory.manager import MemoryManager
 
-# 添加知识条目
-knowledge_manager = KnowledgeManager()
-knowledge_manager.add_knowledge({
-    "id": "custom_knowledge",
+# 创建记忆管理器
+memory_manager = MemoryManager()
+
+# 添加记忆条目
+memory_manager.add_memory({
     "agent_type": "generator",
+    "task_description": "矩阵加法算子",
+    "output": {"code": "...", "optimizations": [...]},
+    "success": True
+})
+
+# 检索相关记忆
+related_memories = memory_manager.search_memories("矩阵加法")
+```
     "keywords": ["custom", "algorithm"],
     "content": "自定义算法知识...",
     "category": "algorithm"

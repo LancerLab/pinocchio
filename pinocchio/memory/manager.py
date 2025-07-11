@@ -62,18 +62,26 @@ class MemoryManager:
         error_details: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, str]:
         """Log a generator agent interaction and code version."""
+        print(f"Starting log_generator_interaction for session: {session_id}")
         # Create code version
         code = output_data.get("code", "")
         language = output_data.get("language", "")
         kernel_type = output_data.get("kernel_type", "")
         code_version = CodeVersion.create_new_version(
+            session_id=session_id,
             code=code,
+            language=language,
+            kernel_type=kernel_type,
             source_agent="generator",
             description="Generator output",
             optimization_techniques=optimization_techniques,
             hyperparameters=hyperparameters,
         )
+        print(f"Created code_version with ID: {code_version.version_id}")
         self.add_code_version(session_id, code_version)
+        print(
+            f"After add_code_version, current versions: {list(self.get_code_memory(session_id).versions.keys())}"
+        )
         # Create memory
         memory = GeneratorMemory(
             session_id=session_id,
@@ -94,7 +102,10 @@ class MemoryManager:
             knowledge_fragments=knowledge_fragments,
         )
         memory_id = self.store_agent_memory(memory)
-        return code_version.version_id, memory_id
+        print(
+            f"About to return: code_version.version_id={code_version.version_id}, memory_id={memory_id}"
+        )
+        return memory_id, code_version.version_id
 
     def log_debugger_interaction(
         self,
@@ -116,8 +127,13 @@ class MemoryManager:
         # If code is modified, create new code version
         code_version_id = None
         if modified_code:
+            language = output_data.get("language", "")
+            kernel_type = output_data.get("kernel_type", "")
             code_version = CodeVersion.create_new_version(
+                session_id=session_id,
                 code=modified_code,
+                language=language,
+                kernel_type=kernel_type,
                 source_agent="debugger",
                 optimization_techniques=output_data.get("optimization_techniques", []),
                 hyperparameters=output_data.get("hyperparameters", {}),
@@ -228,7 +244,23 @@ class MemoryManager:
         code_memory = self.get_code_memory(session_id)
         if version_id is None:
             return code_memory.get_current_version()
-        return code_memory.versions.get(version_id)
+
+        # Try to get from cache first
+        version = code_memory.versions.get(version_id)
+        if version is not None:
+            return version
+
+        # If not found in cache, try to reload from file
+        session_path = self._session_path(session_id)
+        fpath = session_path / "code_memory.json"
+        if fpath.exists():
+            with open(fpath, "r") as f:
+                data = json.load(f)
+            code_memory = CodeMemory.model_validate(data)
+            self._session_cache.setdefault(session_id, {})["code_memory"] = code_memory
+            return code_memory.versions.get(version_id)
+
+        return None
 
     def add_performance_metrics(
         self,

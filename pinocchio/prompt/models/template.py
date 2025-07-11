@@ -11,8 +11,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import Field
-
 
 class AgentType(Enum):
     """Agent types for prompt templates."""
@@ -121,9 +119,7 @@ class PromptTemplate:
     updated_at: datetime = field(default_factory=datetime.now)
     tags: List[str] = field(default_factory=list)
     priority: int = 1
-    optimization_level: float = Field(
-        default=1.0, description="Optimization level (0.0-1.0)"
-    )
+    optimization_level: float = field(default=1.0)
 
     # Performance tracking
     usage_count: int = 0
@@ -169,31 +165,50 @@ class PromptTemplate:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert template to dictionary."""
-        # Use dataclass asdict to avoid FieldInfo serialization issues
         from dataclasses import asdict
 
         result = asdict(self)
+        result = self._convert_datetime_fields(result)
+        result = self._convert_enum_fields(result)
+        result = self._convert_schema_fields(result)
+        result = self._ensure_optimization_level(result)
+        return result
 
-        # Convert datetime objects to ISO strings
+    def _convert_datetime_fields(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert datetime objects to ISO strings."""
         if "created_at" in result and isinstance(result["created_at"], datetime):
             result["created_at"] = result["created_at"].isoformat()
         if "updated_at" in result and isinstance(result["updated_at"], datetime):
             result["updated_at"] = result["updated_at"].isoformat()
+        return result
 
-        # Convert enum values to strings
+    def _convert_enum_fields(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert enum values to strings."""
         if "agent_type" in result and hasattr(result["agent_type"], "value"):
             result["agent_type"] = result["agent_type"].value
         if "prompt_type" in result and hasattr(result["prompt_type"], "value"):
             result["prompt_type"] = result["prompt_type"].value
+        return result
 
-        # Convert structured schemas
+    def _convert_schema_fields(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert structured schemas."""
         if "input_schema" in result and result["input_schema"]:
             if hasattr(result["input_schema"], "to_dict"):
                 result["input_schema"] = result["input_schema"].to_dict()
-            # If it's already a dict, leave it as is
         if "output_schema" in result and result["output_schema"]:
-            result["output_schema"] = result["output_schema"].to_dict()
+            if hasattr(result["output_schema"], "to_dict"):
+                result["output_schema"] = result["output_schema"].to_dict()
+        return result
 
+    def _ensure_optimization_level(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure optimization_level is float."""
+        if "optimization_level" in result and not isinstance(
+            result["optimization_level"], float
+        ):
+            try:
+                result["optimization_level"] = float(result["optimization_level"])
+            except Exception:
+                result["optimization_level"] = 1.0
         return result
 
     @classmethod

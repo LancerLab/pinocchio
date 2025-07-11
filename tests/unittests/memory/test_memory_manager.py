@@ -17,7 +17,7 @@ def make_temp_manager():
 
 def test_log_generator_interaction():
     mgr, temp_dir = make_temp_manager()
-    session_id = "test_session"
+    session_id = "test_session_generator"
     input_data = {"user_requirement": "matmul", "knowledge_fragments": {}}
     output_data = {
         "code": "def matmul(): pass",
@@ -37,10 +37,19 @@ def test_log_generator_interaction():
         hyperparameters={"tile_size": 32},
         knowledge_fragments={},
     )
+    print(f"Returned code_version_id: {code_version_id}")
     assert memory_id
     assert code_version_id
+
+    # Debug: Check what's in the code memory
+    code_memory = mgr.get_code_memory(session_id)
+    print(f"Code version ID: {code_version_id}")
+    print(f"Available versions: {list(code_memory.versions.keys())}")
+    print(f"Current version ID: {code_memory.current_version_id}")
+
     # Check code version
     code_version = mgr.get_code_version(session_id, code_version_id)
+    print(f"Retrieved code version: {code_version}")
     assert code_version.code == "def matmul(): pass"
     # Check memory file
     mem_dir = Path(temp_dir) / session_id / "memories"
@@ -50,7 +59,7 @@ def test_log_generator_interaction():
 
 def test_log_debugger_interaction():
     mgr, temp_dir = make_temp_manager()
-    session_id = "test_session"
+    session_id = "test_session_debugger"
     input_data = {"generator_output": {}}
     output_data = {
         "compilation_status": "success",
@@ -85,7 +94,7 @@ def test_log_debugger_interaction():
 
 def test_log_evaluator_interaction():
     mgr, temp_dir = make_temp_manager()
-    session_id = "test_session"
+    session_id = "test_session_evaluator"
     input_data = {"debugger_output": {}}
     output_data = {
         "version_id": "v1",
@@ -110,13 +119,14 @@ def test_log_evaluator_interaction():
 
 def test_add_and_get_code_version():
     mgr, temp_dir = make_temp_manager()
-    session_id = "test_session"
+    session_id = "test_session_add_get"
     code_version = CodeVersion.create_new_version(
         session_id=session_id,
         code="def foo(): pass",
         language="python",
         kernel_type="test",
         source_agent="generator",
+        description="Test code version",
     )
     vid = mgr.add_code_version(session_id, code_version)
     assert vid == code_version.version_id
@@ -127,7 +137,7 @@ def test_add_and_get_code_version():
 
 def test_add_performance_metrics():
     mgr, temp_dir = make_temp_manager()
-    session_id = "test_session"
+    session_id = "test_session_performance"
     code_version_id = "v1"
     metrics_id = mgr.add_performance_metrics(
         session_id=session_id,
@@ -146,7 +156,7 @@ def test_add_performance_metrics():
 
 def test_update_optimization_history():
     mgr, temp_dir = make_temp_manager()
-    session_id = "test_session"
+    session_id = "test_session_optimization"
     mgr.update_optimization_history(
         session_id=session_id,
         techniques=["tiling"],
@@ -161,7 +171,7 @@ def test_update_optimization_history():
 
 def test_query_agent_memories():
     mgr, temp_dir = make_temp_manager()
-    session_id = "test_session"
+    session_id = "test_session_query"
     # First write two memory records for different agents
     mgr.log_generator_interaction(
         session_id=session_id,
@@ -194,7 +204,7 @@ def test_query_agent_memories():
 
 def test_export_logs():
     mgr, temp_dir = make_temp_manager()
-    session_id = "test_session"
+    session_id = "test_session_export"
     mgr.log_generator_interaction(
         session_id=session_id,
         input_data={},
@@ -205,6 +215,6 @@ def test_export_logs():
         hyperparameters={},
         knowledge_fragments={},
     )
-    export_path = mgr.export_logs(session_id)
-    assert Path(export_path).exists()
+    log_path = mgr.export_logs(session_id)
+    assert Path(log_path).exists()
     shutil.rmtree(temp_dir)

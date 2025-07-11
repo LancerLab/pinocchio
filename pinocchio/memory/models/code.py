@@ -35,20 +35,27 @@ class CodeVersion(BaseModel):
     def __init__(
         self,
         version_id: str,
+        session_id: str,
         code: str,
+        language: str,
+        kernel_type: str,
         source_agent: str,
         description: str = "",
         parent_version_id: Optional[str] = None,
         optimization_techniques: Optional[List[str]] = None,
         hyperparameters: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        **kwargs,
     ):
         """
         Create a new code version.
 
         Args:
             version_id: Version ID
+            session_id: Session ID
             code: Code content
+            language: Programming language
+            kernel_type: Type of kernel (cpu, gpu, etc.)
             source_agent: Agent that created this version
             description: Version description
             parent_version_id: Parent version ID
@@ -56,20 +63,28 @@ class CodeVersion(BaseModel):
             hyperparameters: Optimization hyperparameters
             metadata: Additional metadata
         """
-        self.version_id = version_id
-        self.code = code
-        self.source_agent = source_agent
-        self.description = description
-        self.timestamp = datetime.now()
-        self.parent_version_id = parent_version_id
-        self.optimization_techniques = optimization_techniques or []
-        self.hyperparameters = hyperparameters or {}
-        self.metadata = metadata or {}
+        super().__init__(
+            version_id=version_id,
+            session_id=session_id,
+            code=code,
+            language=language,
+            kernel_type=kernel_type,
+            source_agent=source_agent,
+            description=description,
+            parent_version_id=parent_version_id,
+            optimization_techniques=optimization_techniques or [],
+            hyperparameters=hyperparameters or {},
+            metadata=metadata or {},
+            **kwargs,
+        )
 
     @classmethod
     def create_new_version(
         cls,
+        session_id: str,
         code: str,
+        language: str,
+        kernel_type: str,
         source_agent: str,
         description: str = "",
         parent_version_id: Optional[str] = None,
@@ -80,7 +95,10 @@ class CodeVersion(BaseModel):
         """Create a new code version."""
         return cls(
             version_id=str(uuid.uuid4()),
+            session_id=session_id,
             code=code,
+            language=language,
+            kernel_type=kernel_type,
             source_agent=source_agent,
             description=description,
             parent_version_id=parent_version_id,

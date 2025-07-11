@@ -409,9 +409,72 @@ class SessionManager:
             "average_runtime": float(
                 total_runtime / valid_runtime_count if valid_runtime_count > 0 else 0
             ),
+            "total_agent_interactions": total_interactions,
+            "total_iterations": total_iterations,
+            "total_optimization_iterations": total_iterations,
+            "total_performance_points": total_performance_points,
+        }
+
+    def analyze_session_performance(self, session_id: str) -> dict:
+        """
+        Analyze session performance (stub for test compatibility).
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return {}
+
+        # Calculate basic statistics
+        total_interactions = len(session.agent_interactions)
+        total_iterations = len(session.optimization_iterations)
+        performance_points = len(session.performance_trend)
+
+        # Count agent interactions by type
+        agent_interaction_counts = {}
+        for interaction in session.agent_interactions:
+            agent_type = interaction.get("agent_type", "unknown")
+            agent_interaction_counts[agent_type] = (
+                agent_interaction_counts.get(agent_type, 0) + 1
+            )
+
+        return {
             "total_interactions": total_interactions,
             "total_iterations": total_iterations,
-            "total_performance_points": total_performance_points,
+            "performance_points": performance_points,
+            "agent_interaction_counts": agent_interaction_counts,
+        }
+
+    def generate_session_report(self, session) -> dict:
+        """
+        Generate a comprehensive session report.
+
+        Args:
+            session: Session object
+
+        Returns:
+            Session report dictionary
+        """
+        return {
+            "session_id": session.session_id,
+            "task_description": session.task_description,
+            "status": session.status.value
+            if hasattr(session.status, "value")
+            else session.status,
+            "optimization_summary": {
+                "total_iterations": len(session.optimization_iterations),
+                "total_agent_interactions": len(session.agent_interactions),
+                "performance_trend_length": len(session.performance_trend),
+            },
+            "performance_analysis": {
+                "total_performance_points": len(session.performance_trend),
+                "latest_metrics": session.performance_trend[-1]
+                if session.performance_trend
+                else None,
+            },
+            "version_references": {
+                "memory_versions": len(session.memory_versions),
+                "knowledge_versions": len(session.knowledge_versions),
+                "prompt_versions": len(session.prompt_versions),
+            },
         }
 
     def _persist_session(self, session: Session) -> None:

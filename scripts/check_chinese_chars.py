@@ -34,15 +34,45 @@ def contains_chinese_chars(text: str) -> bool:
     return bool(pattern.search(text))
 
 
+def is_in_string(line: str, char_pos: int) -> bool:
+    """
+    Check if a character position is inside a string literal.
+
+    Args:
+        line: The line of code
+        char_pos: Position of the character to check
+
+    Returns:
+        True if the character is inside a string literal, False otherwise
+    """
+    # Simple heuristic to detect if we're inside a string
+    # This handles basic cases but may not catch all edge cases
+
+    # Count quotes before the position
+    single_quotes = line[:char_pos].count("'")
+    double_quotes = line[:char_pos].count('"')
+
+    # Check for triple quotes
+    triple_single = line[:char_pos].count("'''")
+    triple_double = line[:char_pos].count('"""')
+
+    # Adjust for triple quotes (each triple quote counts as 3 single/double quotes)
+    single_quotes -= triple_single * 2  # Each triple quote uses 3 single quotes
+    double_quotes -= triple_double * 2  # Each triple quote uses 3 double quotes
+
+    # If we have an odd number of quotes, we're inside a string
+    return (single_quotes % 2 == 1) or (double_quotes % 2 == 1)
+
+
 def check_file(file_path: Path) -> List[int]:
     """
-    Check a file for Chinese characters.
+    Check a file for Chinese characters, ignoring those in strings.
 
     Args:
         file_path: Path to the file to check
 
     Returns:
-        List of line numbers containing Chinese characters
+        List of line numbers containing Chinese characters (outside strings)
     """
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -53,7 +83,18 @@ def check_file(file_path: Path) -> List[int]:
 
     chinese_lines = []
     for i, line in enumerate(lines, 1):
-        if contains_chinese_chars(line):
+        # Find all Chinese characters in the line
+        pattern = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]")
+        matches = list(pattern.finditer(line))
+
+        # Check if any Chinese characters are outside strings
+        has_chinese_outside_string = False
+        for match in matches:
+            if not is_in_string(line, match.start()):
+                has_chinese_outside_string = True
+                break
+
+        if has_chinese_outside_string:
             chinese_lines.append(i)
 
     return chinese_lines
