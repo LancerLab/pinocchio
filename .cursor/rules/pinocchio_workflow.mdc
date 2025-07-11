@@ -1,0 +1,249 @@
+# Pinocchio多智能体系统工作流程规范
+
+## 概述
+
+本文档定义了Pinocchio多智能体系统中各Agent之间的数据流转、Prompt构建、输出格式等核心工作流程规范。
+
+## 核心工作流程
+
+### 1. Session生命周期管理
+
+每个任务都会创建一个唯一的Session，包含：
+- `session_id`: 唯一标识符
+- `task_description`: 任务描述
+- `status`: 状态（active/completed/failed）
+- `creation_time`: 创建时间
+- `end_time`: 结束时间（可选）
+- `runtime_seconds`: 运行时长（可选）
+
+### 2. Generator Agent工作流程
+
+#### 输入Prompt构建
+Generator的输入必须包含以下组件：
+1. **用户需求**: 原始任务描述
+2. **领域知识**: 从Knowledge模块提取的相关知识片段
+3. **优化技术知识**: 具体的性能优化技术（如tiling、multibuffering、vectorization等）
+4. **DSL语法知识**: 目标语言的语法和模板
+
+#### 结构化输出格式
+```json
+{
+  "session_id": "session_xxx",
+  "agent_type": "generator",
+  "input": {
+    "user_requirement": "任务描述",
+    "knowledge_fragments": {
+      "domain_knowledge": "领域知识",
+      "optimization_techniques": "优化技术知识",
+      "dsl_syntax": "DSL语法知识"
+    }
+  },
+  "output": {
+    "code": "生成的代码",
+    "language": "代码语言",
+    "kernel_type": "内核类型",
+    "optimization_techniques": ["使用的优化技术列表"],
+    "hyperparameters": {
+      "param1": "value1",
+      "param2": "value2"
+    },
+    "comments": ["优化说明"]
+  },
+  "metadata": {
+    "timestamp": "时间戳",
+    "prompt_version": "prompt版本"
+  }
+}
+```
+
+### 3. Debugger Agent工作流程
+
+#### 输入约束
+- 输入为Generator的完整输出
+- **重要约束**: 不能修改Generator使用的优化技术和超参数
+- 只能修复语法错误或兼容性问题
+
+#### 结构化输出格式
+```json
+{
+  "session_id": "session_xxx",
+  "agent_type": "debugger",
+  "input": {
+    "generator_output": "Generator的完整输出"
+  },
+  "output": {
+    "compilation_status": "success/error",
+    "runtime_status": "success/error",
+    "errors": ["错误列表"],
+    "warnings": ["警告列表"],
+    "execution_log": ["执行日志"],
+    "performance_metrics": {
+      "execution_time_ms": 数值,
+      "memory_usage_mb": 数值,
+      "cache_miss_rate": 数值
+    },
+    "modified_code": "修改后的代码（如果有修改）"
+  },
+  "metadata": {
+    "timestamp": "时间戳",
+    "prompt_version": "prompt版本"
+  }
+}
+```
+
+### 4. Evaluator Agent工作流程
+
+#### 输入分析
+- 输入为Debugger的完整输出
+- 分析当前性能表现
+- 识别性能瓶颈
+
+#### 结构化输出格式
+```json
+{
+  "session_id": "session_xxx",
+  "agent_type": "evaluator",
+  "input": {
+    "debugger_output": "Debugger的完整输出",
+    "current_optimizations": ["当前优化技术"],
+    "current_hyperparameters": "当前超参数"
+  },
+  "output": {
+    "code": "当前代码（保持不变）",
+    "language": "代码语言",
+    "kernel_type": "内核类型",
+    "current_optimization_techniques": ["当前优化技术"],
+    "current_hyperparameters": "当前超参数",
+    "optimization_suggestions": {
+      "add_optimization": [
+        {
+          "technique": "优化技术名称",
+          "reason": "添加理由",
+          "expected_improvement": "预期改进",
+          "implementation": "实现方式"
+        }
+      ],
+      "remove_optimization": [
+        {
+          "technique": "优化技术名称",
+          "reason": "移除理由",
+          "expected_improvement": "预期改进",
+          "implementation": "实现方式"
+        }
+      ],
+      "change_hyperparameters": [
+        {
+          "parameter": "参数名",
+          "current_value": "当前值",
+          "suggested_value": "建议值",
+          "reason": "调整理由",
+          "expected_improvement": "预期改进"
+        }
+      ]
+    },
+    "performance_analysis": {
+      "current_performance": "当前性能指标",
+      "target_performance": "目标性能指标",
+      "bottlenecks": ["性能瓶颈列表"]
+    },
+    "next_iteration_prompt": "下一轮优化的具体指导"
+  },
+  "metadata": {
+    "timestamp": "时间戳",
+    "prompt_version": "prompt版本"
+  }
+}
+```
+
+## 数据模型流转规范
+
+### 1. Memory版本管理
+- 每个Agent执行后都会生成新的Memory版本
+- 支持版本回滚和历史追踪
+- 所有Memory都关联到session_id
+
+### 2. Prompt版本管理
+- Prompt模板支持多版本
+- 每次优化都可能产生新的Prompt版本
+- 支持Prompt历史对比和回滚
+
+### 3. Knowledge片段提取
+- 每个Agent根据任务类型提取相关的Knowledge片段
+- 支持结构化知识（JSON）和文档知识（Markdown）
+- 支持知识片段的版本管理
+
+## 性能优化技术规范
+
+### 1. Tiling技术
+- **超参数**: tile_size, tile_factor
+- **适用场景**: 矩阵运算、图像处理
+- **预期效果**: 提高缓存命中率
+
+### 2. Multibuffering技术
+- **超参数**: buffer_count, buffer_size
+- **适用场景**: 内存密集型计算
+- **预期效果**: 重叠计算和内存访问
+
+### 3. Vectorization技术
+- **超参数**: vector_width, alignment
+- **适用场景**: 数据并行计算
+- **预期效果**: 利用SIMD指令提升性能
+
+### 4. Prefetch技术
+- **超参数**: prefetch_distance, prefetch_pattern
+- **适用场景**: 内存访问模式可预测的计算
+- **预期效果**: 减少内存访问延迟
+
+## 错误处理和约束
+
+### 1. Debugger约束
+- 不能修改Generator使用的优化技术
+- 不能改变核心算法逻辑
+- 只能修复语法错误和兼容性问题
+
+### 2. Evaluator约束
+- 必须保留当前代码和优化技术
+- 只能提供优化建议，不能直接修改代码
+- 建议必须基于性能分析数据
+
+### 3. 版本控制
+- 所有修改都必须生成新版本
+- 支持版本回滚和对比
+- 保持完整的修改历史
+
+## 文件结构规范
+
+```
+pinocchio/
+├── memory/models/          # 数据模型定义
+│   ├── base.py            # 基础模型
+│   ├── knowledge.py       # 知识模型
+│   ├── prompt.py          # 提示模型
+│   └── session.py         # 会话模型
+├── agents/                # Agent实现
+│   ├── generator.py       # 生成器
+│   ├── debugger.py        # 调试器
+│   └── evaluator.py       # 评估器
+└── workflows/             # 工作流管理
+    └── optimization.py    # 优化工作流
+```
+
+## 最佳实践
+
+1. **结构化输出**: 所有Agent的输出都必须是结构化的JSON格式
+2. **版本追踪**: 每个修改都要生成新版本，支持历史追踪
+3. **性能监控**: 每个Agent都要记录性能指标
+4. **错误处理**: 提供详细的错误信息和修复建议
+5. **知识复用**: 充分利用Knowledge模块中的领域知识
+6. **迭代优化**: 基于Evaluator的建议进行多轮优化
+
+## 相关文件
+
+- [memory_module_design.mdc](mdc:memory_module_design.mdc): 内存模块设计
+- [prompt_module_design.mdc](mdc:prompt_module_design.mdc): 提示模块设计
+- [knowledge_module_design.mdc](mdc:knowledge_module_design.mdc): 知识模块设计
+- [session_module_design.mdc](mdc:session_module_design.mdc): 会话模块设计
+description:
+globs:
+alwaysApply: false
+---

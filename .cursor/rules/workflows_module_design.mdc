@@ -1,923 +1,840 @@
+# Workflows 模块设计文档（优化版）
+
+## 概述
+
+Workflows 模块采用简洁的设计，基于 Coordinator 进行工作流管理。不再使用复杂的状态机或消息队列，而是通过 Coordinator 直接协调各个 Agent 的执行顺序和依赖关系。
+
 ---
-description: workflow module
-globs:
-alwaysApply: false
+
+## 一、设计原则
+
+### 1.1 简洁性原则
+- 工作流由 Coordinator 直接管理
+- 避免复杂的状态机和消息队列
+- 清晰的执行顺序和依赖关系
+
+### 1.2 可配置性原则
+- 支持配置文件定义工作流
+- 支持动态调整执行步骤
+- 支持条件分支和循环
+
+### 1.3 可观测性原则
+- 完整的执行日志
+- 清晰的进度反馈
+- 详细的错误信息
+
 ---
-# Workflows Module Design
 
-## Overview
+## 二、核心架构
 
-The Workflows Module is responsible for orchestrating the execution of multi-agent tasks in the Pinocchio system. It provides a framework for defining, scheduling, and monitoring workflows that coordinate the activities of different agents. The module implements a lightweight message queue for inter-agent communication and supports both sequential and conditional execution paths.
-
-## Design Goals
-
-1. **Orchestration**: Coordinate the execution of multiple agents in a coherent workflow
-2. **Flexibility**: Support various workflow patterns including sequential, parallel, and conditional execution
-3. **Reliability**: Ensure robust execution with error handling and recovery mechanisms
-4. **Observability**: Provide visibility into workflow execution status and progress
-5. **Extensibility**: Allow easy definition of new workflows and integration of new agents
-
-## Core Components
-
-### 1. Message Queue
-
-A lightweight in-memory message queue for inter-agent communication:
+### 2.1 工作流定义
 
 ```python
-from typing import Dict, List, Any, Optional, Callable
-from queue import Queue
-import json
-import uuid
-import threading
-import time
-
-class MessageQueue:
-    """Lightweight in-memory message queue for inter-agent communication."""
-
-    def __init__(self):
-        self._queues: Dict[str, Queue] = {}
-        self._subscribers: Dict[str, List[Callable]] = {}
-        self._lock = threading.RLock()
-
-    def create_queue(self, queue_name: str) -> None:
-        """
-        Create a new message queue.
-
-        Args:
-            queue_name: Name of the queue to create
-        """
-        with self._lock:
-            if queue_name not in self._queues:
-                self._queues[queue_name] = Queue()
-                self._subscribers[queue_name] = []
-
-    def delete_queue(self, queue_name: str) -> None:
-        """
-        Delete a message queue.
-
-        Args:
-            queue_name: Name of the queue to delete
-        """
-        with self._lock:
-            if queue_name in self._queues:
-                del self._queues[queue_name]
-                del self._subscribers[queue_name]
-
-    def send(self, queue_name: str, message: Dict[str, Any]) -> str:
-        """
-        Send a message to a queue.
-
-        Args:
-            queue_name: Name of the queue to send to
-            message: Message to send (will be converted to JSON)
-
-        Returns:
-            Message ID
-        """
-        with self._lock:
-            if queue_name not in self._queues:
-                self.create_queue(queue_name)
-
-            # Add message ID and timestamp if not present
-            if "message_id" not in message:
-                message["message_id"] = str(uuid.uuid4())
-            if "timestamp" not in message:
-                message["timestamp"] = time.time()
-
-            # Put message in queue
-            self._queues[queue_name].put(message)
-
-            # Notify subscribers
-            for subscriber in self._subscribers.get(queue_name, []):
-                try:
-                    subscriber(message)
-                except Exception as e:
-                    print(f"Error notifying subscriber: {e}")
-
-            return message["message_id"]
-
-    def receive(self, queue_name: str, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
-        """
-        Receive a message from a queue.
-
-        Args:
-            queue_name: Name of the queue to receive from
-            timeout: Timeout in seconds (None for no timeout)
-
-        Returns:
-            Message or None if queue doesn't exist or timeout occurs
-        """
-        with self._lock:
-            if queue_name not in self._queues:
-                return None
-
-        try:
-            return self._queues[queue_name].get(block=True, timeout=timeout)
-        except Exception:
-            return None
-
-    def subscribe(self, queue_name: str, callback: Callable[[Dict[str, Any]], None]) -> None:
-        """
-        Subscribe to messages on a queue.
-
-        Args:
-            queue_name: Name of the queue to subscribe to
-            callback: Function to call when a message is received
-        """
-        with self._lock:
-            if queue_name not in self._subscribers:
-                self._subscribers[queue_name] = []
-            self._subscribers[queue_name].append(callback)
-
-    def unsubscribe(self, queue_name: str, callback: Callable[[Dict[str, Any]], None]) -> None:
-        """
-        Unsubscribe from messages on a queue.
-
-        Args:
-            queue_name: Name of the queue to unsubscribe from
-            callback: Function to unsubscribe
-        """
-        with self._lock:
-            if queue_name in self._subscribers and callback in self._subscribers[queue_name]:
-                self._subscribers[queue_name].remove(callback)
-```
-
-### 2. Task Definition
-
-A framework for defining tasks that can be executed in a workflow:
-
-```python
-from typing import Dict, Any, Callable, Optional, List, Union
-from abc import ABC, abstractmethod
-import asyncio
-import functools
-import inspect
-
-class Task(ABC):
-    """Base class for all workflow tasks."""
-
-    def __init__(self, name: str, description: Optional[str] = None):
-        self.name = name
-        self.description = description or ""
-        self.metadata: Dict[str, Any] = {}
-
-    @abstractmethod
-    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute the task.
-
-        Args:
-            context: Execution context containing input data
-
-        Returns:
-            Task result
-        """
-        pass
-
-    def set_metadata(self, key: str, value: Any) -> None:
-        """Set metadata for the task."""
-        self.metadata[key] = value
-
-    def get_metadata(self, key: str, default: Any = None) -> Any:
-        """Get metadata for the task."""
-        return self.metadata.get(key, default)
-
-
-class FunctionTask(Task):
-    """Task that executes a function."""
-
-    def __init__(self, name: str, func: Callable, description: Optional[str] = None):
-        super().__init__(name, description)
-        self.func = func
-
-    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the function."""
-        if inspect.iscoroutinefunction(self.func):
-            result = await self.func(context)
-        else:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, functools.partial(self.func, context)
-            )
-
-        if isinstance(result, dict):
-            return result
-        else:
-            return {"result": result}
-
-
-class AgentTask(Task):
-    """Task that executes an agent."""
-
-    def __init__(self, name: str, agent_class: type, agent_args: Dict[str, Any] = None, description: Optional[str] = None):
-        super().__init__(name, description)
-        self.agent_class = agent_class
-        self.agent_args = agent_args or {}
-
-    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the agent."""
-        # Instantiate the agent
-        agent = self.agent_class(**self.agent_args)
-
-        # Process the input with the agent
-        result = await agent.process(context)
-
-        return result
-```
-
-### 3. Workflow Definition
-
-A system for defining workflows that coordinate the execution of tasks:
-
-```python
-from typing import Dict, List, Any, Optional, Union, Callable
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 from enum import Enum
-import asyncio
-import uuid
-import time
 
-class WorkflowStatus(Enum):
-    """Status of a workflow execution."""
+class StepStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-    CANCELLED = "cancelled"
+    SKIPPED = "skipped"
 
+class WorkflowStep(BaseModel):
+    """工作流步骤定义"""
+    step_id: str
+    agent_type: str
+    task_description: str
+    dependencies: List[str] = []  # 依赖的步骤ID
+    condition: Optional[str] = None  # 执行条件
+    max_retries: int = 3
+    timeout: int = 300  # 秒
+    metadata: Dict[str, Any] = {}
 
-class Workflow:
-    """Definition of a workflow."""
-
-    def __init__(self, name: str, description: Optional[str] = None):
-        self.name = name
-        self.description = description or ""
-        self.tasks: Dict[str, Task] = {}
-        self.edges: Dict[str, List[Dict[str, Any]]] = {}
-        self.start_tasks: List[str] = []
-        self.metadata: Dict[str, Any] = {}
-
-    def add_task(self, task: Task) -> None:
-        """
-        Add a task to the workflow.
-
-        Args:
-            task: Task to add
-        """
-        self.tasks[task.name] = task
-
-    def add_edge(self, from_task: str, to_task: str, condition: Optional[Callable[[Dict[str, Any]], bool]] = None) -> None:
-        """
-        Add an edge between tasks.
-
-        Args:
-            from_task: Name of the source task
-            to_task: Name of the target task
-            condition: Optional condition for the edge
-        """
-        if from_task not in self.tasks:
-            raise ValueError(f"Task not found: {from_task}")
-        if to_task not in self.tasks:
-            raise ValueError(f"Task not found: {to_task}")
-
-        if from_task not in self.edges:
-            self.edges[from_task] = []
-
-        self.edges[from_task].append({
-            "to": to_task,
-            "condition": condition
-        })
-
-    def set_start_tasks(self, task_names: List[str]) -> None:
-        """
-        Set the starting tasks for the workflow.
-
-        Args:
-            task_names: Names of the starting tasks
-        """
-        for task_name in task_names:
-            if task_name not in self.tasks:
-                raise ValueError(f"Task not found: {task_name}")
-
-        self.start_tasks = task_names
-
-    def validate(self) -> bool:
-        """
-        Validate the workflow.
-
-        Returns:
-            True if the workflow is valid
-        """
-        # Check that there are start tasks
-        if not self.start_tasks:
-            return False
-
-        # Check that all tasks are reachable
-        reachable = set(self.start_tasks)
-        frontier = list(self.start_tasks)
-
-        while frontier:
-            task_name = frontier.pop(0)
-
-            if task_name in self.edges:
-                for edge in self.edges[task_name]:
-                    to_task = edge["to"]
-                    if to_task not in reachable:
-                        reachable.add(to_task)
-                        frontier.append(to_task)
-
-        return len(reachable) == len(self.tasks)
+class WorkflowPlan(BaseModel):
+    """工作流计划"""
+    workflow_id: str
+    user_prompt: str
+    steps: List[WorkflowStep]
+    created_at: str
+    estimated_duration: int = 0  # 预估执行时间（秒）
 ```
 
-### 4. Workflow Executor
-
-A component for executing workflows:
+### 2.2 工作流执行器
 
 ```python
-from typing import Dict, List, Any, Optional, Set
-import asyncio
-import time
-import uuid
-
-class WorkflowExecution:
-    """Execution instance of a workflow."""
-
-    def __init__(self, workflow: Workflow):
-        self.workflow = workflow
-        self.execution_id = str(uuid.uuid4())
-        self.status = WorkflowStatus.PENDING
-        self.start_time: Optional[float] = None
-        self.end_time: Optional[float] = None
-        self.task_results: Dict[str, Dict[str, Any]] = {}
-        self.current_tasks: Set[str] = set()
-        self.completed_tasks: Set[str] = set()
-        self.failed_tasks: Set[str] = set()
-        self.context: Dict[str, Any] = {}
-
-    async def execute(self, initial_context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        Execute the workflow.
-
-        Args:
-            initial_context: Initial execution context
-
-        Returns:
-            Final execution context
-        """
-        self.context = initial_context or {}
-        self.status = WorkflowStatus.RUNNING
-        self.start_time = time.time()
-
-        try:
-            # Start with the initial tasks
-            next_tasks = set(self.workflow.start_tasks)
-
-            # Execute until no more tasks
-            while next_tasks:
-                # Get tasks that can be executed in parallel
-                self.current_tasks = next_tasks
-                next_tasks = set()
-
-                # Execute current tasks in parallel
-                tasks = [self._execute_task(task_name) for task_name in self.current_tasks]
-                await asyncio.gather(*tasks)
-
-                # Find next tasks
-                for task_name in self.completed_tasks:
-                    if task_name in self.workflow.edges:
-                        for edge in self.workflow.edges[task_name]:
-                            to_task = edge["to"]
-                            condition = edge["condition"]
-
-                            # Check condition if present
-                            if condition is None or condition(self.context):
-                                next_tasks.add(to_task)
-
-            # All tasks completed successfully
-            self.status = WorkflowStatus.COMPLETED
-
-        except Exception as e:
-            self.status = WorkflowStatus.FAILED
-            self.context["error"] = str(e)
-
-        finally:
-            self.end_time = time.time()
-
-        return self.context
-
-    async def _execute_task(self, task_name: str) -> None:
-        """
-        Execute a single task.
-
-        Args:
-            task_name: Name of the task to execute
-        """
-        task = self.workflow.tasks[task_name]
-
-        try:
-            # Execute the task
-            result = await task.execute(self.context)
-
-            # Update context with task result
-            self.context.update(result)
-
-            # Record task result
-            self.task_results[task_name] = {
-                "status": "completed",
-                "result": result,
-                "timestamp": time.time()
-            }
-
-            # Update task sets
-            self.completed_tasks.add(task_name)
-
-        except Exception as e:
-            # Record task failure
-            self.task_results[task_name] = {
-                "status": "failed",
-                "error": str(e),
-                "timestamp": time.time()
-            }
-
-            # Update task sets
-            self.failed_tasks.add(task_name)
-
-            # Re-raise the exception
-            raise
-
-        finally:
-            self.current_tasks.remove(task_name)
-
-
 class WorkflowExecutor:
-    """Executor for workflows."""
+    """工作流执行器"""
 
-    def __init__(self, message_queue: Optional[MessageQueue] = None):
-        self.message_queue = message_queue or MessageQueue()
-        self.executions: Dict[str, WorkflowExecution] = {}
+    def __init__(self, coordinator: 'Coordinator'):
+        self.coordinator = coordinator
+        self.execution_log: List[Dict[str, Any]] = []
 
-    async def execute_workflow(self, workflow: Workflow, initial_context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        Execute a workflow.
+    async def execute_workflow(self, plan: WorkflowPlan) -> AsyncGenerator[str, None]:
+        """执行工作流"""
 
-        Args:
-            workflow: Workflow to execute
-            initial_context: Initial execution context
+        # 初始化执行状态
+        step_status = {step.step_id: StepStatus.PENDING for step in plan.steps}
+        step_results = {}
 
-        Returns:
-            Final execution context
-        """
-        # Validate the workflow
-        if not workflow.validate():
-            raise ValueError("Invalid workflow")
+        yield f"开始执行工作流: {plan.workflow_id}"
+        yield f"总步骤数: {len(plan.steps)}"
 
-        # Create execution instance
-        execution = WorkflowExecution(workflow)
-        self.executions[execution.execution_id] = execution
+        # 执行步骤
+        for step in plan.steps:
+            # 检查依赖
+            if not self._check_dependencies(step, step_status, step_results):
+                step_status[step.step_id] = StepStatus.SKIPPED
+                yield f"跳过步骤 {step.step_id}: 依赖未满足"
+                continue
 
-        # Execute the workflow
+            # 检查条件
+            if not self._check_condition(step, step_results):
+                step_status[step.step_id] = StepStatus.SKIPPED
+                yield f"跳过步骤 {step.step_id}: 条件不满足"
+                continue
+
+            # 执行步骤
+            try:
+                step_status[step.step_id] = StepStatus.RUNNING
+                yield f"执行步骤 {step.step_id}: {step.agent_type}"
+
+                result = await self._execute_step(step, step_results)
+                step_results[step.step_id] = result
+                step_status[step.step_id] = StepStatus.COMPLETED
+
+                yield f"步骤 {step.step_id} 完成"
+
+            except Exception as e:
+                step_status[step.step_id] = StepStatus.FAILED
+                yield f"步骤 {step.step_id} 失败: {str(e)}"
+
+                # 检查是否需要停止工作流
+                if self._should_stop_on_failure(step):
+                    yield "工作流因关键步骤失败而停止"
+                    break
+
+        # 生成执行报告
+        report = self._generate_execution_report(plan, step_status, step_results)
+        yield f"工作流执行完成: {report['summary']}"
+
+    def _check_dependencies(self, step: WorkflowStep, step_status: Dict[str, StepStatus], step_results: Dict[str, Any]) -> bool:
+        """检查步骤依赖"""
+        for dep_id in step.dependencies:
+            if dep_id not in step_status or step_status[dep_id] != StepStatus.COMPLETED:
+                return False
+        return True
+
+    def _check_condition(self, step: WorkflowStep, step_results: Dict[str, Any]) -> bool:
+        """检查执行条件"""
+        if not step.condition:
+            return True
+
+        # 简单的条件检查，可以根据需要扩展
         try:
-            result = await execution.execute(initial_context)
-            return result
-        finally:
-            # Clean up execution if needed
-            pass
+            # 这里可以实现更复杂的条件解析
+            return eval(step.condition, {"results": step_results})
+        except:
+            return True
 
-    def get_execution_status(self, execution_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get the status of a workflow execution.
+    async def _execute_step(self, step: WorkflowStep, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """执行单个步骤"""
 
-        Args:
-            execution_id: ID of the execution
-
-        Returns:
-            Execution status or None if not found
-        """
-        if execution_id not in self.executions:
-            return None
-
-        execution = self.executions[execution_id]
-
-        return {
-            "execution_id": execution.execution_id,
-            "workflow_name": execution.workflow.name,
-            "status": execution.status.value,
-            "start_time": execution.start_time,
-            "end_time": execution.end_time,
-            "completed_tasks": list(execution.completed_tasks),
-            "failed_tasks": list(execution.failed_tasks),
-            "current_tasks": list(execution.current_tasks)
+        # 构建上下文
+        context = {
+            "step_id": step.step_id,
+            "previous_results": step_results,
+            "workflow_id": step.workflow_id if hasattr(step, 'workflow_id') else None
         }
-```
 
-### 5. Workflow Registry
-
-A registry for managing workflow definitions:
-
-```python
-from typing import Dict, List, Any, Optional
-import json
-import os
-from pathlib import Path
-
-class WorkflowRegistry:
-    """Registry for managing workflow definitions."""
-
-    def __init__(self, storage_path: Optional[str] = None):
-        self.workflows: Dict[str, Workflow] = {}
-        self.storage_path = storage_path
-
-    def register_workflow(self, workflow: Workflow) -> None:
-        """
-        Register a workflow.
-
-        Args:
-            workflow: Workflow to register
-        """
-        self.workflows[workflow.name] = workflow
-
-    def get_workflow(self, name: str) -> Optional[Workflow]:
-        """
-        Get a workflow by name.
-
-        Args:
-            name: Name of the workflow
-
-        Returns:
-            Workflow or None if not found
-        """
-        return self.workflows.get(name)
-
-    def list_workflows(self) -> List[str]:
-        """
-        List all registered workflows.
-
-        Returns:
-            List of workflow names
-        """
-        return list(self.workflows.keys())
-
-    def save_workflows(self) -> None:
-        """Save all workflows to storage."""
-        if not self.storage_path:
-            return
-
-        os.makedirs(self.storage_path, exist_ok=True)
-
-        for name, workflow in self.workflows.items():
-            # Serialize workflow to JSON
-            workflow_data = {
-                "name": workflow.name,
-                "description": workflow.description,
-                "tasks": [{"name": task.name, "type": task.__class__.__name__, "description": task.description}
-                         for task in workflow.tasks.values()],
-                "edges": [{"from": from_task, "to": edge["to"], "has_condition": edge["condition"] is not None}
-                         for from_task, edges in workflow.edges.items()
-                         for edge in edges],
-                "start_tasks": workflow.start_tasks,
-                "metadata": workflow.metadata
-            }
-
-            # Save to file
-            filepath = os.path.join(self.storage_path, f"{name}.json")
-            with open(filepath, 'w') as f:
-                json.dump(workflow_data, f, indent=2)
-```
-
-## Module Structure
-
-```
-workflows/
-├── __init__.py             # Exports main classes and functions
-├── message_queue.py        # Message queue implementation
-├── task.py                 # Task definition classes
-├── workflow.py             # Workflow definition and execution
-├── registry.py             # Workflow registry
-└── tasks/                  # Pre-defined task implementations
-    ├── __init__.py
-    ├── agent_tasks.py      # Tasks for agent execution
-    ├── utility_tasks.py    # Utility tasks (e.g., data transformation)
-    └── control_tasks.py    # Control flow tasks (e.g., branching, looping)
-```
-
-## Workflow Definition Example
-
-An example of defining a workflow for the Pinocchio system:
-
-```python
-from workflows import Workflow, FunctionTask, AgentTask
-from agents import GeneratorAgent, DebuggerAgent, OptimizerAgent, EvaluatorAgent
-
-def create_choreo_workflow() -> Workflow:
-    """Create a workflow for Choreo DSL operator development."""
-    workflow = Workflow("choreo_development", "Workflow for Choreo DSL operator development")
-
-    # Define tasks
-    generator_task = AgentTask("generator", GeneratorAgent, description="Generate initial Choreo DSL operator")
-    debugger_task = AgentTask("debugger", DebuggerAgent, description="Debug Choreo DSL operator")
-    optimizer_task = AgentTask("optimizer", OptimizerAgent, description="Optimize Choreo DSL operator")
-    evaluator_task = AgentTask("evaluator", EvaluatorAgent, description="Evaluate Choreo DSL operator")
-
-    # Add tasks to workflow
-    workflow.add_task(generator_task)
-    workflow.add_task(debugger_task)
-    workflow.add_task(optimizer_task)
-    workflow.add_task(evaluator_task)
-
-    # Define workflow edges
-    workflow.add_edge("generator", "debugger")
-    workflow.add_edge("debugger", "optimizer", condition=lambda ctx: not ctx.get("has_errors", True))
-    workflow.add_edge("debugger", "debugger", condition=lambda ctx: ctx.get("has_errors", False))
-    workflow.add_edge("optimizer", "evaluator")
-    workflow.add_edge("evaluator", "optimizer", condition=lambda ctx: ctx.get("performance_score", 0) < 0.8)
-
-    # Set starting task
-    workflow.set_start_tasks(["generator"])
-
-    return workflow
-```
-
-## Workflow Execution Example
-
-An example of executing a workflow:
-
-```python
-import asyncio
-from workflows import WorkflowExecutor
-
-async def run_workflow():
-    # Create workflow
-    workflow = create_choreo_workflow()
-
-    # Create executor
-    executor = WorkflowExecutor()
-
-    # Execute workflow
-    initial_context = {
-        "problem_description": "Implement matrix multiplication operator",
-        "constraints": ["Must support arbitrary dimensions", "Optimize for memory usage"]
-    }
-
-    result = await executor.execute_workflow(workflow, initial_context)
-
-    # Print results
-    print(f"Workflow completed with status: {result.get('status')}")
-    print(f"Final operator code: {result.get('operator_code')}")
-    print(f"Performance score: {result.get('performance_score')}")
-
-# Run the workflow
-asyncio.run(run_workflow())
-```
-
-## Message Queue Usage Example
-
-An example of using the message queue for inter-agent communication:
-
-```python
-from workflows import MessageQueue
-import threading
-import time
-
-def producer(queue, num_messages):
-    """Produce messages to the queue."""
-    for i in range(num_messages):
-        message = {
-            "content": f"Message {i}",
-            "timestamp": time.time()
-        }
-        queue.send("test_queue", message)
-        print(f"Sent: {message['content']}")
-        time.sleep(0.5)
-
-def consumer(queue):
-    """Consume messages from the queue."""
-    while True:
-        message = queue.receive("test_queue", timeout=1.0)
-        if message is None:
-            break
-        print(f"Received: {message['content']}")
-
-# Create queue
-queue = MessageQueue()
-
-# Start producer and consumer threads
-producer_thread = threading.Thread(target=producer, args=(queue, 5))
-consumer_thread = threading.Thread(target=consumer, args=(queue,))
-
-producer_thread.start()
-consumer_thread.start()
-
-producer_thread.join()
-consumer_thread.join()
-```
-
-## Integration with Other Modules
-
-### 1. Agents Module Integration
-
-```python
-from workflows import Workflow, AgentTask, WorkflowExecutor
-from agents import AgentBase
-
-class GeneratorAgent(AgentBase):
-    async def process(self, prompt_json: dict) -> dict:
-        # Process the prompt and generate code
-        return {"generated_code": "..."}
-
-class DebuggerAgent(AgentBase):
-    async def process(self, prompt_json: dict) -> dict:
-        # Debug the code
-        return {"debugged_code": "...", "has_errors": False}
-
-# Create a workflow with agents
-workflow = Workflow("agent_workflow", "Workflow using agents")
-
-# Add agent tasks
-workflow.add_task(AgentTask("generator", GeneratorAgent))
-workflow.add_task(AgentTask("debugger", DebuggerAgent))
-
-# Define workflow structure
-workflow.add_edge("generator", "debugger")
-workflow.set_start_tasks(["generator"])
-
-# Execute the workflow
-executor = WorkflowExecutor()
-asyncio.run(executor.execute_workflow(workflow, {"input": "Generate a matrix multiplication operator"}))
-```
-
-### 2. Memory Module Integration
-
-```python
-from workflows import Workflow, Task, WorkflowExecutor
-from memory import MemoryManager
-
-class MemoryAwareTask(Task):
-    def __init__(self, name: str, memory_manager: MemoryManager, description: Optional[str] = None):
-        super().__init__(name, description)
-        self.memory_manager = memory_manager
-
-    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        # Log execution start
-        self.memory_manager.log_detail(
-            agent_name=self.name,
-            prompt_json=context,
-            response_json={},
-            metadata={"status": "started"}
+        # 通过 Coordinator 执行
+        result = await self.coordinator.execute_agent_step(
+            agent_type=step.agent_type,
+            task_description=step.task_description,
+            context=context
         )
 
-        try:
-            # Execute task logic
-            result = await self._execute_task_logic(context)
+        return result
 
-            # Log successful execution
-            self.memory_manager.log_detail(
-                agent_name=self.name,
-                prompt_json=context,
-                response_json=result,
-                metadata={"status": "completed"}
-            )
+    def _should_stop_on_failure(self, step: WorkflowStep) -> bool:
+        """检查失败时是否应该停止工作流"""
+        return step.metadata.get("critical", False)
 
-            return result
+    def _generate_execution_report(self, plan: WorkflowPlan, step_status: Dict[str, StepStatus], step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """生成执行报告"""
+        completed = sum(1 for status in step_status.values() if status == StepStatus.COMPLETED)
+        failed = sum(1 for status in step_status.values() if status == StepStatus.FAILED)
+        skipped = sum(1 for status in step_status.values() if status == StepStatus.SKIPPED)
 
-        except Exception as e:
-            # Log failed execution
-            self.memory_manager.log_detail(
-                agent_name=self.name,
-                prompt_json=context,
-                response_json={"error": str(e)},
-                metadata={"status": "failed"}
-            )
-
-            # Re-raise the exception
-            raise
-
-    async def _execute_task_logic(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        # Override in subclasses
-        pass
+        return {
+            "workflow_id": plan.workflow_id,
+            "total_steps": len(plan.steps),
+            "completed": completed,
+            "failed": failed,
+            "skipped": skipped,
+            "success_rate": completed / len(plan.steps) if plan.steps else 0,
+            "summary": f"完成 {completed}/{len(plan.steps)} 步骤"
+        }
 ```
 
-### 3. LLM Module Integration
+### 2.3 工作流规划器
 
 ```python
-from workflows import Task
-from llm import LLMClient
+class WorkflowPlanner:
+    """工作流规划器"""
 
-class LLMTask(Task):
-    def __init__(self, name: str, llm_client: LLMClient, prompt_template: str, description: Optional[str] = None):
-        super().__init__(name, description)
-        self.llm_client = llm_client
-        self.prompt_template = prompt_template
+    def __init__(self):
+        self.templates = self._load_workflow_templates()
 
-    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        # Format the prompt template with context
-        prompt = self.prompt_template.format(**context)
+    async def create_plan(self, user_prompt: str) -> WorkflowPlan:
+        """根据用户输入创建工作流计划"""
 
-        # Call the LLM
-        response = await self.llm_client.complete(prompt)
+        # 分析用户需求
+        requirements = self._analyze_requirements(user_prompt)
 
-        # Return the result
-        return {"llm_response": response["text"]}
+        # 生成步骤
+        steps = self._generate_steps(requirements)
+
+        # 计算依赖关系
+        steps = self._resolve_dependencies(steps)
+
+        # 估算执行时间
+        estimated_duration = self._estimate_duration(steps)
+
+        return WorkflowPlan(
+            workflow_id=f"workflow_{uuid.uuid4().hex[:8]}",
+            user_prompt=user_prompt,
+            steps=steps,
+            created_at=datetime.utcnow().isoformat(),
+            estimated_duration=estimated_duration
+        )
+
+    def _analyze_requirements(self, user_prompt: str) -> Dict[str, Any]:
+        """分析用户需求"""
+        # 这里可以使用简单的关键词匹配或调用LLM进行分析
+        requirements = {
+            "needs_generation": "生成" in user_prompt or "编写" in user_prompt,
+            "needs_debugging": "调试" in user_prompt or "修复" in user_prompt,
+            "needs_optimization": "优化" in user_prompt or "性能" in user_prompt,
+            "needs_evaluation": "评估" in user_prompt or "测试" in user_prompt,
+            "complexity": self._assess_complexity(user_prompt)
+        }
+
+        return requirements
+
+    def _generate_steps(self, requirements: Dict[str, Any]) -> List[WorkflowStep]:
+        """生成工作流步骤"""
+        steps = []
+        step_id = 1
+
+        # 代码生成步骤
+        if requirements["needs_generation"]:
+            steps.append(WorkflowStep(
+                step_id=f"step_{step_id}",
+                agent_type="generator",
+                task_description="根据用户需求生成Choreo DSL算子代码",
+                metadata={"critical": True}
+            ))
+            step_id += 1
+
+        # 代码调试步骤
+        if requirements["needs_debugging"]:
+            steps.append(WorkflowStep(
+                step_id=f"step_{step_id}",
+                agent_type="debugger",
+                task_description="调试和修复代码中的问题",
+                dependencies=[f"step_{step_id-1}"] if step_id > 1 else [],
+                metadata={"critical": False}
+            ))
+            step_id += 1
+
+        # 代码优化步骤
+        if requirements["needs_optimization"]:
+            steps.append(WorkflowStep(
+                step_id=f"step_{step_id}",
+                agent_type="optimizer",
+                task_description="优化代码性能和资源使用",
+                dependencies=[f"step_{step_id-1}"] if step_id > 1 else [],
+                metadata={"critical": False}
+            ))
+            step_id += 1
+
+        # 代码评估步骤
+        if requirements["needs_evaluation"]:
+            steps.append(WorkflowStep(
+                step_id=f"step_{step_id}",
+                agent_type="evaluator",
+                task_description="评估代码质量和性能",
+                dependencies=[f"step_{step_id-1}"] if step_id > 1 else [],
+                metadata={"critical": False}
+            ))
+
+        return steps
+
+    def _resolve_dependencies(self, steps: List[WorkflowStep]) -> List[WorkflowStep]:
+        """解析步骤间的依赖关系"""
+        # 这里可以实现更复杂的依赖解析逻辑
+        return steps
+
+    def _estimate_duration(self, steps: List[WorkflowStep]) -> int:
+        """估算执行时间"""
+        # 简单的估算：每个步骤平均30秒
+        return len(steps) * 30
+
+    def _assess_complexity(self, user_prompt: str) -> str:
+        """评估任务复杂度"""
+        if any(word in user_prompt for word in ["复杂", "高级", "优化"]):
+            return "high"
+        elif any(word in user_prompt for word in ["简单", "基础"]):
+            return "low"
+        else:
+            return "medium"
 ```
 
-## Error Handling
+---
 
-The module includes comprehensive error handling for workflow execution:
+## 三、工作流模板
+
+### 3.1 基础工作流模板
+
+```json
+{
+  "templates": {
+    "simple_generation": {
+      "name": "简单代码生成",
+      "description": "仅生成代码，不进行调试和优化",
+      "steps": [
+        {
+          "step_id": "step_1",
+          "agent_type": "generator",
+          "task_description": "根据用户需求生成Choreo DSL算子代码",
+          "dependencies": [],
+          "critical": true
+        }
+      ]
+    },
+    "full_development": {
+      "name": "完整开发流程",
+      "description": "生成、调试、优化、评估的完整流程",
+      "steps": [
+        {
+          "step_id": "step_1",
+          "agent_type": "generator",
+          "task_description": "根据用户需求生成Choreo DSL算子代码",
+          "dependencies": [],
+          "critical": true
+        },
+        {
+          "step_id": "step_2",
+          "agent_type": "debugger",
+          "task_description": "调试和修复代码中的问题",
+          "dependencies": ["step_1"],
+          "critical": false
+        },
+        {
+          "step_id": "step_3",
+          "agent_type": "optimizer",
+          "task_description": "优化代码性能和资源使用",
+          "dependencies": ["step_2"],
+          "critical": false
+        },
+        {
+          "step_id": "step_4",
+          "agent_type": "evaluator",
+          "task_description": "评估代码质量和性能",
+          "dependencies": ["step_3"],
+          "critical": false
+        }
+      ]
+    },
+    "debug_and_fix": {
+      "name": "调试修复流程",
+      "description": "针对已有代码进行调试和修复",
+      "steps": [
+        {
+          "step_id": "step_1",
+          "agent_type": "debugger",
+          "task_description": "分析代码问题并提供修复方案",
+          "dependencies": [],
+          "critical": true
+        },
+        {
+          "step_id": "step_2",
+          "agent_type": "evaluator",
+          "task_description": "评估修复后的代码质量",
+          "dependencies": ["step_1"],
+          "critical": false
+        }
+      ]
+    }
+  }
+}
+```
+
+### 3.2 条件工作流
+
+```python
+class ConditionalWorkflow:
+    """条件工作流"""
+
+    def __init__(self):
+        self.conditions = {
+            "has_errors": lambda results: any("error" in str(result).lower() for result in results.values()),
+            "needs_optimization": lambda results: any("performance" in str(result).lower() for result in results.values()),
+            "quality_low": lambda results: any("score" in str(result) and "score" in str(result) and int(str(result).split("score")[1].split()[0]) < 70 for result in results.values())
+        }
+
+    def create_conditional_plan(self, user_prompt: str) -> WorkflowPlan:
+        """创建条件工作流计划"""
+        base_steps = [
+            WorkflowStep(
+                step_id="step_1",
+                agent_type="generator",
+                task_description="生成代码",
+                dependencies=[],
+                critical=True
+            ),
+            WorkflowStep(
+                step_id="step_2",
+                agent_type="debugger",
+                task_description="调试代码",
+                dependencies=["step_1"],
+                condition="has_errors",
+                critical=False
+            ),
+            WorkflowStep(
+                step_id="step_3",
+                agent_type="optimizer",
+                task_description="优化代码",
+                dependencies=["step_2"],
+                condition="needs_optimization",
+                critical=False
+            ),
+            WorkflowStep(
+                step_id="step_4",
+                agent_type="evaluator",
+                task_description="评估代码",
+                dependencies=["step_3"],
+                critical=False
+            )
+        ]
+
+        return WorkflowPlan(
+            workflow_id=f"conditional_{uuid.uuid4().hex[:8]}",
+            user_prompt=user_prompt,
+            steps=base_steps,
+            created_at=datetime.utcnow().isoformat()
+        )
+```
+
+---
+
+## 四、与Coordinator的集成
+
+### 4.1 Coordinator扩展
+
+```python
+class Coordinator:
+    """扩展的Coordinator，支持工作流管理"""
+
+    def __init__(self):
+        self.prompt_manager = PromptManager()
+        self.memory_manager = MemoryManager()
+        self.knowledge_manager = KnowledgeManager()
+        self.agent_manager = AgentManager()
+        self.workflow_planner = WorkflowPlanner()
+        self.workflow_executor = WorkflowExecutor(self)
+        self.session = None
+
+    async def process_user_request(self, user_prompt: str) -> AsyncGenerator[str, None]:
+        """处理用户请求"""
+
+        # 创建session
+        self.session = SessionLogger(user_prompt)
+        yield self.session.log_summary("Session started")
+
+        # 创建工作流计划
+        plan = await self.workflow_planner.create_plan(user_prompt)
+        yield self.session.log_summary(f"Workflow plan created: {len(plan.steps)} steps")
+
+        # 执行工作流
+        async for message in self.workflow_executor.execute_workflow(plan):
+            yield self.session.log_summary(message)
+
+        yield self.session.log_summary("Session completed")
+
+    async def execute_agent_step(self, agent_type: str, task_description: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """执行单个Agent步骤"""
+
+        # 获取综合prompt
+        prompt = await self.prompt_manager.get_comprehensive_prompt(
+            agent_type=agent_type,
+            task_description=task_description,
+            context=context
+        )
+
+        # 执行agent
+        result = await self.agent_manager.execute_agent(agent_type, prompt)
+
+        # 记录到session
+        if self.session:
+            self.session.log_communication(
+                step_id=context.get("step_id", "unknown"),
+                agent_type=agent_type,
+                prompt=prompt,
+                result=result.dict()
+            )
+
+        return result.dict()
+```
+
+---
+
+## 五、配置管理
+
+### 5.1 工作流配置
+
+```json
+{
+  "workflows": {
+    "default_template": "full_development",
+    "timeout": {
+      "default": 300,
+      "generator": 600,
+      "debugger": 300,
+      "optimizer": 450,
+      "evaluator": 300
+    },
+    "retry": {
+      "max_attempts": 3,
+      "backoff_factor": 2
+    },
+    "parallel": {
+      "enabled": false,
+      "max_concurrent": 2
+    }
+  }
+}
+```
+
+### 5.2 条件配置
+
+```json
+{
+  "conditions": {
+    "has_errors": {
+      "enabled": true,
+      "keywords": ["error", "exception", "failed"],
+      "threshold": 0.1
+    },
+    "needs_optimization": {
+      "enabled": true,
+      "keywords": ["slow", "performance", "optimize"],
+      "threshold": 0.3
+    },
+    "quality_low": {
+      "enabled": true,
+      "score_threshold": 70,
+      "metric": "overall_score"
+    }
+  }
+}
+```
+
+---
+
+## 六、错误处理
+
+### 6.1 工作流错误类型
 
 ```python
 class WorkflowError(Exception):
-    """Base class for workflow errors."""
+    """工作流基础错误"""
     pass
 
-class TaskExecutionError(WorkflowError):
-    """Error during task execution."""
-
-    def __init__(self, task_name: str, original_error: Exception):
-        self.task_name = task_name
-        self.original_error = original_error
-        super().__init__(f"Error executing task '{task_name}': {str(original_error)}")
-
-class WorkflowValidationError(WorkflowError):
-    """Error during workflow validation."""
+class WorkflowExecutionError(WorkflowError):
+    """工作流执行错误"""
     pass
 
-# Using error handling in workflow execution
-try:
-    result = await executor.execute_workflow(workflow, initial_context)
-except TaskExecutionError as e:
-    print(f"Task '{e.task_name}' failed: {e.original_error}")
-    # Implement recovery strategy
-except WorkflowValidationError as e:
-    print(f"Workflow validation failed: {e}")
-    # Fix workflow definition
-except WorkflowError as e:
-    print(f"Workflow error: {e}")
-    # General error handling
+class WorkflowTimeoutError(WorkflowError):
+    """工作流超时错误"""
+    pass
+
+class WorkflowDependencyError(WorkflowError):
+    """工作流依赖错误"""
+    pass
 ```
 
-## Monitoring and Observability
-
-The module provides tools for monitoring workflow execution:
+### 6.2 错误恢复策略
 
 ```python
-class WorkflowMonitor:
-    """Monitor for workflow executions."""
+class WorkflowErrorHandler:
+    """工作流错误处理器"""
 
-    def __init__(self, executor: WorkflowExecutor):
-        self.executor = executor
-        self.active_executions = set()
+    def __init__(self):
+        self.recovery_strategies = {
+            "timeout": self._handle_timeout,
+            "dependency": self._handle_dependency_error,
+            "agent_failure": self._handle_agent_failure,
+            "critical_failure": self._handle_critical_failure
+        }
 
-    def start_monitoring(self, execution_id: str) -> None:
-        """Start monitoring a workflow execution."""
-        self.active_executions.add(execution_id)
+    def handle_error(self, error: Exception, step: WorkflowStep, context: Dict[str, Any]) -> Dict[str, Any]:
+        """处理工作流错误"""
+        error_type = self._classify_error(error)
 
-    def stop_monitoring(self, execution_id: str) -> None:
-        """Stop monitoring a workflow execution."""
-        if execution_id in self.active_executions:
-            self.active_executions.remove(execution_id)
+        if error_type in self.recovery_strategies:
+            return self.recovery_strategies[error_type](error, step, context)
+        else:
+            return self._handle_unknown_error(error, step, context)
 
-    def get_active_executions(self) -> List[Dict[str, Any]]:
-        """Get status of all active executions."""
-        return [
-            self.executor.get_execution_status(execution_id)
-            for execution_id in self.active_executions
-        ]
-
-    def get_execution_metrics(self, execution_id: str) -> Dict[str, Any]:
-        """Get metrics for a workflow execution."""
-        status = self.executor.get_execution_status(execution_id)
-        if not status:
-            return {}
-
-        execution = self.executor.executions.get(execution_id)
-        if not execution:
-            return {}
-
-        # Calculate metrics
-        total_tasks = len(execution.workflow.tasks)
-        completed_tasks = len(execution.completed_tasks)
-        failed_tasks = len(execution.failed_tasks)
-
-        # Calculate duration
-        duration = None
-        if execution.start_time:
-            end_time = execution.end_time or time.time()
-            duration = end_time - execution.start_time
-
+    def _handle_timeout(self, error: Exception, step: WorkflowStep, context: Dict[str, Any]) -> Dict[str, Any]:
+        """处理超时错误"""
         return {
-            "total_tasks": total_tasks,
-            "completed_tasks": completed_tasks,
-            "failed_tasks": failed_tasks,
-            "progress": completed_tasks / total_tasks if total_tasks > 0 else 0,
-            "duration": duration
+            "success": False,
+            "error_type": "timeout",
+            "error_message": f"步骤 {step.step_id} 执行超时",
+            "retry_available": True
+        }
+
+    def _handle_dependency_error(self, error: Exception, step: WorkflowStep, context: Dict[str, Any]) -> Dict[str, Any]:
+        """处理依赖错误"""
+        return {
+            "success": False,
+            "error_type": "dependency",
+            "error_message": f"步骤 {step.step_id} 的依赖未满足",
+            "retry_available": False
+        }
+
+    def _handle_agent_failure(self, error: Exception, step: WorkflowStep, context: Dict[str, Any]) -> Dict[str, Any]:
+        """处理Agent失败"""
+        return {
+            "success": False,
+            "error_type": "agent_failure",
+            "error_message": f"Agent {step.agent_type} 执行失败",
+            "retry_available": True
+        }
+
+    def _handle_critical_failure(self, error: Exception, step: WorkflowStep, context: Dict[str, Any]) -> Dict[str, Any]:
+        """处理关键错误"""
+        return {
+            "success": False,
+            "error_type": "critical_failure",
+            "error_message": f"关键步骤 {step.step_id} 失败，工作流停止",
+            "retry_available": False,
+            "stop_workflow": True
         }
 ```
 
-## Future Enhancements
+---
 
-1. **Persistent Message Queue**: Replace in-memory queue with a persistent implementation for reliability
-2. **Distributed Execution**: Support for executing workflows across multiple nodes
-3. **Workflow Versioning**: Track changes to workflow definitions over time
-4. **Visual Workflow Editor**: A graphical interface for creating and editing workflows
-5. **Workflow Templates**: Reusable workflow templates for common patterns
+## 七、测试策略
+
+### 7.1 单元测试
+
+```python
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+
+class TestWorkflowExecutor:
+    """工作流执行器测试"""
+
+    @pytest.fixture
+    def mock_coordinator(self):
+        coordinator = AsyncMock()
+        coordinator.execute_agent_step.return_value = {"success": True, "output": "test"}
+        return coordinator
+
+    @pytest.fixture
+    def executor(self, mock_coordinator):
+        return WorkflowExecutor(mock_coordinator)
+
+    @pytest.fixture
+    def simple_plan(self):
+        return WorkflowPlan(
+            workflow_id="test_workflow",
+            user_prompt="test prompt",
+            steps=[
+                WorkflowStep(
+                    step_id="step_1",
+                    agent_type="generator",
+                    task_description="test task",
+                    dependencies=[]
+                )
+            ],
+            created_at="2023-01-01T00:00:00Z"
+        )
+
+    @pytest.mark.asyncio
+    async def test_execute_workflow_success(self, executor, simple_plan):
+        """测试工作流成功执行"""
+        messages = []
+        async for message in executor.execute_workflow(simple_plan):
+            messages.append(message)
+
+        assert len(messages) > 0
+        assert "开始执行工作流" in messages[0]
+        assert "工作流执行完成" in messages[-1]
+
+    @pytest.mark.asyncio
+    async def test_execute_workflow_with_dependencies(self, executor, mock_coordinator):
+        """测试带依赖的工作流执行"""
+        plan = WorkflowPlan(
+            workflow_id="test_workflow",
+            user_prompt="test prompt",
+            steps=[
+                WorkflowStep(
+                    step_id="step_1",
+                    agent_type="generator",
+                    task_description="generate code",
+                    dependencies=[]
+                ),
+                WorkflowStep(
+                    step_id="step_2",
+                    agent_type="debugger",
+                    task_description="debug code",
+                    dependencies=["step_1"]
+                )
+            ],
+            created_at="2023-01-01T00:00:00Z"
+        )
+
+        messages = []
+        async for message in executor.execute_workflow(plan):
+            messages.append(message)
+
+        # 验证执行顺序
+        step_1_index = next(i for i, msg in enumerate(messages) if "step_1" in msg and "执行" in msg)
+        step_2_index = next(i for i, msg in enumerate(messages) if "step_2" in msg and "执行" in msg)
+
+        assert step_1_index < step_2_index
+```
+
+### 7.2 集成测试
+
+```python
+class TestWorkflowIntegration:
+    """工作流集成测试"""
+
+    @pytest.mark.asyncio
+    async def test_full_workflow_execution(self):
+        """测试完整工作流执行"""
+        coordinator = Coordinator()
+        planner = WorkflowPlanner()
+        executor = WorkflowExecutor(coordinator)
+
+        # 创建计划
+        plan = await planner.create_plan("编写一个conv2d算子")
+
+        # 执行工作流
+        messages = []
+        async for message in executor.execute_workflow(plan):
+            messages.append(message)
+
+        # 验证结果
+        assert len(messages) > 0
+        assert any("完成" in msg for msg in messages)
+```
+
+---
+
+## 八、性能优化
+
+### 8.1 并行执行
+
+```python
+class ParallelWorkflowExecutor(WorkflowExecutor):
+    """支持并行执行的工作流执行器"""
+
+    async def execute_workflow_parallel(self, plan: WorkflowPlan, max_concurrent: int = 2) -> AsyncGenerator[str, None]:
+        """并行执行工作流"""
+
+        # 构建依赖图
+        dependency_graph = self._build_dependency_graph(plan.steps)
+
+        # 找到可并行执行的步骤
+        ready_steps = [step for step in plan.steps if not step.dependencies]
+        completed_steps = set()
+
+        while ready_steps:
+            # 选择要执行的步骤
+            to_execute = ready_steps[:max_concurrent]
+            ready_steps = ready_steps[max_concurrent:]
+
+            # 并行执行
+            tasks = [self._execute_step_async(step) for step in to_execute]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 处理结果
+            for step, result in zip(to_execute, results):
+                if isinstance(result, Exception):
+                    yield f"步骤 {step.step_id} 失败: {result}"
+                else:
+                    completed_steps.add(step.step_id)
+                    yield f"步骤 {step.step_id} 完成"
+
+            # 更新就绪步骤
+            ready_steps.extend(self._get_ready_steps(plan.steps, completed_steps, dependency_graph))
+```
+
+### 8.2 缓存机制
+
+```python
+class CachedWorkflowExecutor(WorkflowExecutor):
+    """带缓存的工作流执行器"""
+
+    def __init__(self, coordinator: 'Coordinator'):
+        super().__init__(coordinator)
+        self.cache = {}
+
+    async def _execute_step(self, step: WorkflowStep, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """执行步骤（带缓存）"""
+
+        # 生成缓存键
+        cache_key = self._generate_cache_key(step, step_results)
+
+        # 检查缓存
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        # 执行步骤
+        result = await super()._execute_step(step, step_results)
+
+        # 缓存结果
+        self.cache[cache_key] = result
+
+        return result
+
+    def _generate_cache_key(self, step: WorkflowStep, step_results: Dict[str, Any]) -> str:
+        """生成缓存键"""
+        import hashlib
+
+        # 基于步骤配置和输入生成哈希
+        key_data = {
+            "step_id": step.step_id,
+            "agent_type": step.agent_type,
+            "task_description": step.task_description,
+            "input_hash": hashlib.md5(str(step_results).encode()).hexdigest()
+        }
+
+        return hashlib.md5(str(key_data).encode()).hexdigest()
+```
+
+---
+
+## 九、总结
+
+这个优化后的 Workflows 模块设计具有以下特点：
+
+1. **简洁明了**：基于 Coordinator 的直接管理，避免复杂的消息队列
+2. **易于理解**：清晰的工作流定义和执行逻辑
+3. **可配置性强**：支持模板和条件配置
+4. **错误处理完善**：多种错误类型和恢复策略
+5. **性能友好**：支持并行执行和缓存机制
+
+该设计专注于核心功能，通过 Coordinator 统一管理，为后续的功能扩展奠定了良好的基础。
+
 
 ## Conclusion
 

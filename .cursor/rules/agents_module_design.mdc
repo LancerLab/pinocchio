@@ -1,732 +1,657 @@
----
-description: agents design
-globs:
-alwaysApply: false
----
-# Pinocchio 多智能体系统 Agents 模块设计文档
+# Agents 模块设计文档（优化版）
 
-## 1. 概述
+## 概述
 
-Agents 模块是 Pinocchio 多智能体系统的核心执行组件，负责实现各类智能体（Generator、Debugger、Optimizer、Evaluator）的行为逻辑，接收标准格式的 JSON Prompt，调用 LLM，并输出 JSON 格式响应。该模块采用面向对象设计，通过基类定义统一接口，子类实现特定功能，确保系统的可扩展性和一致性。
+Agents 模块采用简洁的纯执行器设计，每个 Agent 只负责接收结构化 prompt，调用 LLM，返回结构化结果。Agent 不包含复杂的业务逻辑，所有智能都通过 prompt 和 LLM 实现。
 
 ---
 
-## 2. 技术选型
+## 一、设计原则
 
-### 2.1 核心技术栈
+### 1.1 简洁性原则
+- Agent 只做一件事：接收 prompt，调用 LLM，返回结果
+- 不包含复杂的业务逻辑或状态管理
+- 统一的接口和错误处理
 
-| 技术/库 | 用途 | 选择理由 |
-|--------|-----|---------|
-| Python 标准库 | 基础功能实现 | 减少外部依赖，提高可移植性 |
-| Pydantic | 数据验证与序列化 | 提供运行时类型验证，确保数据一致性 |
-| LLM SDK | 与大语言模型交互 | 通过LLM模块封装，支持多种模型 |
+### 1.2 可扩展性原则
+- 基于配置的 Agent 注册机制
+- 支持动态添加新的 Agent 类型
+- 插件式的 Agent 实现
 
-### 2.2 设计原则
-
-1. **单一职责**：每个Agent专注于特定任务（生成、调试、优化、评估）
-2. **接口一致**：统一的输入输出接口，便于组合和替换
-3. **可扩展性**：易于添加新的Agent类型或修改现有Agent行为
-4. **错误处理**：标准化的错误处理机制，确保工作流可继续执行
-5. **可测试性**：设计便于单元测试和模拟LLM响应
-
----
-
-## 3. 模块架构
-
-### 3.1 目录结构
-
-```
-agents/
-├── __init__.py        # 模块初始化和公共接口导出
-├── base.py            # Agent基类定义
-├── generator.py       # 代码生成器Agent实现
-├── debugger.py        # 代码调试器Agent实现
-├── optimizer.py       # 代码优化器Agent实现
-├── evaluator.py       # 代码评估器Agent实现
-├── models/            # 数据模型定义
-│   ├── __init__.py
-│   ├── common.py      # 通用数据模型
-│   ├── generator.py   # 生成器特定模型
-│   ├── debugger.py    # 调试器特定模型
-│   ├── optimizer.py   # 优化器特定模型
-│   └── evaluator.py   # 评估器特定模型
-└── utils/             # Agent工具函数
-    ├── __init__.py
-    ├── parsing.py     # 响应解析工具
-    └── validation.py  # 输入验证工具
-```
-
-### 3.2 与其他模块的关系
-
-```
-                  ┌─────────┐
-                  │ Session │
-                  └────┬────┘
-                       │
-                       ▼
-┌─────────┐      ┌──────────┐      ┌───────────┐
-│ Prompt  │─────▶│  Agents  │─────▶│  Memory   │
-└─────────┘      └────┬─────┘      └───────────┘
-                      │
-                      ▼
-                 ┌─────────┐
-                 │   LLM   │
-                 └─────────┘
-```
+### 1.3 可测试性原则
+- 支持 Mock LLM 进行测试
+- 清晰的输入输出格式
+- 完整的错误处理
 
 ---
 
-## 4. 数据模型设计
+## 二、核心架构
 
-### 4.1 基础数据模型
-
-```python
-from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any
-from enum import Enum
-from datetime import datetime
-
-class AgentType(str, Enum):
-    GENERATOR = "generator"
-    DEBUGGER = "debugger"
-    OPTIMIZER = "optimizer"
-    EVALUATOR = "evaluator"
-
-class AgentRequest(BaseModel):
-    """Agent请求基类"""
-    session_id: str
-    request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    agent_type: AgentType
-    task_description: str
-    context: Dict[str, Any] = Field(default_factory=dict)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-class AgentResponse(BaseModel):
-    """Agent响应基类"""
-    session_id: str
-    request_id: str
-    response_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    agent_type: AgentType
-    success: bool
-    error_message: Optional[str] = None
-    processing_time_ms: int
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-```
-
-### 4.2 特定Agent数据模型
-
-```python
-class GeneratorRequest(AgentRequest):
-    """生成器请求"""
-    agent_type: AgentType = AgentType.GENERATOR
-    requirements: str
-    constraints: Optional[List[str]] = None
-    examples: Optional[List[Dict[str, str]]] = None
-
-class GeneratorResponse(AgentResponse):
-    """生成器响应"""
-    agent_type: AgentType = AgentType.GENERATOR
-    code: str
-    explanation: str
-    generation_strategy: str
-
-class DebuggerRequest(AgentRequest):
-    """调试器请求"""
-    agent_type: AgentType = AgentType.DEBUGGER
-    code: str
-    error_message: Optional[str] = None
-    test_cases: Optional[List[Dict[str, Any]]] = None
-
-class DebuggerResponse(AgentResponse):
-    """调试器响应"""
-    agent_type: AgentType = AgentType.DEBUGGER
-    fixed_code: str
-    issues_found: List[Dict[str, str]]
-    fix_explanation: str
-```
-
----
-
-## 5. 核心接口设计
-
-### 5.1 Agent基类
+### 2.1 Agent 基类
 
 ```python
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Type, Optional
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
-class AgentBase(ABC):
-    """Agent基类"""
+class AgentRequest(BaseModel):
+    """Agent 请求数据模型"""
+    agent_type: str
+    prompt: Dict[str, Any]
+    context: Optional[Dict[str, Any]] = None
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """初始化Agent"""
-        self.config = config or {}
-        self.llm_client = self._get_llm_client()
+class AgentResponse(BaseModel):
+    """Agent 响应数据模型"""
+    agent_type: str
+    success: bool
+    output: Dict[str, Any]
+    error_message: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
-    def _get_llm_client(self):
-        """获取LLM客户端"""
-        from llm import get_llm_client
-        return get_llm_client(self.config.get("llm_provider", "default"))
+class Agent(ABC):
+    """Agent 基类"""
 
-    @property
-    @abstractmethod
-    def agent_type(self) -> str:
-        """返回Agent类型"""
-        pass
-
-    @property
-    @abstractmethod
-    def request_model(self) -> Type[BaseModel]:
-        """返回请求数据模型类"""
-        pass
-
-    @property
-    @abstractmethod
-    def response_model(self) -> Type[BaseModel]:
-        """返回响应数据模型类"""
-        pass
-
-    def validate_request(self, request_data: Dict[str, Any]) -> BaseModel:
-        """验证请求数据"""
-        return self.request_model(**request_data)
-
-    def validate_response(self, response_data: Dict[str, Any]) -> BaseModel:
-        """验证响应数据"""
-        return self.response_model(**response_data)
+    def __init__(self, agent_type: str, llm_client: 'LLMClient'):
+        self.agent_type = agent_type
+        self.llm_client = llm_client
 
     @abstractmethod
-    def _process_implementation(self, request: BaseModel) -> Dict[str, Any]:
-        """具体处理逻辑实现"""
+    async def execute(self, prompt: Dict[str, Any]) -> AgentResponse:
+        """执行 Agent 任务"""
         pass
 
-    def process(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """处理请求并返回响应"""
+    def _parse_llm_response(self, response: str) -> Dict[str, Any]:
+        """解析 LLM 响应为结构化输出"""
         try:
-            # 请求验证
-            request = self.validate_request(request_data)
+            # 尝试解析为 JSON
+            return json.loads(response)
+        except json.JSONDecodeError:
+            # 如果不是 JSON，返回原始文本
+            return {"content": response}
 
-            # 记录开始时间
-            start_time = time.time()
+    def _handle_error(self, error: Exception) -> AgentResponse:
+        """处理执行错误"""
+        return AgentResponse(
+            agent_type=self.agent_type,
+            success=False,
+            output={},
+            error_message=str(error)
+        )
+```
 
-            # 调用具体实现
-            response_data = self._process_implementation(request)
+### 2.2 具体 Agent 实现
 
-            # 计算处理时间
-            processing_time = int((time.time() - start_time) * 1000)
-            response_data["processing_time_ms"] = processing_time
-            response_data["success"] = True
+#### 2.2.1 Generator Agent
 
-            # 响应验证
-            response = self.validate_response(response_data)
+```python
+class GeneratorAgent(Agent):
+    """代码生成器 Agent"""
 
-            return response.dict()
-        except Exception as e:
-            # 错误处理
-            return self.handle_error(e, request_data)
+    def __init__(self, llm_client: 'LLMClient'):
+        super().__init__("generator", llm_client)
 
-    def handle_error(self, error: Exception, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """处理执行过程中的错误"""
+    async def execute(self, prompt: Dict[str, Any]) -> AgentResponse:
+        """生成代码"""
         try:
-            # 尝试提取会话ID和请求ID
-            session_id = request_data.get("session_id", "unknown")
-            request_id = request_data.get("request_id", "unknown")
+            # 调用 LLM
+            response = await self.llm_client.complete(prompt["prompt_string"])
 
-            # 构建错误响应
-            error_response = {
-                "session_id": session_id,
-                "request_id": request_id,
-                "response_id": str(uuid.uuid4()),
-                "timestamp": datetime.utcnow().isoformat(),
-                "agent_type": self.agent_type,
-                "success": False,
-                "error_message": str(error),
-                "processing_time_ms": 0,
-                "metadata": {
-                    "error_type": type(error).__name__,
-                    "traceback": traceback.format_exc()
-                }
-            }
+            # 解析响应
+            output = self._parse_llm_response(response)
 
-            # 记录错误
-            logging.error(f"Agent error: {error}", exc_info=True)
-
-            return error_response
+            return AgentResponse(
+                agent_type=self.agent_type,
+                success=True,
+                output=output
+            )
         except Exception as e:
-            # 兜底错误处理
-            logging.critical(f"Error in error handler: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error_message": "Critical error in agent execution",
-                "agent_type": getattr(self, "agent_type", "unknown")
-            }
+            return self._handle_error(e)
 ```
 
-### 5.2 生成器Agent实现
+#### 2.2.2 Debugger Agent
 
 ```python
-class GeneratorAgent(AgentBase):
-    """代码生成器Agent"""
+class DebuggerAgent(Agent):
+    """代码调试器 Agent"""
 
-    @property
-    def agent_type(self) -> str:
-        return "generator"
+    def __init__(self, llm_client: 'LLMClient'):
+        super().__init__("debugger", llm_client)
 
-    @property
-    def request_model(self) -> Type[BaseModel]:
-        from .models.generator import GeneratorRequest
-        return GeneratorRequest
+    async def execute(self, prompt: Dict[str, Any]) -> AgentResponse:
+        """调试代码"""
+        try:
+            response = await self.llm_client.complete(prompt["prompt_string"])
+            output = self._parse_llm_response(response)
 
-    @property
-    def response_model(self) -> Type[BaseModel]:
-        from .models.generator import GeneratorResponse
-        return GeneratorResponse
-
-    def _process_implementation(self, request: BaseModel) -> Dict[str, Any]:
-        """生成器处理逻辑实现"""
-        # 构建提示
-        from prompt import get_prompt_template
-        template = get_prompt_template("generator")
-
-        prompt_variables = {
-            "task_description": request.task_description,
-            "requirements": request.requirements,
-            "constraints": request.constraints or [],
-            "examples": request.examples or []
-        }
-
-        # 格式化提示
-        from prompt import format_prompt
-        formatted_prompt = format_prompt(template, prompt_variables)
-
-        # 调用LLM
-        llm_response = self.llm_client.send_request(formatted_prompt)
-
-        # 解析响应
-        from .utils.parsing import parse_generator_response
-        parsed_response = parse_generator_response(llm_response)
-
-        # 构建响应
-        response = {
-            "session_id": request.session_id,
-            "request_id": request.request_id,
-            "response_id": str(uuid.uuid4()),
-            "timestamp": datetime.utcnow().isoformat(),
-            "agent_type": self.agent_type,
-            "code": parsed_response["code"],
-            "explanation": parsed_response["explanation"],
-            "generation_strategy": parsed_response.get("strategy", "default"),
-            "success": True,
-            "metadata": {
-                "model": self.llm_client.model_name,
-                "prompt_tokens": parsed_response.get("prompt_tokens", 0),
-                "completion_tokens": parsed_response.get("completion_tokens", 0)
-            }
-        }
-
-        return response
+            return AgentResponse(
+                agent_type=self.agent_type,
+                success=True,
+                output=output
+            )
+        except Exception as e:
+            return self._handle_error(e)
 ```
 
-### 5.3 调试器Agent实现
+#### 2.2.3 Optimizer Agent
 
 ```python
-class DebuggerAgent(AgentBase):
-    """代码调试器Agent"""
+class OptimizerAgent(Agent):
+    """代码优化器 Agent"""
 
-    @property
-    def agent_type(self) -> str:
-        return "debugger"
+    def __init__(self, llm_client: 'LLMClient'):
+        super().__init__("optimizer", llm_client)
 
-    @property
-    def request_model(self) -> Type[BaseModel]:
-        from .models.debugger import DebuggerRequest
-        return DebuggerRequest
+    async def execute(self, prompt: Dict[str, Any]) -> AgentResponse:
+        """优化代码"""
+        try:
+            response = await self.llm_client.complete(prompt["prompt_string"])
+            output = self._parse_llm_response(response)
 
-    @property
-    def response_model(self) -> Type[BaseModel]:
-        from .models.debugger import DebuggerResponse
-        return DebuggerResponse
-
-    def _process_implementation(self, request: BaseModel) -> Dict[str, Any]:
-        """调试器处理逻辑实现"""
-        # 构建提示
-        from prompt import get_prompt_template
-        template = get_prompt_template("debugger")
-
-        prompt_variables = {
-            "task_description": request.task_description,
-            "code": request.code,
-            "error_message": request.error_message or "",
-            "test_cases": request.test_cases or []
-        }
-
-        # 格式化提示
-        from prompt import format_prompt
-        formatted_prompt = format_prompt(template, prompt_variables)
-
-        # 调用LLM
-        llm_response = self.llm_client.send_request(formatted_prompt)
-
-        # 解析响应
-        from .utils.parsing import parse_debugger_response
-        parsed_response = parse_debugger_response(llm_response)
-
-        # 构建响应
-        response = {
-            "session_id": request.session_id,
-            "request_id": request.request_id,
-            "response_id": str(uuid.uuid4()),
-            "timestamp": datetime.utcnow().isoformat(),
-            "agent_type": self.agent_type,
-            "fixed_code": parsed_response["fixed_code"],
-            "issues_found": parsed_response["issues"],
-            "fix_explanation": parsed_response["explanation"],
-            "success": True,
-            "metadata": {
-                "model": self.llm_client.model_name,
-                "prompt_tokens": parsed_response.get("prompt_tokens", 0),
-                "completion_tokens": parsed_response.get("completion_tokens", 0)
-            }
-        }
-
-        return response
+            return AgentResponse(
+                agent_type=self.agent_type,
+                success=True,
+                output=output
+            )
+        except Exception as e:
+            return self._handle_error(e)
 ```
 
----
-
-## 6. Agent工厂与注册机制
+#### 2.2.4 Evaluator Agent
 
 ```python
-class AgentRegistry:
-    """Agent注册表"""
+class EvaluatorAgent(Agent):
+    """代码评估器 Agent"""
 
-    _registry = {}
+    def __init__(self, llm_client: 'LLMClient'):
+        super().__init__("evaluator", llm_client)
 
-    @classmethod
-    def register(cls, agent_type: str, agent_class: Type[AgentBase]) -> None:
-        """注册Agent类"""
-        cls._registry[agent_type] = agent_class
+    async def execute(self, prompt: Dict[str, Any]) -> AgentResponse:
+        """评估代码"""
+        try:
+            response = await self.llm_client.complete(prompt["prompt_string"])
+            output = self._parse_llm_response(response)
 
-    @classmethod
-    def get_agent(cls, agent_type: str, config: Optional[Dict[str, Any]] = None) -> AgentBase:
-        """获取Agent实例"""
-        if agent_type not in cls._registry:
+            return AgentResponse(
+                agent_type=self.agent_type,
+                success=True,
+                output=output
+            )
+        except Exception as e:
+            return self._handle_error(e)
+```
+
+### 2.3 Agent 管理器
+
+```python
+class AgentManager:
+    """Agent 管理器"""
+
+    def __init__(self):
+        self.agents: Dict[str, Agent] = {}
+        self.llm_client: Optional['LLMClient'] = None
+
+    def register_agent(self, agent: Agent):
+        """注册 Agent"""
+        self.agents[agent.agent_type] = agent
+
+    def set_llm_client(self, llm_client: 'LLMClient'):
+        """设置 LLM 客户端"""
+        self.llm_client = llm_client
+
+    async def execute_agent(self, agent_type: str, prompt: Dict[str, Any]) -> AgentResponse:
+        """执行指定的 Agent"""
+        if agent_type not in self.agents:
             raise ValueError(f"Unknown agent type: {agent_type}")
 
-        agent_class = cls._registry[agent_type]
-        return agent_class(config)
+        agent = self.agents[agent_type]
+        return await agent.execute(prompt)
 
-    @classmethod
-    def list_agents(cls) -> List[str]:
-        """列出所有已注册的Agent类型"""
-        return list(cls._registry.keys())
+    def create_agent(self, agent_type: str) -> Agent:
+        """创建 Agent 实例"""
+        if not self.llm_client:
+            raise ValueError("LLM client not set")
 
-# 注册Agent
-AgentRegistry.register("generator", GeneratorAgent)
-AgentRegistry.register("debugger", DebuggerAgent)
-AgentRegistry.register("optimizer", OptimizerAgent)
-AgentRegistry.register("evaluator", EvaluatorAgent)
-
-# 工厂函数
-def create_agent(agent_type: str, config: Optional[Dict[str, Any]] = None) -> AgentBase:
-    """创建Agent实例"""
-    return AgentRegistry.get_agent(agent_type, config)
-```
-
----
-
-## 7. 响应解析与验证
-
-```python
-# agents/utils/parsing.py
-import json
-import re
-from typing import Dict, Any, List
-
-def extract_json_from_response(response: str) -> Dict[str, Any]:
-    """从LLM响应中提取JSON"""
-    json_pattern = r'```json\s*([\s\S]*?)\s*```'
-    matches = re.findall(json_pattern, response)
-
-    if matches:
-        try:
-            return json.loads(matches[0])
-        except json.JSONDecodeError:
-            pass
-
-    # 尝试直接解析整个响应
-    try:
-        return json.loads(response)
-    except json.JSONDecodeError:
-        # 兜底：构建最小化响应
-        return {"raw_response": response}
-
-def parse_generator_response(response: str) -> Dict[str, Any]:
-    """解析生成器响应"""
-    data = extract_json_from_response(response)
-
-    # 提取代码
-    code = data.get("code", "")
-    if not code and "raw_response" in data:
-        # 尝试从原始响应中提取代码块
-        code_pattern = r'```(?:python)?\s*([\s\S]*?)\s*```'
-        code_matches = re.findall(code_pattern, data["raw_response"])
-        if code_matches:
-            code = code_matches[0]
-
-    # 构建标准化响应
-    result = {
-        "code": code,
-        "explanation": data.get("explanation", "No explanation provided"),
-        "strategy": data.get("strategy", "default")
-    }
-
-    # 添加可能的令牌计数
-    if "usage" in data:
-        result["prompt_tokens"] = data["usage"].get("prompt_tokens", 0)
-        result["completion_tokens"] = data["usage"].get("completion_tokens", 0)
-
-    return result
-
-# 类似地实现其他Agent的响应解析函数...
-```
-
----
-
-## 8. 错误处理策略
-
-### 8.1 错误类型
-
-1. **输入验证错误**：请求数据不符合模型定义
-2. **LLM调用错误**：API调用失败、超时等
-3. **响应解析错误**：LLM响应格式不符合预期
-4. **业务逻辑错误**：生成的代码不符合要求等
-
-### 8.2 错误处理流程
-
-1. **捕获异常**：在`process`方法中捕获所有异常
-2. **标准化错误响应**：构建统一格式的错误响应
-3. **错误日志**：记录详细错误信息和上下文
-4. **错误分类**：区分可重试错误和致命错误
-5. **重试策略**：对可重试错误执行重试逻辑
-
-### 8.3 重试机制
-
-```python
-def retry_on_llm_error(max_retries=3, backoff_factor=2):
-    """LLM调用重试装饰器"""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exception = None
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except LLMApiError as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        sleep_time = backoff_factor ** attempt
-                        logging.warning(f"LLM API error, retrying in {sleep_time}s: {e}")
-                        time.sleep(sleep_time)
-                    else:
-                        logging.error(f"Max retries reached for LLM API call: {e}")
-
-            # 所有重试都失败
-            raise last_exception
-        return wrapper
-    return decorator
-```
-
----
-
-## 9. Agent配置管理
-
-### 9.1 配置项
-
-| 配置项 | 说明 | 默认值 |
-|-------|-----|-------|
-| llm_provider | LLM提供商 | "openai" |
-| model_name | 模型名称 | "gpt-4" |
-| temperature | 采样温度 | 0.7 |
-| max_tokens | 最大生成令牌数 | 4000 |
-| timeout_seconds | API调用超时时间 | 60 |
-| retry_attempts | 重试次数 | 3 |
-
-### 9.2 配置加载
-
-```python
-def load_agent_config(agent_type: str) -> Dict[str, Any]:
-    """加载Agent配置"""
-    from config import get_config
-
-    # 加载全局配置
-    global_config = get_config().get("agents", {})
-
-    # 加载特定Agent配置
-    agent_config = global_config.get(agent_type, {})
-
-    # 合并默认配置
-    default_config = {
-        "llm_provider": "openai",
-        "model_name": "gpt-4",
-        "temperature": 0.7,
-        "max_tokens": 4000,
-        "timeout_seconds": 60,
-        "retry_attempts": 3
-    }
-
-    # 配置优先级：特定Agent配置 > 全局配置 > 默认配置
-    return {**default_config, **global_config, **agent_config}
-```
-
----
-
-## 10. 与其他模块的集成
-
-### 10.1 与LLM模块集成
-
-```python
-def _get_llm_client(self):
-    """获取LLM客户端"""
-    from llm import get_llm_client
-
-    # 获取配置
-    provider = self.config.get("llm_provider", "openai")
-    model = self.config.get("model_name", "gpt-4")
-    temperature = self.config.get("temperature", 0.7)
-    max_tokens = self.config.get("max_tokens", 4000)
-
-    # 创建客户端
-    return get_llm_client(
-        provider=provider,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens
-    )
-```
-
-### 10.2 与Memory模块集成
-
-```python
-def _log_interaction(self, request: Dict[str, Any], response: Dict[str, Any]) -> None:
-    """记录交互到Memory"""
-    from memory import get_memory_manager
-
-    memory_manager = get_memory_manager()
-    memory_manager.log_detail(
-        agent_name=self.agent_type,
-        prompt_json=request,
-        response_json=response,
-        metadata={
-            "model": self.llm_client.model_name,
-            "processing_time_ms": response.get("processing_time_ms", 0)
+        agent_classes = {
+            "generator": GeneratorAgent,
+            "debugger": DebuggerAgent,
+            "optimizer": OptimizerAgent,
+            "evaluator": EvaluatorAgent
         }
-    )
-```
 
-### 10.3 与Prompt模块集成
+        if agent_type not in agent_classes:
+            raise ValueError(f"Unknown agent type: {agent_type}")
 
-```python
-def _get_prompt(self, template_name: str, variables: Dict[str, Any]) -> str:
-    """获取格式化的提示"""
-    from prompt import get_prompt_template, format_prompt
-
-    template = get_prompt_template(template_name)
-    return format_prompt(template, variables)
+        return agent_classes[agent_type](self.llm_client)
 ```
 
 ---
 
-## 11. 测试策略
+## 三、Agent 类型定义
 
-### 11.1 单元测试
+### 3.1 Generator Agent
 
-1. **模型验证测试**：验证数据模型的序列化/反序列化和验证逻辑
-2. **Agent基类测试**：验证基类的通用功能和错误处理
-3. **特定Agent测试**：验证每个Agent的特定处理逻辑
-4. **工具函数测试**：验证解析和验证工具函数
+**职责**：生成 Choreo DSL 算子代码
 
-### 11.2 模拟测试
-
-```python
-@pytest.fixture
-def mock_llm_client():
-    """模拟LLM客户端"""
-    mock_client = MagicMock()
-    mock_client.send_request.return_value = json.dumps({
-        "code": "def example(): pass",
-        "explanation": "This is a simple example function"
-    })
-    return mock_client
-
-def test_generator_agent(mock_llm_client):
-    """测试生成器Agent"""
-    # 创建Agent并注入模拟客户端
-    agent = GeneratorAgent({"llm_provider": "mock"})
-    agent.llm_client = mock_llm_client
-
-    # 创建请求
-    request = {
-        "session_id": "test_session",
-        "request_id": "test_request",
-        "agent_type": "generator",
-        "task_description": "Create a simple function",
-        "requirements": "Function should do nothing"
+**输入格式**：
+```json
+{
+  "agent_type": "generator",
+  "prompt": {
+    "prompt_string": "生成一个conv2d算子...",
+    "requirements": {
+      "input_shape": [1, 3, 224, 224],
+      "output_shape": [1, 64, 112, 112],
+      "kernel_size": [3, 3],
+      "stride": [2, 2]
+    },
+    "context": {
+      "session_id": "session_123",
+      "previous_steps": []
     }
-
-    # 处理请求
-    response = agent.process(request)
-
-    # 验证结果
-    assert response["success"] is True
-    assert "code" in response
-    assert response["code"] == "def example(): pass"
-    assert mock_llm_client.send_request.called
+  }
+}
 ```
 
-### 11.3 集成测试
-
-```python
-def test_agent_with_real_llm():
-    """使用真实LLM的集成测试"""
-    # 标记为集成测试，可选择性跳过
-    pytest.skip_if(os.environ.get("SKIP_INTEGRATION_TESTS"), reason="Integration tests disabled")
-
-    # 创建Agent
-    agent = create_agent("generator")
-
-    # 创建请求
-    request = {
-        "session_id": "test_session",
-        "request_id": "test_request",
-        "agent_type": "generator",
-        "task_description": "Create a function to add two numbers",
-        "requirements": "Function should take two parameters and return their sum"
+**输出格式**：
+```json
+{
+  "agent_type": "generator",
+  "success": true,
+  "output": {
+    "code": "// 生成的Choreo DSL代码",
+    "explanation": "代码说明",
+    "metadata": {
+      "complexity": "O(n)",
+      "memory_usage": "1024KB"
     }
+  }
+}
+```
 
-    # 处理请求
-    response = agent.process(request)
+### 3.2 Debugger Agent
 
-    # 验证结果
-    assert response["success"] is True
-    assert "code" in response
-    assert "def" in response["code"]
-    assert "return" in response["code"]
+**职责**：调试和修复代码问题
+
+**输入格式**：
+```json
+{
+  "agent_type": "debugger",
+  "prompt": {
+    "prompt_string": "调试以下代码...",
+    "code": "// 有问题的代码",
+    "error_message": "编译错误信息",
+    "context": {
+      "session_id": "session_123",
+      "previous_steps": []
+    }
+  }
+}
+```
+
+**输出格式**：
+```json
+{
+  "agent_type": "debugger",
+  "success": true,
+  "output": {
+    "fixed_code": "// 修复后的代码",
+    "issues_found": ["问题1", "问题2"],
+    "fixes_applied": ["修复1", "修复2"],
+    "explanation": "修复说明"
+  }
+}
+```
+
+### 3.3 Optimizer Agent
+
+**职责**：优化代码性能
+
+**输入格式**：
+```json
+{
+  "agent_type": "optimizer",
+  "prompt": {
+    "prompt_string": "优化以下代码...",
+    "code": "// 原始代码",
+    "performance_requirements": {
+      "target_latency": "10ms",
+      "memory_budget": "1MB"
+    },
+    "context": {
+      "session_id": "session_123",
+      "previous_steps": []
+    }
+  }
+}
+```
+
+**输出格式**：
+```json
+{
+  "agent_type": "optimizer",
+  "success": true,
+  "output": {
+    "optimized_code": "// 优化后的代码",
+    "optimizations": ["优化1", "优化2"],
+    "performance_improvements": {
+      "latency_reduction": "30%",
+      "memory_reduction": "20%"
+    },
+    "explanation": "优化说明"
+  }
+}
+```
+
+### 3.4 Evaluator Agent
+
+**职责**：评估代码质量和性能
+
+**输入格式**：
+```json
+{
+  "agent_type": "evaluator",
+  "prompt": {
+    "prompt_string": "评估以下代码...",
+    "code": "// 待评估的代码",
+    "evaluation_criteria": {
+      "correctness": true,
+      "performance": true,
+      "readability": true
+    },
+    "context": {
+      "session_id": "session_123",
+      "previous_steps": []
+    }
+  }
+}
+```
+
+**输出格式**：
+```json
+{
+  "agent_type": "evaluator",
+  "success": true,
+  "output": {
+    "score": 85,
+    "evaluations": {
+      "correctness": 90,
+      "performance": 80,
+      "readability": 85
+    },
+    "issues": ["问题1", "问题2"],
+    "recommendations": ["建议1", "建议2"],
+    "explanation": "评估说明"
+  }
+}
 ```
 
 ---
 
-## 12. 总结
+## 四、配置管理
 
-Agents模块作为Pinocchio多智能体系统的核心执行组件，实现了各类智能体的行为逻辑，提供了统一的接口和灵活的扩展机制。通过面向对象设计和工厂模式，支持多种Agent类型和配置选项，确保系统的可扩展性和一致性。
+### 4.1 Agent 配置
 
-核心特点包括：
+```json
+{
+  "agents": {
+    "generator": {
+      "enabled": true,
+      "max_retries": 3,
+      "timeout": 30,
+      "model": "gpt-4"
+    },
+    "debugger": {
+      "enabled": true,
+      "max_retries": 3,
+      "timeout": 30,
+      "model": "gpt-4"
+    },
+    "optimizer": {
+      "enabled": true,
+      "max_retries": 3,
+      "timeout": 30,
+      "model": "gpt-4"
+    },
+    "evaluator": {
+      "enabled": true,
+      "max_retries": 3,
+      "timeout": 30,
+      "model": "gpt-4"
+    }
+  }
+}
+```
 
-1. **统一接口**：所有Agent共享相同的处理接口，便于组合和替换
-2. **类型安全**：使用Pydantic确保请求和响应的数据一致性
-3. **错误处理**：完善的错误处理和重试机制，确保工作流可靠执行
+### 4.2 动态配置
+
+```python
+class AgentConfig:
+    """Agent 配置类"""
+
+    def __init__(self, config: Dict[str, Any]):
+        self.enabled = config.get("enabled", True)
+        self.max_retries = config.get("max_retries", 3)
+        self.timeout = config.get("timeout", 30)
+        self.model = config.get("model", "gpt-4")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "max_retries": self.max_retries,
+            "timeout": self.timeout,
+            "model": self.model
+        }
+```
+
+---
+
+## 五、错误处理
+
+### 5.1 错误类型
+
+```python
+class AgentError(Exception):
+    """Agent 基础错误"""
+    pass
+
+class AgentExecutionError(AgentError):
+    """Agent 执行错误"""
+    pass
+
+class AgentTimeoutError(AgentError):
+    """Agent 超时错误"""
+    pass
+
+class AgentConfigurationError(AgentError):
+    """Agent 配置错误"""
+    pass
+```
+
+### 5.2 重试机制
+
+```python
+import asyncio
+from typing import Callable, Any
+
+async def retry_with_backoff(
+    func: Callable,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    *args,
+    **kwargs
+) -> Any:
+    """指数退避重试机制"""
+
+    for attempt in range(max_retries):
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e
+
+            delay = base_delay * (2 ** attempt)
+            await asyncio.sleep(delay)
+```
+
+---
+
+## 六、测试策略
+
+### 6.1 单元测试
+
+```python
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+
+class TestGeneratorAgent:
+    """Generator Agent 测试"""
+
+    @pytest.fixture
+    def mock_llm_client(self):
+        client = AsyncMock()
+        client.complete.return_value = '{"code": "test code", "explanation": "test"}'
+        return client
+
+    @pytest.fixture
+    def agent(self, mock_llm_client):
+        return GeneratorAgent(mock_llm_client)
+
+    @pytest.mark.asyncio
+    async def test_execute_success(self, agent):
+        """测试成功执行"""
+        prompt = {
+            "prompt_string": "生成一个简单的算子",
+            "requirements": {"input_shape": [1, 3, 224, 224]}
+        }
+
+        result = await agent.execute(prompt)
+
+        assert result.success is True
+        assert result.agent_type == "generator"
+        assert "code" in result.output
+
+    @pytest.mark.asyncio
+    async def test_execute_error(self, agent, mock_llm_client):
+        """测试错误处理"""
+        mock_llm_client.complete.side_effect = Exception("LLM error")
+
+        prompt = {"prompt_string": "test"}
+        result = await agent.execute(prompt)
+
+        assert result.success is False
+        assert "LLM error" in result.error_message
+```
+
+### 6.2 集成测试
+
+```python
+class TestAgentManager:
+    """Agent Manager 集成测试"""
+
+    @pytest.fixture
+    def manager(self):
+        return AgentManager()
+
+    @pytest.fixture
+    def mock_llm_client(self):
+        client = AsyncMock()
+        client.complete.return_value = '{"result": "test"}'
+        return client
+
+    def test_register_agent(self, manager):
+        """测试 Agent 注册"""
+        agent = MagicMock()
+        agent.agent_type = "test_agent"
+
+        manager.register_agent(agent)
+        assert "test_agent" in manager.agents
+
+    @pytest.mark.asyncio
+    async def test_execute_agent(self, manager, mock_llm_client):
+        """测试 Agent 执行"""
+        manager.set_llm_client(mock_llm_client)
+        agent = manager.create_agent("generator")
+        manager.register_agent(agent)
+
+        prompt = {"prompt_string": "test"}
+        result = await manager.execute_agent("generator", prompt)
+
+        assert result.success is True
+        assert result.agent_type == "generator"
+```
+
+---
+
+## 七、性能考虑
+
+### 7.1 并发执行
+
+```python
+import asyncio
+from typing import List
+
+async def execute_agents_concurrently(
+    manager: AgentManager,
+    tasks: List[Dict[str, Any]]
+) -> List[AgentResponse]:
+    """并发执行多个 Agent 任务"""
+
+    async def execute_task(task):
+        return await manager.execute_agent(
+            task["agent_type"],
+            task["prompt"]
+        )
+
+    return await asyncio.gather(*[
+        execute_task(task) for task in tasks
+    ])
+```
+
+### 7.2 缓存机制
+
+```python
+from functools import lru_cache
+
+class CachedAgent(Agent):
+    """带缓存的 Agent"""
+
+    def __init__(self, agent_type: str, llm_client: 'LLMClient'):
+        super().__init__(agent_type, llm_client)
+        self.cache = {}
+
+    @lru_cache(maxsize=1000)
+    def _get_cached_response(self, prompt_hash: str) -> Optional[Dict]:
+        """获取缓存的响应"""
+        return self.cache.get(prompt_hash)
+
+    async def execute(self, prompt: Dict[str, Any]) -> AgentResponse:
+        """执行并缓存结果"""
+        prompt_hash = hash(str(prompt))
+        cached = self._get_cached_response(prompt_hash)
+
+        if cached:
+            return AgentResponse(**cached)
+
+        result = await super().execute(prompt)
+        self.cache[prompt_hash] = result.dict()
+
+        return result
+```
+
+---
+
+## 八、总结
+
+这个优化后的 Agents 模块设计具有以下特点：
+
+1. **简洁明了**：每个 Agent 只负责一件事，职责清晰
+2. **易于扩展**：基于配置的注册机制，便于添加新的 Agent 类型
+3. **可测试性强**：统一的接口和错误处理，便于编写测试
+4. **性能友好**：支持并发执行和缓存机制
+5. **配置灵活**：支持动态配置和重试机制
+
+该设计专注于核心功能，避免过度复杂化，为后续的功能扩展奠定了良好的基础。
+
 4. **可扩展性**：易于添加新的Agent类型或修改现有Agent行为
 5. **模块集成**：与LLM、Memory、Prompt等模块的无缝集成
 

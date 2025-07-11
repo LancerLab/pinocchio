@@ -1,567 +1,386 @@
+# Pinocchio 开发计划与 TodoList（优化版）
+
+## 项目概述
+
+基于优化后的简洁架构设计，制定详细的开发计划和TodoList。采用分阶段开发策略，优先实现核心功能，逐步完善系统。
+
 ---
-description:
-globs:
-alwaysApply: false
+
+## 一、开发阶段规划
+
+### 阶段1：核心架构搭建（Week 1-2）
+**目标**：建立基础框架，实现最小可用版本
+
+### 阶段2：功能完善（Week 3-4）
+**目标**：完善各模块功能，实现完整工作流程
+
+### 阶段3：优化扩展（Week 5-6）
+**目标**：性能优化、错误处理、测试覆盖
+
 ---
-# Pinocchio 多智能体系统开发计划
 
-## 📋 概述
+## 二、详细 TodoList
 
-本文档提供了 Pinocchio 多智能体系统的详细开发计划，按照模块依赖关系和功能重要性进行排序。每个开发步骤专注于单一模块的特定功能，并明确指出依赖的设计文档和前置步骤。
+### 阶段1：核心架构搭建
 
-## 🔄 开发原则
+#### 1.1 项目结构初始化
+- [ ] **创建新的项目结构**
+  ```bash
+  pinocchio/
+  ├── coordinator.py
+  ├── session_logger.py
+  ├── prompt_manager.py
+  ├── agent.py
+  ├── memory_manager.py
+  ├── knowledge_manager.py
+  ├── llm_client.py
+  ├── models/
+  │   ├── __init__.py
+  │   ├── session.py
+  │   ├── memory.py
+  │   ├── knowledge.py
+  │   └── agent.py
+  └── utils/
+      ├── __init__.py
+      ├── json_parser.py
+      └── file_utils.py
+  ```
 
-- 每步开发仅聚焦单一模块的单一功能点
-- 每步明确依赖的设计文档（@/.cursor/rules/xxx.mdc）
-- 遵循模块间依赖顺序，确保构建链完整
-- 后续模块若影响已开发模块，需显式进行更新步骤
-- 每步附带提示性 Prompt，便于驱动AI代理开发
+- [ ] **创建数据存储目录**
+  ```bash
+  sessions/
+  memories/
+  knowledge/
+  ```
 
-## 🚀 开发阶段与步骤
+#### 1.2 数据模型设计
+- [ ] **models/session.py** - Session数据模型
+  ```python
+  class SessionData(BaseModel):
+      session_id: str
+      user_prompt: str
+      created_at: datetime
+      completed_at: Optional[datetime]
+      summary_logs: List[str]
+      communication_logs: List[Dict]
+  ```
 
-### 阶段 1: 基础设施搭建
+- [ ] **models/memory.py** - Memory数据模型
+  ```python
+  class MemoryEntry(BaseModel):
+      id: str
+      agent_type: str
+      timestamp: datetime
+      prompt: Dict
+      result: Dict
+      summary: str
+  ```
 
-#### 步骤 1.1: 项目结构初始化
-- 🧱 所属模块：全局
-- 📄 依赖设计文档：无
-- 🎯 开发目标：创建基本目录结构和初始化项目
-- ⏱️ 预计时间：0.5 天
-- 🧠 Prompt:
-```
-创建以下目录结构:
-pinocchio/
-├── config/
-├── knowledge/
-├── memory/
-├── prompt/
-├── session/
-├── llm/
-├── agents/
-├── workflows/
-├── tests/
-└── .cursor/rules/
-```
+- [ ] **models/knowledge.py** - Knowledge数据模型
+  ```python
+  class KnowledgeItem(BaseModel):
+      id: str
+      agent_type: str
+      keywords: List[str]
+      content: str
+      category: str
+  ```
 
-#### 步骤 1.2: 配置管理模块基础实现
-- 🧱 所属模块：config
-- 📄 依赖设计文档：@/.cursor/rules/config_module_design.mdc
-- 🎯 开发目标：实现简化版 Config 模块
-- ⏱️ 预计时间：1 天
-- 🧠 Prompt:
-```
-实现轻量级配置管理器:
-1. 支持从 JSON 文件加载配置
-2. 支持从环境变量覆盖配置
-3. 提供简单的 get/set 接口
-4. 实现配置默认值机制
-```
+- [ ] **models/agent.py** - Agent数据模型
+  ```python
+  class AgentRequest(BaseModel):
+      agent_type: str
+      prompt: Dict
+      context: Dict
 
-#### 步骤 1.3: 错误处理模块基础实现
-- 🧱 所属模块：errors
-- 📄 依赖设计文档：@/.cursor/rules/errors_module_design.mdc
-- 🎯 开发目标：实现所有核心异常类
-- ⏱️ 预计时间：0.5 天
-- 🧠 Prompt:
-```
-依据 errors_module_design.mdc 中的异常定义，创建错误类层次结构，支持带上下文的详细错误报告。包括:
-1. 基础异常类
-2. 模块特定异常类（MemoryError, SessionError 等）
-3. 错误码和错误消息格式化
-```
+  class AgentResponse(BaseModel):
+      agent_type: str
+      success: bool
+      output: Dict
+      error_message: Optional[str]
+  ```
 
-#### 步骤 1.4: 基础模块单元测试
-- 🧱 所属模块：config, errors
-- 📄 依赖设计文档：@/.cursor/rules/config_module_design.mdc, @/.cursor/rules/errors_module_design.mdc
-- 🎯 开发目标：为基础模块编写单元测试
-- ⏱️ 预计时间：0.5 天
-- ⛓️ 依赖步骤：1.2, 1.3
-- 🧠 Prompt:
-```
-为 Config 和 Errors 模块编写单元测试:
-1. 测试配置加载、环境变量覆盖、默认值机制
-2. 测试异常类的创建、属性和继承关系
-3. 测试错误消息格式化和上下文信息
-```
+#### 1.3 核心组件实现
 
-### 阶段 2: 核心模块实现
+##### 1.3.1 SessionLogger实现
+- [ ] **session_logger.py** - 基础SessionLogger类
+  - [ ] 初始化方法
+  - [ ] log_summary方法
+  - [ ] log_communication方法
+  - [ ] get_context方法
+  - [ ] save_to_file方法
+  - [ ] 单元测试
 
-#### 步骤 2.1: Memory 模块基础数据模型
-- 🧱 所属模块：memory
-- 📄 依赖设计文档：@/.cursor/rules/memory_module_design.mdc
-- 🎯 开发目标：实现 Memory 模块的基础数据模型
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：1.3
-- 🧠 Prompt:
-```
-实现 Memory 模块的基础数据结构:
-1. BaseMemory 基类
-2. MemoryBlock 类，包括初始化、基本的 alloc 与 dealloc 接口
-3. 使用 Pydantic 进行数据验证
-4. 实现版本控制相关的数据结构
-```
+##### 1.3.2 基础Agent实现
+- [ ] **agent.py** - Agent基类和基础实现
+  - [ ] Agent基类
+  - [ ] GeneratorAgent
+  - [ ] DebuggerAgent
+  - [ ] OptimizerAgent
+  - [ ] EvaluatorAgent
+  - [ ] 单元测试
 
-#### 步骤 2.2: Memory 模块存储实现
-- 🧱 所属模块：memory
-- 📄 依赖设计文档：@/.cursor/rules/memory_module_design.mdc
-- 🎯 开发目标：实现 Memory 模块的文件存储功能
-- ⏱️ 预计时间：1.5 天
-- ⛓️ 依赖步骤：2.1
-- 🧠 Prompt:
-```
-实现 MemoryStore 类:
-1. 支持按会话组织内存记录
-2. 使用 JSON 文件存储记录
-3. 实现版本控制机制
-4. 支持记录查询和过滤
-```
+##### 1.3.3 简单LLM客户端
+- [ ] **llm_client.py** - LLM客户端实现
+  - [ ] LLMClient基类
+  - [ ] MockLLMClient（用于测试）
+  - [ ] OpenAI客户端（可选）
+  - [ ] 单元测试
 
-#### 步骤 2.3: Memory 模块日志功能
-- 🧱 所属模块：memory
-- 📄 依赖设计文档：@/.cursor/rules/memory_module_design.mdc
-- 🎯 开发目标：实现 Memory 模块的日志功能
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.2
-- 🧠 Prompt:
-```
-实现日志相关功能:
-1. 结构化 JSON 日志记录
-2. 纯文本摘要日志输出
-3. 日志级别控制
-4. 支持将内存记录格式化为日志
-```
+##### 1.3.4 Coordinator基础框架
+- [ ] **coordinator.py** - Coordinator基础实现
+  - [ ] 初始化方法
+  - [ ] process_user_request方法（基础版本）
+  - [ ] _generate_plan方法（简单版本）
+  - [ ] 单元测试
 
-#### 步骤 2.4: Memory 模块单元测试
-- 🧱 所属模块：memory
-- 📄 依赖设计文档：@/.cursor/rules/memory_module_design.mdc
-- 🎯 开发目标：为 Memory 模块编写单元测试
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.1-2.3
-- 🧠 Prompt:
-```
-编写测试用例:
-1. 测试内存记录的创建和验证
-2. 测试文件存储和加载
-3. 测试版本控制功能
-4. 测试日志格式化和输出
-5. 测试边界条件和错误处理
-```
+#### 1.4 工具函数
+- [ ] **utils/json_parser.py** - JSON解析工具
+  - [ ] 安全的JSON解析
+  - [ ] 结构化输出解析
+  - [ ] 错误处理
 
-#### 步骤 2.5: Session 模块基础实现
-- 🧱 所属模块：session
-- 📄 依赖设计文档：@/.cursor/rules/session_module_design.mdc
-- 🎯 开发目标：实现 Session 模块的基础功能
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.2
-- 🧠 Prompt:
-```
-实现 SessionContext 类:
-1. 会话创建和管理
-2. 会话元数据存储
-3. 会话状态跟踪
-4. 与 Memory 模块的集成
-```
+- [ ] **utils/file_utils.py** - 文件操作工具
+  - [ ] 安全的文件读写
+  - [ ] 目录创建
+  - [ ] 文件路径处理
 
-#### 步骤 2.6: 支持多会话并发环境
-- 🧱 所属模块：session
-- 📄 依赖设计文档：@/.cursor/rules/session_module_design.mdc
-- 🎯 开发目标：为 SessionContext 添加并发会话支持
-- ⏱️ 预计时间：0.5 天
-- ⛓️ 依赖步骤：2.5
-- 🔁 更新依赖：memory 模块可能需线程安全补充
-- 🧠 Prompt:
-```
-为 SessionContext 添加多线程并发环境下的状态隔离能力:
-1. 实现会话锁机制
-2. 确保资源隔离
-3. 必要时补充 Memory 模块的线程安全设计
-```
+#### 1.5 基础测试
+- [ ] **测试框架搭建**
+  - [ ] pytest配置
+  - [ ] 测试目录结构
+  - [ ] 基础测试用例
 
-#### 步骤 2.7: Session 错误路径与错误恢复机制
-- 🧱 所属模块：session
-- 📄 依赖设计文档：@/.cursor/rules/session_module_design.mdc, @/.cursor/rules/errors_module_design.mdc
-- 🎯 开发目标：引入错误状态标记与恢复钩子机制
-- ⏱️ 预计时间：0.5 天
-- ⛓️ 依赖步骤：2.6
-- 🔁 更新依赖：errors 模块（新增恢复相关异常）
-- 🧠 Prompt:
-```
-基于 session_module_design.mdc 的 session 错误流程设计:
-1. 开发错误恢复钩子
-2. 实现会话状态回滚机制
-3. 添加测试覆盖 session 崩溃后回滚行为
-```
+- [ ] **核心模块测试**
+  - [ ] SessionLogger测试
+  - [ ] Agent测试
+  - [ ] LLMClient测试
+  - [ ] Coordinator测试
 
-#### 步骤 2.8: Session 模块单元测试
-- 🧱 所属模块：session
-- 📄 依赖设计文档：@/.cursor/rules/session_module_design.mdc
-- 🎯 开发目标：为 Session 模块编写单元测试
-- ⏱️ 预计时间：0.5 天
-- ⛓️ 依赖步骤：2.5-2.7
-- 🧠 Prompt:
-```
-编写测试用例:
-1. 测试会话创建和加载
-2. 测试会话状态管理
-3. 测试与 Memory 模块的集成
-4. 测试会话导出和导入
-5. 测试并发会话和错误恢复
-```
+### 阶段2：功能完善
 
-#### 步骤 2.9: Knowledge 模块基础数据模型
-- 🧱 所属模块：knowledge
-- 📄 依赖设计文档：@/.cursor/rules/knowledge_module_design.mdc
-- 🎯 开发目标：实现 Knowledge 模块的基础数据模型
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：1.4
-- 🧠 Prompt:
-```
-实现以下类:
-1. ContentFormat 枚举类型
-2. KnowledgeResource 基础类
-3. 支持文档和 JSON 格式内容
-4. 实现基本的序列化和反序列化方法
-```
+#### 2.1 MemoryManager实现
+- [ ] **memory_manager.py** - 完整的MemoryManager
+  - [ ] 初始化方法
+  - [ ] add_memory方法
+  - [ ] search_memories方法
+  - [ ] _load_memories方法
+  - [ ] _save_memories方法
+  - [ ] _generate_summary方法
+  - [ ] 单元测试
 
-#### 步骤 2.10: Knowledge 模块存储实现
-- 🧱 所属模块：knowledge
-- 📄 依赖设计文档：@/.cursor/rules/knowledge_module_design.mdc
-- 🎯 开发目标：实现 Knowledge 模块的文件存储功能
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.9
-- 🧠 Prompt:
-```
-实现 KnowledgeBase 类:
-1. 支持添加、获取、更新和删除资源
-2. 使用文件系统存储资源
-3. 实现异步保存和加载机制
-4. 添加简单的内存缓存
-```
+#### 2.2 KnowledgeManager实现
+- [ ] **knowledge_manager.py** - 完整的KnowledgeManager
+  - [ ] 初始化方法
+  - [ ] get_relevant_knowledge方法
+  - [ ] _load_knowledge方法
+  - [ ] _save_knowledge方法
+  - [ ] 默认知识库创建
+  - [ ] 单元测试
 
-#### 步骤 2.11: Knowledge 模块片段提取功能
-- 🧱 所属模块：knowledge
-- 📄 依赖设计文档：@/.cursor/rules/knowledge_module_design.mdc
-- 🎯 开发目标：实现从知识资源中提取特定片段的功能
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.10
-- 🧠 Prompt:
-```
-为 KnowledgeResource 添加:
-1. 从 JSON 内容提取片段的功能 (支持点表示法)
-2. 从文档内容提取章节的功能 (支持标题和正则表达式)
-3. 实现 extract_fragment 方法
-```
+#### 2.3 PromptManager实现
+- [ ] **prompt_manager.py** - 完整的PromptManager
+  - [ ] 初始化方法
+  - [ ] get_comprehensive_prompt方法
+  - [ ] _build_prompt_string方法
+  - [ ] 模板管理
+  - [ ] 单元测试
 
-#### 步骤 2.12: Knowledge 模块单元测试
-- 🧱 所属模块：knowledge
-- 📄 依赖设计文档：@/.cursor/rules/knowledge_module_design.mdc
-- 🎯 开发目标：为 Knowledge 模块编写单元测试
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.9-2.11
-- 🧠 Prompt:
-```
-编写测试用例:
-1. 测试资源的创建、更新和删除
-2. 测试文件存储和加载
-3. 测试不同格式内容的片段提取
-4. 测试异步操作和缓存机制
-```
+#### 2.4 AgentManager实现
+- [ ] **agent_manager.py** - Agent管理器
+  - [ ] Agent注册机制
+  - [ ] execute_agent方法
+  - [ ] Agent工厂方法
+  - [ ] 错误处理
+  - [ ] 单元测试
 
-#### 步骤 2.13: LLM 模块基础实现
-- 🧱 所属模块：llm
-- 📄 依赖设计文档：@/.cursor/rules/llm_module_design.mdc
-- 🎯 开发目标：实现 LLM 模块的基础功能
-- ⏱️ 预计时间：1.5 天
-- ⛓️ 依赖步骤：1.4
-- 🧠 Prompt:
-```
-实现 LLMWorker 类:
-1. 统一的 LLM 客户端接口
-2. 支持 OpenAI API
-3. 请求重试和错误处理
-4. 响应解析和格式化
-```
+#### 2.5 完整工作流程
+- [ ] **完整流程测试**
+  - [ ] 端到端测试
+  - [ ] 集成测试
+  - [ ] 性能测试
 
-#### 步骤 2.14: LLM 模块单元测试
-- 🧱 所属模块：llm
-- 📄 依赖设计文档：@/.cursor/rules/llm_module_design.mdc
-- 🎯 开发目标：为 LLM 模块编写单元测试
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.13
-- 🧠 Prompt:
-```
-编写测试用例:
-1. 测试 API 调用 (使用 mock)
-2. 测试错误处理和重试
-3. 测试响应解析
-4. 测试不同参数配置
-```
+- [ ] **示例和文档**
+  - [ ] 使用示例
+  - [ ] API文档
+  - [ ] 部署指南
 
-#### 步骤 2.15: Prompt 模块模板管理
-- 🧱 所属模块：prompt
-- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc
-- 🎯 开发目标：实现 Prompt 模块的模板管理功能
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：1.4
-- 🧠 Prompt:
-```
-实现以下功能:
-1. 模板加载和注册
-2. 模板版本控制
-3. 模板格式验证
-4. 简单的模板组合机制
-```
+### 阶段3：优化扩展
 
-#### 步骤 2.16: Prompt 模块格式化功能
-- 🧱 所属模块：prompt
-- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc
-- 🎯 开发目标：实现 Prompt 模块的格式化功能
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.15
-- 🧠 Prompt:
-```
-实现 TemplateFormatter 类:
-1. 支持变量替换
-2. 支持条件语句
-3. 支持循环结构
-4. 错误处理和默认值
-```
+#### 3.1 性能优化
+- [ ] **异步处理优化**
+  - [ ] 并发Agent执行
+  - [ ] 异步文件操作
+  - [ ] 内存使用优化
 
-#### 步骤 2.17: Prompt 模块与 Knowledge 集成
-- 🧱 所属模块：prompt
-- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/knowledge_module_design.mdc
-- 🎯 开发目标：实现 Prompt 模块与 Knowledge 模块的集成
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.11, 2.16
-- 🧠 Prompt:
-```
-实现 KnowledgeAdapter 类:
-1. 从知识库提取相关内容
-2. 将知识片段集成到提示中
-3. 支持知识查询和过滤
-4. 处理内容长度限制
-```
+- [ ] **缓存机制**
+  - [ ] Memory缓存
+  - [ ] Knowledge缓存
+  - [ ] Prompt模板缓存
 
-#### 步骤 2.18: Prompt 模块单元测试
-- 🧱 所属模块：prompt
-- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc
-- 🎯 开发目标：为 Prompt 模块编写单元测试
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.15-2.17
-- 🧠 Prompt:
-```
-编写测试用例:
-1. 测试模板加载和验证
-2. 测试变量替换和格式化
-3. 测试与 Knowledge 模块的集成
-4. 测试复杂模板的渲染
-```
+#### 3.2 错误处理完善
+- [ ] **异常处理**
+  - [ ] 自定义异常类
+  - [ ] 错误恢复机制
+  - [ ] 用户友好的错误信息
 
-### 阶段 3: 智能体实现
+- [ ] **重试机制**
+  - [ ] LLM调用重试
+  - [ ] 网络错误重试
+  - [ ] 指数退避策略
 
-#### 步骤 3.1: Agents 模块基础实现
-- 🧱 所属模块：agents
-- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现 Agents 模块的基础功能和基类
-- ⏱️ 预计时间：1 天
-- ⛓️ 依赖步骤：2.13
-- 🧠 Prompt:
-```
-实现以下功能:
-1. AgentBase 抽象基类
-2. 请求和响应数据模型
-3. 统一的处理接口
-4. 错误处理机制
-```
+#### 3.3 测试覆盖
+- [ ] **测试完善**
+  - [ ] 单元测试覆盖率 > 90%
+  - [ ] 集成测试
+  - [ ] 性能测试
+  - [ ] 错误场景测试
 
-#### 步骤 3.2: Generator Agent 实现
-- 🧱 所属模块：agents
-- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现代码生成器 Agent
-- ⏱️ 预计时间：1.5 天
-- ⛓️ 依赖步骤：3.1
-- 🧠 Prompt:
-```
-实现 GeneratorAgent 类:
-1. 实现状态转换逻辑
-2. 集成 Prompt 模板
-3. 实现代码生成和解析
-4. 添加自检功能
-```
+#### 3.4 文档完善
+- [ ] **文档更新**
+  - [ ] README更新
+  - [ ] API文档
+  - [ ] 架构文档
+  - [ ] 部署文档
 
-#### 步骤 3.3: Debugger Agent 实现
-- 🧱 所属模块：agents
-- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现代码调试器 Agent
-- ⏱️ 预计时间：1.5 天
-- ⛓️ 依赖步骤：3.1
-- 🧠 Prompt:
-```
-实现 DebuggerAgent 类:
-1. 实现状态转换逻辑
-2. 集成 Prompt 模板
-3. 实现错误分析和修复
-4. 支持多轮调试循环
-```
+---
 
-#### 步骤 3.4: Optimizer Agent 实现
-- 🧱 所属模块：agents
-- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现代码优化器 Agent
-- ⏱️ 预计时间：1.5 天
-- ⛓️ 依赖步骤：3.1
-- 🧠 Prompt:
-```
-实现 OptimizerAgent 类:
-1. 实现状态转换逻辑
-2. 集成 Prompt 模板
-3. 实现性能分析和优化建议
-4. 支持建议模式和自动优化模式
-```
+## 三、开发优先级
 
-#### 步骤 3.5: Evaluator Agent 实现
-- 🧱 所属模块：agents
-- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现代码评估器 Agent
-- ⏱️ 预计时间：1.5 天
-- ⛓️ 依赖步骤：3.1
-- 🧠 Prompt:
-```
-实现 EvaluatorAgent 类:
-1. 实现状态转换逻辑
-2. 集成 Prompt 模板
-3. 实现功能和性能评估
-4. 生成标准化评估报告
-```
+### 高优先级（必须完成）
+1. **SessionLogger** - 核心日志功能
+2. **基础Agent** - 系统执行能力
+3. **LLMClient** - 外部接口
+4. **Coordinator** - 流程控制
+5. **MemoryManager** - 记忆功能
 
-#### 步骤 3.6: Agent Registry 与动态创建
-- 🧱 所属模块：agents
-- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc
-- 🎯 开发目标：支持注册/创建具体 agent 实例
-- ⏱️ 预计时间：0.5 天
-- ⛓️ 依赖步骤：3.1-3.5
-- 🧠 Prompt:
-```
-实现 AgentRegistry:
-1. 支持基于配置创建 agent 实例
-2. 注册命名 Agent 并通过 config 构造
-3. 实现 agent 工厂模式
-```
+### 中优先级（重要功能）
+1. **KnowledgeManager** - 知识管理
+2. **PromptManager** - 综合prompt构建
+3. **AgentManager** - Agent管理
+4. **完整测试** - 质量保证
 
-#### 步骤 3.7: Agents 模块单元测试
-- 🧱 所属模块：agents
-- 📄 依赖设计文档：@/.cursor/rules/agents_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：为 Agents 模块编写单元测试
-- ⏱️ 预计时间：2 天
-- ⛓️ 依赖步骤：3.1-3.6
-- 🧠 Prompt:
-```
-编写测试用例:
-1. 测试各 Agent 的状态转换
-2. 测试请求处理和响应生成
-3. 测试错误处理机制
-4. 使用 mock LLM 进行集成测试
-```
+### 低优先级（优化功能）
+1. **性能优化** - 系统性能
+2. **错误处理** - 系统稳定性
+3. **文档完善** - 用户体验
 
-#### 步骤 3.8: Prompt 模板实现 - Generator
-- 🧱 所属模块：prompt
-- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现 Generator Agent 的 Prompt 模板
-- ⏱️ 预计时间：0.5 天
-- ⛓️ 依赖步骤：2.16, 3.2
-- 🧠 Prompt:
-```
-创建以下模板:
-1. 需求解析模板
-2. 算法选择模板
-3. 代码生成模板
-4. 自检模板
-按照 agents_workflow_design.mdc 中的设计实现
-```
+---
 
-#### 步骤 3.9: Prompt 模板实现 - Debugger
-- 🧱 所属模块：prompt
-- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现 Debugger Agent 的 Prompt 模板
-- ⏱️ 预计时间：0.5 天
-- ⛓️ 依赖步骤：2.16, 3.3
-- 🧠 Prompt:
-```
-创建以下模板:
-1. 错误分析模板
-2. 问题定位模板
-3. 修复方案生成模板
-4. 验证模板
-按照 agents_workflow_design.mdc 中的设计实现
-```
+## 四、开发规范
 
-#### 步骤 3.10: Prompt 模板实现 - Optimizer
-- 🧱 所属模块：prompt
-- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现 Optimizer Agent 的 Prompt 模板
-- ⏱️ 预计时间：0.5 天
-- ⛓️ 依赖步骤：2.16, 3.4
-- 🧠 Prompt:
-```
-创建以下模板:
-1. 性能分析模板
-2. 瓶颈识别模板
-3. 优化策略生成模板
-4. 建议生成模板
-按照 agents_workflow_design.mdc 中的设计实现
-```
+### 4.1 代码规范
+- [ ] **代码风格**
+  - [ ] 遵循PEP 8
+  - [ ] 使用black格式化
+  - [ ] 使用isort排序导入
 
-#### 步骤 3.11: Prompt 模板实现 - Evaluator
-- 🧱 所属模块：prompt
-- 📄 依赖设计文档：@/.cursor/rules/prompt_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现 Evaluator Agent 的 Prompt 模板
-- ⏱️ 预计时间：0.5 天
-- ⛓️ 依赖步骤：2.16, 3.5
-- 🧠 Prompt:
-```
-创建以下模板:
-1. 测试准备模板
-2. 功能测试模板
-3. 性能测试模板
-4. 结果分析模板
-按照 agents_workflow_design.mdc 中的设计实现
-```
+- [ ] **类型注解**
+  - [ ] 所有函数添加类型注解
+  - [ ] 使用mypy进行类型检查
+  - [ ] 使用Pydantic进行数据验证
 
-### 阶段 4: 工作流与系统集成
+### 4.2 测试规范
+- [ ] **测试要求**
+  - [ ] 每个模块都有对应测试
+  - [ ] 测试覆盖率 > 80%
+  - [ ] 包含正常和异常场景
 
-#### 步骤 4.1: Workflows 模块基础实现
-- 🧱 所属模块：workflows
-- 📄 依赖设计文档：@/.cursor/rules/workflows_module_design.mdc
-- 🎯 开发目标：实现 Workflows 模块的基础功能
-- ⏱️ 预计时间：1.5 天
-- ⛓️ 依赖步骤：3.7
-- 🧠 Prompt:
-```
-实现以下功能:
-1. 轻量级消息队列
-2. 任务定义和执行
-3. 工作流定义和验证
-4. 基本的条件分支支持
-```
+### 4.3 文档规范
+- [ ] **文档要求**
+  - [ ] 所有公共接口都有文档字符串
+  - [ ] 使用Google风格的docstring
+  - [ ] 提供使用示例
 
-#### 步骤 4.2: 状态机实现
-- 🧱 所属模块：workflows
-- 📄 依赖设计文档：@/.cursor/rules/workflows_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现基于状态机的工作流控制
-- ⏱️ 预计时间：2 天
-- ⛓️ 依赖步骤：4.1
-- 🧠 Prompt:
-```
-实现以下功能:
-1. 状态定义和转换规则
-2. 事件触发机制
-3. 状态持久化
-4. 错误状态处理
-```
+---
 
-#### 步骤 4.3: 算子开发工作流实现
-- 🧱 所属模块：workflows
-- 📄 依赖设计文档：@/.cursor/rules/workflows_module_design.mdc, @/.cursor/rules/agents_workflow_design.mdc
-- 🎯 开发目标：实现算子开发的完整工作流
+## 五、验收标准
+
+### 5.1 功能验收
+- [ ] **基础功能**
+  - [ ] 用户输入能够被正确处理
+  - [ ] Session能够正确记录日志
+  - [ ] Agent能够正确执行
+  - [ ] Memory能够正确存储和检索
+
+- [ ] **完整流程**
+  - [ ] 端到端测试通过
+  - [ ] 所有Agent能够协作
+  - [ ] 结果能够正确输出
+
+### 5.2 质量验收
+- [ ] **代码质量**
+  - [ ] 通过所有lint检查
+  - [ ] 通过所有类型检查
+  - [ ] 测试覆盖率达标
+
+- [ ] **性能要求**
+  - [ ] 响应时间 < 30秒
+  - [ ] 内存使用 < 1GB
+  - [ ] 文件I/O效率合理
+
+### 5.3 用户体验
+- [ ] **易用性**
+  - [ ] 安装简单
+  - [ ] 配置简单
+  - [ ] 使用简单
+
+- [ ] **可观测性**
+  - [ ] 清晰的进度显示
+  - [ ] 详细的错误信息
+  - [ ] 完整的日志记录
+
+---
+
+## 六、风险评估
+
+### 6.1 技术风险
+- **LLM API稳定性**：使用Mock客户端进行测试
+- **异步编程复杂性**：采用简单的异步模式
+- **文件I/O性能**：使用JSON文件，避免复杂数据库
+
+### 6.2 时间风险
+- **功能过多**：优先实现核心功能
+- **测试不足**：采用TDD开发模式
+- **文档滞后**：同步编写文档
+
+### 6.3 质量风险
+- **代码质量**：使用自动化工具检查
+- **测试覆盖**：设定最低覆盖率要求
+- **用户体验**：早期用户反馈
+
+---
+
+## 七、里程碑
+
+### 里程碑1：基础框架（Week 2结束）
+- [ ] 完成核心组件实现
+- [ ] 通过基础测试
+- [ ] 能够运行简单示例
+
+### 里程碑2：完整功能（Week 4结束）
+- [ ] 完成所有模块实现
+- [ ] 通过完整测试
+- [ ] 能够运行完整工作流程
+
+### 里程碑3：生产就绪（Week 6结束）
+- [ ] 完成性能优化
+- [ ] 完成错误处理
+- [ ] 完成文档完善
+- [ ] 通过所有验收标准
+
+---
+
+## 八、总结
+
+这个开发计划采用分阶段、渐进式的开发策略，确保：
+
+1. **快速验证**：早期实现核心功能，快速验证架构
+2. **质量保证**：每个阶段都有明确的验收标准
+3. **风险控制**：识别和缓解主要风险
+4. **用户导向**：关注用户体验和易用性
+
+通过这个计划，我们能够在6周内完成一个功能完整、质量可靠的Pinocchio系统。
 - ⏱️ 预计时间：1.5 天
 - ⛓️ 依赖步骤：4.2
 - 🧠 Prompt:

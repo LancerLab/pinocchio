@@ -1,13 +1,8 @@
----
-description: memory模块设计
-globs:
-alwaysApply: false
----
 # Pinocchio 多智能体系统 Memory 模块设计文档
 
 ## 1. 概述
 
-Memory 模块是 Pinocchio 多智能体系统的核心组件，负责存储和管理系统运行过程中的各类数据，包括代码版本、Agent 交互记录、会话信息等。该模块采用分层设计，确保数据的类型安全、持久化和高效检索。
+Memory 模块是 Pinocchio 多智能体系统的核心组件，专门为高性能代码生成和调优设计。该模块负责存储和管理系统运行过程中的各类数据，包括代码版本、Agent交互记录、性能指标、优化技术历史等。采用分层设计，确保数据的类型安全、持久化和高效检索。
 
 ---
 
@@ -16,7 +11,7 @@ Memory 模块是 Pinocchio 多智能体系统的核心组件，负责存储和�
 ### 2.1 核心技术栈
 
 | 技术/库 | 用途 | 选择理由 |
-|--------|-----|---------|
+|-----|-----|---|
 | Pydantic | 数据模型定义与验证 | 提供运行时类型验证，自动序列化/反序列化，与现代Python类型注解系统完美配合 |
 | JSON | 数据序列化格式 | 人类可读性强，与LLM接口天然兼容，序列化/反序列化性能良好 |
 | Python标准库 | 文件操作、路径管理等 | 减少外部依赖，提高可移植性 |
@@ -25,7 +20,7 @@ Memory 模块是 Pinocchio 多智能体系统的核心组件，负责存储和�
 ### 2.2 可选优化技术
 
 | 技术/库 | 用途 | 备注 |
-|--------|-----|------|
+|-----|-----|---|
 | orjson | 高性能JSON序列化 | 比标准json库更高效，可选依赖 |
 | aiofiles | 异步文件IO | 如需异步操作可引入 |
 
@@ -38,28 +33,25 @@ Memory 模块是 Pinocchio 多智能体系统的核心组件，负责存储和�
 ```
 memory/
 ├── __init__.py
-├── models/
+├── models/                    # 内存相关数据模型
 │   ├── __init__.py
-│   ├── base.py           # 基础数据模型
-│   ├── code.py           # 代码版本模型
-│   ├── session.py        # 会话模型
-│   ├── agent_memories.py # Agent内存模型
-│   ├── prompt.py         # 提示模板模型
-│   └── knowledge.py      # 知识库模型
-├── manager.py            # 内存管理器
-├── store.py              # 存储实现
-└── metrics.py            # 性能指标收集
+│   ├── base.py               # 基础内存模型
+│   ├── code.py               # 代码版本模型
+│   ├── agent_memories.py     # Agent内存模型
+│   ├── performance.py        # 性能指标模型
+│   └── optimization.py       # 优化技术模型
+├── manager.py                # 内存管理器
+└── metrics.py                # 性能指标收集
 ```
 
-### 3.2 会话管理架构
+### 3.2 重构后的职责分离
 
-```
-session/
-├── __init__.py
-├── models.py         # 会话模型定义
-├── manager.py        # 会话管理器
-└── context.py        # 会话上下文
-```
+重构后，Memory模块专注于高性能代码生成和调优相关的数据模型：
+
+- **Memory模块**：专注于内存管理、代码版本、Agent内存、性能指标、优化技术
+- **Prompt模块**：专注于提示模板管理和版本控制（已移至prompt/models/）
+- **Knowledge模块**：专注于知识资源管理（已移至knowledge/models/）
+- **Session模块**：专注于会话生命周期管理（已移至session/models/）
 
 ---
 
@@ -69,15 +61,18 @@ session/
 
 ```python
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
 import uuid
 
 class BaseMemory(BaseModel):
     """所有内存记录的基类"""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
     session_id: str  # 关联的会话ID
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    agent_type: str  # generator, debugger, evaluator
+    version_id: str  # 版本ID，用于版本管理
+    parent_version_id: Optional[str] = None  # 父版本ID，用于版本追踪
 ```
 
 ### 4.2 代码版本模型
@@ -86,24 +81,41 @@ class BaseMemory(BaseModel):
 class CodeVersion(BaseModel):
     """代码版本记录"""
     version_id: str  # 版本ID，自动生成
+    session_id: str  # 会话ID
     code: str  # 代码内容
+    language: str  # 代码语言
+    kernel_type: str  # 内核类型
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     source_agent: str  # 产生代码的Agent类型：generator或debugger
     parent_version_id: Optional[str] = None  # 父版本ID
     description: str = ""  # 版本描述
+    optimization_techniques: List[str] = Field(default_factory=list)  # 使用的优化技术
+    hyperparameters: Dict[str, Any] = Field(default_factory=dict)  # 优化技术超参数
     metadata: Dict[str, Any] = Field(default_factory=dict)  # 元数据
 
     @classmethod
-    def create_new_version(cls, code: str, source_agent: str, parent_version_id: Optional[str] = None, description: str = ""):
+    def create_new_version(cls, session_id: str, code: str, language: str, kernel_type: str,
+                          source_agent: str, optimization_techniques: List[str] = None,
+                          hyperparameters: Dict[str, Any] = None, parent_version_id: Optional[str] = None,
+                          description: str = ""):
         """创建新版本"""
-        # 使用代码内容生成一个唯一的版本ID
-        hash_object = hashlib.sha256(code.encode())
+        import hashlib
+        import time
+
+        # 使用代码内容和时间戳生成版本ID
+        hash_input = f"{session_id}:{code}:{time.time()}"
+        hash_object = hashlib.sha256(hash_input.encode())
         version_id = hash_object.hexdigest()[:12]
 
         return cls(
             version_id=version_id,
+            session_id=session_id,
             code=code,
+            language=language,
+            kernel_type=kernel_type,
             source_agent=source_agent,
+            optimization_techniques=optimization_techniques or [],
+            hyperparameters=hyperparameters or {},
             parent_version_id=parent_version_id,
             description=description
         )
@@ -113,6 +125,32 @@ class CodeMemory(BaseModel):
     session_id: str  # 会话ID
     versions: Dict[str, CodeVersion] = Field(default_factory=dict)  # 版本ID -> 版本对象
     current_version_id: Optional[str] = None  # 当前版本ID
+
+    def add_version(self, version: CodeVersion) -> str:
+        """添加新版本"""
+        self.versions[version.version_id] = version
+        self.current_version_id = version.version_id
+        return version.version_id
+
+    def get_current_version(self) -> Optional[CodeVersion]:
+        """获取当前版本"""
+        if self.current_version_id:
+            return self.versions.get(self.current_version_id)
+        return None
+
+    def get_version_history(self) -> List[Dict[str, Any]]:
+        """获取版本历史"""
+        return [
+            {
+                "version_id": version.version_id,
+                "source_agent": version.source_agent,
+                "description": version.description,
+                "timestamp": version.timestamp,
+                "optimization_techniques": version.optimization_techniques,
+                "is_current": version.version_id == self.current_version_id
+            }
+            for version in self.versions.values()
+        ]
 ```
 
 ### 4.3 Agent内存模型
@@ -122,99 +160,141 @@ class BaseAgentMemory(BaseModel):
     """基础Agent内存模型"""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_id: str  # 会话ID
-    agent_type: str
+    agent_type: str  # generator, debugger, evaluator
+    version_id: str  # 版本ID
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    input_data: Dict[str, Any]
-    output_data: Dict[str, Any]
-    processing_time_ms: int
+    input_data: Dict[str, Any]  # 输入数据
+    output_data: Dict[str, Any]  # 输出数据
+    processing_time_ms: int  # 处理时间
     status: str = "success"  # success, error
-    error_details: Optional[Dict[str, Any]] = None
+    error_details: Optional[Dict[str, Any]] = None  # 错误详情
     code_version_id: Optional[str] = None  # 关联的代码版本ID
+    parent_version_id: Optional[str] = None  # 父版本ID
 
 class GeneratorMemory(BaseAgentMemory):
     """生成器内存"""
     agent_type: str = "generator"
     generation_strategy: str  # 使用的生成策略
+    optimization_techniques: List[str] = Field(default_factory=list)  # 使用的优化技术列表
+    hyperparameters: Dict[str, Any] = Field(default_factory=dict)     # 优化技术超参数
+    kernel_type: str = ""                                             # 内核类型
+    language: str = ""                                                # 代码语言
+    comments: List[str] = Field(default_factory=list)                # 优化说明
+    knowledge_fragments: Dict[str, Any] = Field(default_factory=dict)  # 使用的知识片段
 
 class DebuggerMemory(BaseAgentMemory):
     """调试器内存"""
     agent_type: str = "debugger"
-    identified_issues: List[Dict[str, Any]]  # 识别的问题列表
-    fixed_issues: List[Dict[str, Any]]  # 修复的问题列表
-    remaining_issues: List[Dict[str, Any]] = Field(default_factory=list)  # 剩余问题
-    compilation_success: bool  # 编译是否成功
-    compilation_errors: Optional[List[str]] = None  # 编译错误信息
-
-class OptimizerMemory(BaseAgentMemory):
-    """优化器内存"""
-    agent_type: str = "optimizer"
-    optimization_patterns: List[Dict[str, Any]]  # 识别的优化模式
-    selected_pattern: Optional[Dict[str, Any]] = None  # 选择应用的优化模式
-    recommendation: str  # 优化建议
+    compilation_status: str = "unknown"                               # 编译状态
+    runtime_status: str = "unknown"                                   # 运行状态
+    performance_metrics: Dict[str, Any] = Field(default_factory=dict) # 性能指标
+    modified_code: Optional[str] = None                               # 修改后的代码
+    errors: List[str] = Field(default_factory=list)                  # 错误列表
+    warnings: List[str] = Field(default_factory=list)                # 警告列表
+    execution_log: List[str] = Field(default_factory=list)           # 执行日志
+    # 重要约束：不能修改Generator的优化技术和超参数
+    preserved_optimization_techniques: List[str] = Field(default_factory=list)  # 保持的优化技术
+    preserved_hyperparameters: Dict[str, Any] = Field(default_factory=dict)     # 保持的超参数
 
 class EvaluatorMemory(BaseAgentMemory):
     """评估器内存"""
     agent_type: str = "evaluator"
-    evaluation_criteria: List[str]  # 评估标准
-    performance_metrics: Dict[str, float]  # 性能指标
-    execution_time_ms: int  # 执行时间
-    scores: Dict[str, float]  # 各项评分
-    overall_score: float  # 总体评分
-    recommendations: List[str] = Field(default_factory=list)  # 改进建议
+    current_optimization_techniques: List[str] = Field(default_factory=list) # 当前优化技术
+    current_hyperparameters: Dict[str, Any] = Field(default_factory=dict)   # 当前超参数
+    optimization_suggestions: Dict[str, Any] = Field(default_factory=dict) # 优化建议
+    performance_analysis: Dict[str, Any] = Field(default_factory=dict)     # 性能分析
+    next_iteration_prompt: str = ""                                        # 下一轮优化指导
+    bottlenecks: List[str] = Field(default_factory=list)                   # 性能瓶颈
+    target_performance: Dict[str, Any] = Field(default_factory=dict)      # 目标性能
 ```
 
-### 4.4 提示模板模型
+### 4.4 性能指标模型
 
 ```python
-class PromptTemplate(BaseModel):
-    """提示模板版本"""
-    version_id: str
-    template_name: str
-    content: str
+class PerformanceMetrics(BaseModel):
+    """性能指标模型"""
+    execution_time_ms: float  # 执行时间（毫秒）
+    memory_usage_mb: float  # 内存使用量（MB）
+    cache_miss_rate: Optional[float] = None  # 缓存未命中率
+    cpu_utilization: Optional[float] = None  # CPU利用率
+    throughput: Optional[float] = None  # 吞吐量
+    latency: Optional[float] = None  # 延迟
+    power_consumption: Optional[float] = None  # 功耗
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    description: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    session_id: str  # 会话ID
+    code_version_id: str  # 代码版本ID
+    agent_type: str  # 产生性能指标的Agent类型
 
-class PromptMemory(BaseModel):
-    """提示模板版本管理"""
-    templates: Dict[str, Dict[str, PromptTemplate]] = Field(default_factory=dict)  # template_name -> {version_id -> template}
-    current_versions: Dict[str, str] = Field(default_factory=dict)  # template_name -> current_version_id
+class PerformanceHistory(BaseModel):
+    """性能历史"""
+    session_id: str  # 会话ID
+    metrics: List[PerformanceMetrics] = Field(default_factory=list)  # 性能指标列表
+
+    def add_metrics(self, metrics: PerformanceMetrics) -> None:
+        """添加性能指标"""
+        self.metrics.append(metrics)
+
+    def get_latest_metrics(self) -> Optional[PerformanceMetrics]:
+        """获取最新的性能指标"""
+        if self.metrics:
+            return self.metrics[-1]
+        return None
+
+    def get_performance_trend(self) -> Dict[str, List[float]]:
+        """获取性能趋势"""
+        if not self.metrics:
+            return {}
+
+        trend = {
+            "execution_time": [m.execution_time_ms for m in self.metrics],
+            "memory_usage": [m.memory_usage_mb for m in self.metrics],
+            "timestamps": [m.timestamp.isoformat() for m in self.metrics]
+        }
+
+        if any(m.cache_miss_rate is not None for m in self.metrics):
+            trend["cache_miss_rate"] = [m.cache_miss_rate or 0.0 for m in self.metrics]
+
+        return trend
 ```
 
-### 4.5 知识库模型
+### 4.5 优化技术模型
 
 ```python
-class KnowledgeItem(BaseModel):
-    """知识条目版本"""
-    version_id: str
-    knowledge_id: str
-    content: Dict[str, Any]  # 结构化知识内容
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    source: str = ""  # 知识来源
-    confidence: float = 1.0  # 置信度
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+class OptimizationTechnique(BaseModel):
+    """优化技术模型"""
+    name: str  # 技术名称
+    category: str  # 技术类别（tiling, vectorization, multibuffering, prefetch等）
+    description: str  # 技术描述
+    hyperparameters: Dict[str, Any]  # 超参数定义
+    applicable_scenarios: List[str]  # 适用场景
+    expected_improvement: str  # 预期改进
+    implementation_guide: str  # 实现指南
+    examples: List[str] = Field(default_factory=list)  # 示例代码
 
-class KnowledgeMemory(BaseModel):
-    """知识库版本管理"""
-    knowledge_items: Dict[str, Dict[str, KnowledgeItem]] = Field(default_factory=dict)  # knowledge_id -> {version_id -> item}
-    current_versions: Dict[str, str] = Field(default_factory=dict)  # knowledge_id -> current_version_id
-```
+class OptimizationHistory(BaseModel):
+    """优化历史"""
+    session_id: str  # 会话ID
+    techniques_used: List[str] = Field(default_factory=list)  # 使用的技术
+    hyperparameter_history: List[Dict[str, Any]] = Field(default_factory=list)  # 超参数历史
+    performance_impact: Dict[str, float] = Field(default_factory=dict)  # 性能影响
+    iteration_count: int = 0  # 迭代次数
 
-### 4.6 会话模型
+    def add_iteration(self, techniques: List[str], hyperparameters: Dict[str, Any],
+                     performance_impact: Dict[str, float]) -> None:
+        """添加一次迭代"""
+        self.techniques_used = techniques
+        self.hyperparameter_history.append(hyperparameters)
+        self.performance_impact = performance_impact
+        self.iteration_count += 1
 
-```python
-class SessionMetadata(BaseModel):
-    """会话元数据"""
-    session_id: str
-    name: str
-    creation_time: datetime = Field(default_factory=datetime.utcnow)
-    task_description: str
-    status: str = "active"  # active, completed, failed
-    end_time: Optional[datetime] = None
-    runtime_seconds: Optional[float] = None
-    user_inputs: Dict[str, Any] = Field(default_factory=dict)
-    system_info: Dict[str, Any] = Field(default_factory=dict)
-    tags: List[str] = Field(default_factory=list)
+    def get_optimization_summary(self) -> Dict[str, Any]:
+        """获取优化摘要"""
+        return {
+            "total_iterations": self.iteration_count,
+            "techniques_used": self.techniques_used,
+            "current_hyperparameters": self.hyperparameter_history[-1] if self.hyperparameter_history else {},
+            "performance_impact": self.performance_impact
+        }
 ```
 
 ---
@@ -236,200 +316,100 @@ class MemoryManager:
         pass
 
     def log_generator_interaction(self,
+                                session_id: str,
                                 input_data: Dict[str, Any],
                                 output_data: Dict[str, Any],
                                 processing_time_ms: int,
                                 generation_strategy: str,
+                                optimization_techniques: List[str],
+                                hyperparameters: Dict[str, Any],
+                                knowledge_fragments: Dict[str, Any],
                                 status: str = "success",
-                                error_details: Optional[Dict[str, Any]] = None) -> Tuple[str, Optional[str]]:
+                                error_details: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
         """记录生成器交互"""
         pass
 
     def log_debugger_interaction(self,
+                               session_id: str,
                                input_data: Dict[str, Any],
                                output_data: Dict[str, Any],
                                processing_time_ms: int,
-                               identified_issues: List[Dict[str, Any]],
-                               fixed_issues: List[Dict[str, Any]],
-                               remaining_issues: List[Dict[str, Any]],
-                               compilation_success: bool,
-                               compilation_errors: Optional[List[str]] = None,
+                               compilation_status: str,
+                               runtime_status: str,
+                               performance_metrics: Dict[str, Any],
+                               errors: List[str],
+                               warnings: List[str],
+                               execution_log: List[str],
+                               modified_code: Optional[str] = None,
                                status: str = "success",
-                               error_details: Optional[Dict[str, Any]] = None) -> Tuple[str, Optional[str]]:
+                               error_details: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
         """记录调试器交互"""
         pass
 
-    def log_optimizer_interaction(self,
-                                input_data: Dict[str, Any],
-                                output_data: Dict[str, Any],
-                                processing_time_ms: int,
-                                optimization_patterns: List[Dict[str, Any]],
-                                selected_pattern: Optional[Dict[str, Any]],
-                                recommendation: str,
-                                code_version_id: str,
-                                status: str = "success",
-                                error_details: Optional[Dict[str, Any]] = None) -> str:
-        """记录优化器交互"""
-        pass
-
     def log_evaluator_interaction(self,
+                                session_id: str,
                                 input_data: Dict[str, Any],
                                 output_data: Dict[str, Any],
                                 processing_time_ms: int,
-                                evaluation_criteria: List[str],
-                                performance_metrics: Dict[str, float],
-                                execution_time_ms: int,
-                                scores: Dict[str, float],
-                                overall_score: float,
-                                recommendations: List[str],
-                                code_version_id: str,
+                                current_optimization_techniques: List[str],
+                                current_hyperparameters: Dict[str, Any],
+                                optimization_suggestions: Dict[str, Any],
+                                performance_analysis: Dict[str, Any],
+                                next_iteration_prompt: str,
                                 status: str = "success",
                                 error_details: Optional[Dict[str, Any]] = None) -> str:
         """记录评估器交互"""
         pass
 
-    def add_code_version(self, code: str, source_agent: str, description: str = "") -> str:
+    def add_code_version(self, session_id: str, code: str, language: str, kernel_type: str,
+                        source_agent: str, optimization_techniques: List[str] = None,
+                        hyperparameters: Dict[str, Any] = None, parent_version_id: Optional[str] = None,
+                        description: str = "") -> str:
         """添加新代码版本"""
         pass
 
-    def get_current_code(self) -> Optional[str]:
+    def get_current_code(self, session_id: str) -> Optional[str]:
         """获取当前代码"""
         pass
 
-    def get_code_version(self, version_id: Optional[str] = None) -> Optional[CodeVersion]:
+    def get_code_version(self, session_id: str, version_id: Optional[str] = None) -> Optional[CodeVersion]:
         """获取指定代码版本"""
         pass
 
+    def add_performance_metrics(self, session_id: str, code_version_id: str, agent_type: str,
+                              execution_time_ms: float, memory_usage_mb: float,
+                              cache_miss_rate: Optional[float] = None,
+                              cpu_utilization: Optional[float] = None,
+                              throughput: Optional[float] = None,
+                              latency: Optional[float] = None,
+                              power_consumption: Optional[float] = None) -> str:
+        """添加性能指标"""
+        pass
+
+    def get_performance_history(self, session_id: str) -> PerformanceHistory:
+        """获取性能历史"""
+        pass
+
+    def update_optimization_history(self, session_id: str, techniques: List[str],
+                                  hyperparameters: Dict[str, Any],
+                                  performance_impact: Dict[str, float]) -> None:
+        """更新优化历史"""
+        pass
+
+    def get_optimization_summary(self, session_id: str) -> Dict[str, Any]:
+        """获取优化摘要"""
+        pass
+
     def query_agent_memories(self,
+                           session_id: str,
                            agent_type: Optional[str] = None,
                            filter_func = None,
                            limit: int = 10) -> List[BaseAgentMemory]:
         """查询Agent内存记录"""
         pass
 
-    def export_logs(self, output_file: Optional[str] = None) -> str:
+    def export_logs(self, session_id: str, output_file: Optional[str] = None) -> str:
         """导出日志"""
-        pass
-```
-
-### 5.2 会话管理器接口
-
-```python
-class SessionManager:
-    """会话管理器"""
-
-    def __init__(self, base_dir: str = "./sessions"):
-        """初始化会话管理器"""
-        pass
-
-    def create_session(self, task_description: str, name: Optional[str] = None,
-                      tags: Optional[List[str]] = None) -> str:
-        """创建新会话"""
-        pass
-
-    def load_session(self, session_id: str) -> bool:
-        """加载已有会话"""
-        pass
-
-    def save_session(self) -> bool:
-        """保存当前会话状态"""
-        pass
-
-    def complete_session(self, status: str = "completed") -> bool:
-        """完成当前会话"""
-        pass
-
-    def get_current_session_id(self) -> Optional[str]:
-        """获取当前会话ID"""
-        pass
-
-    def list_sessions(self, filter_func=None, limit: int = 100) -> List[SessionMetadata]:
-        """列出会话"""
-        pass
-
-    def search_sessions(self, query: str, search_in_task: bool = True,
-                       search_in_tags: bool = True, case_sensitive: bool = False) -> List[SessionMetadata]:
-        """搜索会话"""
-        pass
-
-    def delete_session(self, session_id: str) -> bool:
-        """删除会话"""
-        pass
-
-    def export_session(self, session_id: Optional[str] = None, output_file: Optional[str] = None) -> str:
-        """导出会话"""
-        pass
-
-    def import_session(self, zip_file: str) -> Optional[str]:
-        """导入会话"""
-        pass
-```
-
-### 5.3 会话上下文接口
-
-```python
-class SessionContext:
-    """会话上下文管理器"""
-
-    @property
-    def session_manager(self) -> SessionManager:
-        """获取会话管理器"""
-        pass
-
-    @property
-    def current_session_id(self) -> Optional[str]:
-        """获取当前会话ID"""
-        pass
-
-    @property
-    def memory_manager(self):
-        """获取内存管理器"""
-        pass
-
-    @property
-    def code_memory(self):
-        """获取代码内存"""
-        pass
-
-    @property
-    def prompt_memory(self):
-        """获取提示内存"""
-        pass
-
-    @property
-    def knowledge_memory(self):
-        """获取知识内存"""
-        pass
-
-    def ensure_session_active(self):
-        """确保会话处于活动状态"""
-        pass
-```
-
-### 5.4 Memory-Prompt桥接接口
-
-```python
-class MemoryPromptBridge:
-    """连接Memory和Prompt的桥接器"""
-
-    def __init__(self, template_loader, memory_manager: MemoryManager):
-        """初始化桥接器"""
-        pass
-
-    def create_generator_prompt(self, task_description: str, requirements: Dict[str, Any]) -> Dict[str, Any]:
-        """创建生成器Prompt"""
-        pass
-
-    def create_debugger_prompt(self, code_version_id: Optional[str] = None) -> Dict[str, Any]:
-        """创建调试器Prompt"""
-        pass
-
-    def create_optimizer_prompt(self, code_version_id: Optional[str] = None) -> Dict[str, Any]:
-        """创建优化器Prompt"""
-        pass
-
-    def create_evaluator_prompt(self, code_version_id: Optional[str] = None) -> Dict[str, Any]:
-        """创建评估器Prompt"""
         pass
 ```
 
@@ -440,16 +420,14 @@ class MemoryPromptBridge:
 ### 6.1 文件结构
 
 ```
-sessions/
+memory_store/
 ├── session_{timestamp}_{random}/  # 会话目录
-│   ├── metadata.json              # 会话元数据
 │   ├── code_memory.json           # 代码版本历史
-│   ├── prompt_memory.json         # 提示模板版本
-│   ├── knowledge_memory.json      # 知识库版本
+│   ├── performance_history.json   # 性能历史
+│   ├── optimization_history.json  # 优化历史
 │   └── memories/                  # Agent内存目录
 │       ├── generator_{uuid}.json  # 生成器内存
 │       ├── debugger_{uuid}.json   # 调试器内存
-│       ├── optimizer_{uuid}.json  # 优化器内存
 │       └── evaluator_{uuid}.json  # 评估器内存
 └── session_{timestamp}_{random}/  # 另一个会话目录
     └── ...
@@ -474,39 +452,42 @@ sessions/
 ### 7.1 创建会话并记录Agent交互
 
 ```python
-from session import SessionContext
+from memory.models import BaseMemory, CodeVersion, CodeMemory, GeneratorMemory, DebuggerMemory, EvaluatorMemory
+from memory.models.performance import PerformanceMetrics, PerformanceHistory
+from memory.models.optimization import OptimizationHistory
 import time
 
-# 获取会话上下文
-context = SessionContext()
-
-# 创建新会话
-session_id = context.session_manager.create_session(
-    task_description="优化矩阵乘法算子",
-    name="MatMul优化任务",
-    tags=["Choreo", "MatMul", "优化"]
-)
-
-# 获取内存管理器
-memory_manager = context.memory_manager
+# 创建内存管理器
+memory_manager = MemoryManager()
 
 # 模拟Generator交互
 generator_input = {
-    "task_description": "实现高效的矩阵乘法算子",
-    "requirements": {"language": "Choreo DSL", "optimize_for": "performance"}
+    "user_requirement": "实现高效的矩阵乘法算子",
+    "knowledge_fragments": {
+        "domain_knowledge": "矩阵运算的数学原理",
+        "optimization_techniques": "tiling, vectorization",
+        "dsl_syntax": "Choreo DSL语法"
+    }
 }
 
 generator_output = {
     "code": "def matmul(A, B):\n    C = alloc(A.shape[0], B.shape[1])\n    for i in range(A.shape[0]):\n        for j in range(B.shape[1]):\n            for k in range(A.shape[1]):\n                C[i, j] += A[i, k] * B[k, j]\n    return C",
-    "strategy": "naive_implementation"
+    "language": "Choreo DSL",
+    "kernel_type": "matrix_multiplication",
+    "optimization_techniques": ["tiling", "vectorization"],
+    "hyperparameters": {"tile_size": 32, "vector_width": 8}
 }
 
 # 记录Generator交互
 generator_memory_id, code_version_id = memory_manager.log_generator_interaction(
+    session_id="session_123",
     input_data=generator_input,
     output_data=generator_output,
     processing_time_ms=1200,
-    generation_strategy="naive_implementation"
+    generation_strategy="optimization_aware",
+    optimization_techniques=["tiling", "vectorization"],
+    hyperparameters={"tile_size": 32, "vector_width": 8},
+    knowledge_fragments=generator_input["knowledge_fragments"]
 )
 
 print(f"Generator memory ID: {generator_memory_id}")
@@ -514,97 +495,81 @@ print(f"Code version ID: {code_version_id}")
 
 # 模拟Debugger交互
 debugger_input = {
-    "code": memory_manager.get_current_code(),
-    "code_version_id": code_version_id
+    "generator_output": generator_output
 }
 
 debugger_output = {
-    "identified_issues": [{"line": 3, "issue": "Missing initialization of C"}],
-    "fixed_issues": [{"line": 3, "fix": "Initialize C with zeros"}],
-    "fixed_code": "def matmul(A, B):\n    C = alloc(A.shape[0], B.shape[1])\n    C.fill(0)  # Initialize with zeros\n    for i in range(A.shape[0]):\n        for j in range(B.shape[1]):\n            for k in range(A.shape[1]):\n                C[i, j] += A[i, k] * B[k, j]\n    return C"
+    "compilation_status": "success",
+    "runtime_status": "success",
+    "performance_metrics": {
+        "execution_time_ms": 45.2,
+        "memory_usage_mb": 128.5,
+        "cache_miss_rate": 0.15
+    },
+    "errors": [],
+    "warnings": ["Consider using larger tile size for better cache performance"],
+    "execution_log": ["Compilation successful", "Runtime execution completed"]
 }
 
 # 记录Debugger交互
 debugger_memory_id, new_code_version_id = memory_manager.log_debugger_interaction(
+    session_id="session_123",
     input_data=debugger_input,
     output_data=debugger_output,
     processing_time_ms=800,
-    identified_issues=debugger_output["identified_issues"],
-    fixed_issues=debugger_output["fixed_issues"],
-    remaining_issues=[],
-    compilation_success=True,
-    compilation_errors=None
+    compilation_status="success",
+    runtime_status="success",
+    performance_metrics=debugger_output["performance_metrics"],
+    errors=debugger_output["errors"],
+    warnings=debugger_output["warnings"],
+    execution_log=debugger_output["execution_log"]
 )
 
 print(f"Debugger memory ID: {debugger_memory_id}")
 print(f"New code version ID: {new_code_version_id}")
 
-# 保存会话
-context.session_manager.save_session()
+# 添加性能指标
+memory_manager.add_performance_metrics(
+    session_id="session_123",
+    code_version_id=new_code_version_id,
+    agent_type="debugger",
+    execution_time_ms=45.2,
+    memory_usage_mb=128.5,
+    cache_miss_rate=0.15,
+    cpu_utilization=85.3
+)
 ```
 
 ### 7.2 查询和导出会话
 
 ```python
-from session import SessionContext
+# 获取代码版本历史
+code_memory = memory_manager.get_code_memory("session_123")
+history = code_memory.get_version_history()
 
-# 获取会话上下文
-context = SessionContext()
+print(f"Code version history:")
+for version in history:
+    print(f"  {version['version_id']} - {version['source_agent']} - {version['description']}")
+    print(f"    Optimization techniques: {version['optimization_techniques']}")
 
-# 列出最近的会话
-sessions = context.session_manager.list_sessions(limit=5)
-for session in sessions:
-    print(f"Session: {session.session_id} - {session.name} [{session.status}]")
-    print(f"  Task: {session.task_description}")
-    print(f"  Created: {session.creation_time}")
-    if session.tags:
-        print(f"  Tags: {', '.join(session.tags)}")
-    print()
+# 获取性能历史
+performance_history = memory_manager.get_performance_history("session_123")
+trend = performance_history.get_performance_trend()
 
-# 加载特定会话
-if sessions:
-    session_id = sessions[0].session_id
-    context.session_manager.load_session(session_id)
+print(f"Performance trend:")
+print(f"  Execution times: {trend['execution_time']}")
+print(f"  Memory usage: {trend['memory_usage']}")
 
-    # 获取代码版本历史
-    code_memory = context.code_memory
-    history = code_memory.get_version_history()
+# 获取优化摘要
+optimization_summary = memory_manager.get_optimization_summary("session_123")
+print(f"Optimization summary:")
+print(f"  Total iterations: {optimization_summary['total_iterations']}")
+print(f"  Techniques used: {optimization_summary['techniques_used']}")
+print(f"  Performance impact: {optimization_summary['performance_impact']}")
 
-    print(f"Code version history for session {session_id}:")
-    for version in history:
-        print(f"  {version['version_id']} - {version['source_agent']} - {version['description']}")
-
-    # 导出会话日志
-    export_path = context.session_manager.export_session()
-    print(f"Session exported to: {export_path}")
-```
-
-### 7.3 创建Agent Prompt
-
-```python
-from session import SessionContext
-from memory.bridge import MemoryPromptBridge
-
-# 获取会话上下文
-context = SessionContext()
-
-# 创建桥接器
-bridge = MemoryPromptBridge(template_loader, context.memory_manager)
-
-# 获取当前代码版本ID
-code_version_id = context.code_memory.current_version_id
-
-# 创建优化器Prompt
-optimizer_prompt = bridge.create_optimizer_prompt(code_version_id)
-
-print("Optimizer Prompt:")
-print(json.dumps(optimizer_prompt, indent=2))
-
-# 创建评估器Prompt
-evaluator_prompt = bridge.create_evaluator_prompt(code_version_id)
-
-print("\nEvaluator Prompt:")
-print(json.dumps(evaluator_prompt, indent=2))
+# 导出会话日志
+export_path = memory_manager.export_logs("session_123")
+print(f"Session exported to: {export_path}")
 ```
 
 ---
@@ -649,26 +614,51 @@ print(json.dumps(evaluator_prompt, indent=2))
 
 ---
 
-## 10. 总结
+## 10. 重构后的优势
 
-Memory模块设计采用了分层架构，通过Pydantic提供类型安全，通过会话隔离保证数据独立性，通过专门的代码版本管理支持代码追踪。该设计专注于单机环境，优化了文件IO和内存使用，同时保持了良好的扩展性。
+### 10.1 模块职责清晰
+
+- **Memory模块**：专注于内存管理、代码版本、Agent内存、性能指标、优化技术
+- **Prompt模块**：专注于提示模板管理和版本控制
+- **Knowledge模块**：专注于知识资源管理
+- **Session模块**：专注于会话生命周期管理
+
+### 10.2 符合设计原则
+
+- **单一职责原则**：每个模块只管理自己的数据模型
+- **开闭原则**：模块可以独立扩展，不影响其他模块
+- **依赖倒置原则**：通过统一的数据模型接口实现模块间解耦
+
+### 10.3 便于开发和维护
+
+- **独立开发**：不同团队可以独立开发不同模块
+- **独立测试**：每个模块的数据模型可以独立测试
+- **版本管理**：每个模块的数据模型可以独立版本控制
+
+---
+
+## 11. 总结
+
+重构后的Memory模块设计采用了分层架构，专门为高性能代码生成和调优设计。通过Pydantic提供类型安全，通过会话隔离保证数据独立性，通过专门的代码版本管理支持代码追踪，通过性能指标和优化技术模型支持性能优化。
 
 核心特点包括：
 
 1. **会话隔离**：每次运行系统创建独立会话，确保任务间数据不混淆
 2. **代码版本管理**：专门的代码版本跟踪，支持版本历史和回溯
 3. **角色特定内存**：为不同Agent角色设计特定内存结构
-4. **Memory-Prompt桥接**：明确定义Memory和Prompt之间的关系
-5. **类型安全**：使用Pydantic确保数据一致性和类型安全
-6. **持久化存储**：JSON格式持久化，支持导入/导出
+4. **性能指标追踪**：完整的性能指标收集和分析
+5. **优化技术管理**：优化技术的使用历史和效果分析
+6. **类型安全**：使用Pydantic确保数据一致性和类型安全
+7. **持久化存储**：JSON格式持久化，支持导入/导出
+8. **模块职责分离**：重构后专注于高性能代码生成和调优相关功能
 
-该设计满足了Pinocchio系统的需求，提供了高效、可靠的内存管理，支持多智能体协作过程中的数据存储、检索和共享。
+该设计满足了Pinocchio系统对高性能代码生成和调优的需求，提供了高效、可靠的内存管理，支持多智能体协作过程中的数据存储、检索和共享。
 
 ---
 
-## 11. 测试策略
+## 12. 测试策略
 
-### 11.1 测试范围
+### 12.1 测试范围
 
 Memory模块的测试应覆盖以下关键方面：
 
@@ -692,7 +682,17 @@ Memory模块的测试应覆盖以下关键方面：
    - 版本历史和关系维护
    - 版本ID生成的一致性
 
-### 11.2 测试夹具
+5. **性能指标测试**
+   - 性能指标收集和存储
+   - 性能趋势分析
+   - 性能历史查询
+
+6. **优化技术测试**
+   - 优化技术使用记录
+   - 优化历史追踪
+   - 优化效果分析
+
+### 12.2 测试夹具
 
 ```python
 @pytest.fixture
@@ -717,29 +717,40 @@ def sample_code():
 def code_memory_with_version(memory_manager, sample_code):
     """创建包含版本的代码内存"""
     code_version_id = memory_manager.add_code_version(
+        session_id="test_session",
         code=sample_code,
+        language="Python",
+        kernel_type="example",
         source_agent="generator",
+        optimization_techniques=["basic"],
         description="Initial version"
     )
-    return memory_manager.code_memory, code_version_id
+    return memory_manager.get_code_memory("test_session"), code_version_id
 ```
 
-### 11.3 测试用例示例
+### 12.3 测试用例示例
 
-#### 11.3.1 模型测试
+#### 12.3.1 模型测试
 
 ```python
 def test_code_version_creation():
     """测试代码版本创建"""
-    code = "def example(): pass"
     version = CodeVersion.create_new_version(
-        code=code,
+        session_id="test_session",
+        code="def example(): pass",
+        language="Python",
+        kernel_type="test",
         source_agent="generator",
+        optimization_techniques=["tiling"],
+        hyperparameters={"tile_size": 32},
         description="Test version"
     )
 
-    assert version.code == code
+    assert version.code == "def example(): pass"
+    assert version.language == "Python"
     assert version.source_agent == "generator"
+    assert version.optimization_techniques == ["tiling"]
+    assert version.hyperparameters == {"tile_size": 32}
     assert version.description == "Test version"
     assert version.version_id is not None
     assert version.parent_version_id is None
@@ -747,7 +758,10 @@ def test_code_version_creation():
 def test_code_version_serialization():
     """测试代码版本序列化"""
     version = CodeVersion.create_new_version(
+        session_id="test_session",
         code="def test(): pass",
+        language="Python",
+        kernel_type="test",
         source_agent="generator"
     )
 
@@ -756,19 +770,25 @@ def test_code_version_serialization():
 
     assert deserialized.version_id == version.version_id
     assert deserialized.code == version.code
+    assert deserialized.language == version.language
 ```
 
-#### 11.3.2 存储测试
+#### 12.3.2 存储测试
 
 ```python
 def test_store_agent_memory(memory_manager):
     """测试存储Agent内存"""
     memory = GeneratorMemory(
         session_id="test_session",
+        agent_type="generator",
+        version_id="v1",
         input_data={"prompt": "Generate code"},
-        output_data={"code": "def test(): pass"},
+        output_data={"code": "def test(): pass", "optimization_techniques": ["tiling"]},
         processing_time_ms=100,
-        generation_strategy="default"
+        generation_strategy="optimization_aware",
+        optimization_techniques=["tiling"],
+        hyperparameters={"tile_size": 32},
+        knowledge_fragments={"domain_knowledge": "test"}
     )
 
     memory_id = memory_manager.store_agent_memory(memory)
@@ -783,10 +803,13 @@ def test_memory_retrieval(memory_manager):
     # 先存储一条内存记录
     memory = GeneratorMemory(
         session_id="test_session",
+        agent_type="generator",
+        version_id="v1",
         input_data={"prompt": "Generate code"},
         output_data={"code": "def test(): pass"},
         processing_time_ms=100,
-        generation_strategy="default"
+        generation_strategy="default",
+        optimization_techniques=["basic"]
     )
     memory_id = memory_manager.store_agent_memory(memory)
 
@@ -795,52 +818,128 @@ def test_memory_retrieval(memory_manager):
     assert retrieved is not None
     assert retrieved.id == memory_id
     assert retrieved.input_data == memory.input_data
+    assert retrieved.optimization_techniques == memory.optimization_techniques
 ```
 
-#### 11.3.3 管理器接口测试
+#### 12.3.3 管理器接口测试
 
 ```python
 def test_log_generator_interaction(memory_manager):
     """测试记录生成器交互"""
     input_data = {"prompt": "Generate matrix multiplication code"}
-    output_data = {"code": "def matmul(A, B): pass", "strategy": "naive"}
+    output_data = {"code": "def matmul(A, B): pass", "optimization_techniques": ["tiling"]}
 
     memory_id, code_version_id = memory_manager.log_generator_interaction(
+        session_id="test_session",
         input_data=input_data,
         output_data=output_data,
         processing_time_ms=200,
-        generation_strategy="naive"
+        generation_strategy="optimization_aware",
+        optimization_techniques=["tiling"],
+        hyperparameters={"tile_size": 32},
+        knowledge_fragments={"domain_knowledge": "matrix operations"}
     )
 
     assert memory_id is not None
     assert code_version_id is not None
 
     # 验证代码版本
-    code_version = memory_manager.get_code_version(code_version_id)
+    code_version = memory_manager.get_code_version("test_session", code_version_id)
     assert code_version is not None
     assert code_version.code == output_data["code"]
     assert code_version.source_agent == "generator"
+    assert code_version.optimization_techniques == ["tiling"]
 
-def test_query_agent_memories(memory_manager):
-    """测试查询Agent内存"""
-    # 创建多条内存记录
-    for i in range(5):
-        memory_manager.log_generator_interaction(
-            input_data={"prompt": f"Task {i}"},
-            output_data={"code": f"def func{i}(): pass"},
-            processing_time_ms=100 + i,
-            generation_strategy="default"
-        )
+def test_log_debugger_interaction(memory_manager):
+    """测试记录调试器交互"""
+    # 先创建Generator交互
+    generator_memory_id, code_version_id = memory_manager.log_generator_interaction(
+        session_id="test_session",
+        input_data={"prompt": "Generate code"},
+        output_data={"code": "def test(): pass"},
+        processing_time_ms=100,
+        generation_strategy="default",
+        optimization_techniques=["basic"],
+        hyperparameters={},
+        knowledge_fragments={}
+    )
 
-    # 查询并验证
-    memories = memory_manager.query_agent_memories(agent_type="generator", limit=3)
-    assert len(memories) == 3
-    assert all(m.agent_type == "generator" for m in memories)
-    # 验证按时间倒序排列
-    assert memories[0].processing_time_ms > memories[1].processing_time_ms
+    # 记录Debugger交互
+    debugger_memory_id, new_code_version_id = memory_manager.log_debugger_interaction(
+        session_id="test_session",
+        input_data={"generator_output": {"code": "def test(): pass"}},
+        output_data={
+            "compilation_status": "success",
+            "runtime_status": "success",
+            "performance_metrics": {"execution_time_ms": 45.2, "memory_usage_mb": 128.5}
+        },
+        processing_time_ms=80,
+        compilation_status="success",
+        runtime_status="success",
+        performance_metrics={"execution_time_ms": 45.2, "memory_usage_mb": 128.5},
+        errors=[],
+        warnings=[],
+        execution_log=["Compilation successful"]
+    )
+
+    assert debugger_memory_id is not None
+    assert new_code_version_id is not None
+
+def test_performance_metrics(memory_manager):
+    """测试性能指标"""
+    # 先创建代码版本
+    code_version_id = memory_manager.add_code_version(
+        session_id="test_session",
+        code="def test(): pass",
+        language="Python",
+        kernel_type="test",
+        source_agent="generator"
+    )
+
+    # 添加性能指标
+    metrics_id = memory_manager.add_performance_metrics(
+        session_id="test_session",
+        code_version_id=code_version_id,
+        agent_type="debugger",
+        execution_time_ms=45.2,
+        memory_usage_mb=128.5,
+        cache_miss_rate=0.15,
+        cpu_utilization=85.3
+    )
+
+    assert metrics_id is not None
+
+    # 获取性能历史
+    performance_history = memory_manager.get_performance_history("test_session")
+    assert performance_history is not None
+    assert len(performance_history.metrics) == 1
+
+    latest_metrics = performance_history.get_latest_metrics()
+    assert latest_metrics is not None
+    assert latest_metrics.execution_time_ms == 45.2
+    assert latest_metrics.memory_usage_mb == 128.5
+    assert latest_metrics.cache_miss_rate == 0.15
+    assert latest_metrics.cpu_utilization == 85.3
+
+def test_optimization_history(memory_manager):
+    """测试优化历史"""
+    # 更新优化历史
+    memory_manager.update_optimization_history(
+        session_id="test_session",
+        techniques=["tiling", "vectorization"],
+        hyperparameters={"tile_size": 32, "vector_width": 8},
+        performance_impact={"execution_time_ms": 45.2, "memory_usage_mb": 128.5}
+    )
+
+    # 获取优化摘要
+    summary = memory_manager.get_optimization_summary("test_session")
+    assert summary["total_iterations"] == 1
+    assert summary["techniques_used"] == ["tiling", "vectorization"]
+    assert summary["current_hyperparameters"] == {"tile_size": 32, "vector_width": 8}
+    assert summary["performance_impact"] == {"execution_time_ms": 45.2, "memory_usage_mb": 128.5}
 ```
 
-### 11.4 集成测试重点
+### 12.4 集成测试重点
 
 1. **与Session模块集成**
    - 验证会话创建时内存初始化
@@ -850,14 +949,14 @@ def test_query_agent_memories(memory_manager):
 2. **与Agent模块集成**
    - 测试Agent交互记录的完整流程
    - 验证不同Agent类型的内存记录差异
-   - 测试Memory-Prompt桥接功能
+   - 测试性能指标收集和优化历史追踪
 
 3. **文件系统交互**
    - 验证大量数据的性能表现
    - 测试并发访问的安全性
    - 验证错误恢复机制
 
-### 11.5 性能测试
+### 12.5 性能测试
 
 1. **大数据量测试**
    - 测试处理大型代码文件的性能
@@ -869,4 +968,9 @@ def test_query_agent_memories(memory_manager):
    - 测试并发读写操作的性能
    - 验证锁机制的有效性
 
-通过全面的测试策略，确保Memory模块的稳定性、正确性和性能，为Pinocchio系统提供可靠的数据管理基础。
+3. **性能指标测试**
+   - 测试性能指标收集的性能
+   - 验证性能趋势分析的准确性
+   - 测试优化历史追踪的效率
+
+通过全面的测试策略，确保Memory模块的稳定性、正确性和性能，为Pinocchio系统提供可靠的高性能代码生成和调优数据管理基础。

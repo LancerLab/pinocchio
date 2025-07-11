@@ -51,18 +51,10 @@ class JsonFormatter(logging.Formatter):
         self.include_thread = include_thread
         self.additional_fields = kwargs
 
-    def format(self, record: logging.LogRecord) -> str:
-        """
-        Format the log record as a JSON string.
-
-        Args:
-            record: The log record to format
-
-        Returns:
-            JSON string representation of the log record
-        """
-        log_data: Dict[str, Any] = {}
-
+    def _add_basic_fields(
+        self, record: logging.LogRecord, log_data: Dict[str, Any]
+    ) -> None:
+        """Add basic fields to log data."""
         # Always include the message
         log_data["message"] = record.getMessage()
 
@@ -85,7 +77,10 @@ class JsonFormatter(logging.Formatter):
         if self.include_thread:
             log_data["thread"] = record.thread
 
-        # Add exception info if present
+    def _add_exception_info(
+        self, record: logging.LogRecord, log_data: Dict[str, Any]
+    ) -> None:
+        """Add exception information to log data."""
         if record.exc_info:
             exc_type: Optional[Type[BaseException]] = record.exc_info[0]
             exc_value: Optional[BaseException] = record.exc_info[1]
@@ -99,6 +94,10 @@ class JsonFormatter(logging.Formatter):
                     + (traceback.format_tb(exc_tb) if exc_tb else []),
                 }
 
+    def _add_additional_fields(
+        self, record: logging.LogRecord, log_data: Dict[str, Any]
+    ) -> None:
+        """Add additional fields to log data."""
         # Add error context if present
         if hasattr(record, "error_context") and record.error_context:
             log_data["error_context"] = record.error_context
@@ -107,34 +106,52 @@ class JsonFormatter(logging.Formatter):
         log_data.update(self.additional_fields)
 
         # Add any additional fields from the record
+        excluded_fields = {
+            "args",
+            "asctime",
+            "created",
+            "exc_info",
+            "exc_text",
+            "filename",
+            "funcName",
+            "id",
+            "levelname",
+            "levelno",
+            "lineno",
+            "module",
+            "msecs",
+            "message",
+            "msg",
+            "name",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "stack_info",
+            "thread",
+            "threadName",
+            "error_context",
+        }
+
         for key, value in record.__dict__.items():
-            if key not in (
-                "args",
-                "asctime",
-                "created",
-                "exc_info",
-                "exc_text",
-                "filename",
-                "funcName",
-                "id",
-                "levelname",
-                "levelno",
-                "lineno",
-                "module",
-                "msecs",
-                "message",
-                "msg",
-                "name",
-                "pathname",
-                "process",
-                "processName",
-                "relativeCreated",
-                "stack_info",
-                "thread",
-                "threadName",
-                "error_context",
-            ):
+            if key not in excluded_fields:
                 log_data[key] = value
+
+    def format(self, record: logging.LogRecord) -> str:
+        """
+        Format the log record as a JSON string.
+
+        Args:
+            record: The log record to format
+
+        Returns:
+            JSON string representation of the log record
+        """
+        log_data: Dict[str, Any] = {}
+
+        self._add_basic_fields(record, log_data)
+        self._add_exception_info(record, log_data)
+        self._add_additional_fields(record, log_data)
 
         return json.dumps(log_data)
 

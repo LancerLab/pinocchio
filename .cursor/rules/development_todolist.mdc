@@ -1,0 +1,939 @@
+# Pinocchio 开发 TodoList（详细版）
+
+## 项目概述
+
+基于优化后的简洁架构设计，制定详细的开发TodoList。采用分阶段、渐进式的开发策略，优先实现核心功能，逐步完善系统。
+
+---
+
+## 一、开发阶段规划
+
+### 阶段1：核心架构搭建（Week 1-2）
+**目标**：建立基础框架，实现最小可用版本
+
+### 阶段2：功能完善（Week 3-4）
+**目标**：完善各模块功能，实现完整工作流程
+
+### 阶段3：优化扩展（Week 5-6）
+**目标**：性能优化、错误处理、测试覆盖
+
+---
+
+## 二、详细 TodoList
+
+### 阶段1：核心架构搭建
+
+#### 1.1 项目结构初始化
+- [ ] **创建新的项目结构**
+  ```bash
+  # 创建目录结构
+  mkdir -p pinocchio/{models,utils}
+  mkdir -p {sessions,memories,knowledge}
+  mkdir -p tests/{unit,integration}
+  ```
+
+- [ ] **创建基础文件**
+  ```bash
+  # 核心模块文件
+  touch pinocchio/__init__.py
+  touch pinocchio/coordinator.py
+  touch pinocchio/session_logger.py
+  touch pinocchio/prompt_manager.py
+  touch pinocchio/agent.py
+  touch pinocchio/memory_manager.py
+  touch pinocchio/knowledge_manager.py
+  touch pinocchio/llm_client.py
+  touch pinocchio/agent_manager.py
+  ```
+
+- [ ] **创建数据模型文件**
+  ```bash
+  touch pinocchio/models/__init__.py
+  touch pinocchio/models/session.py
+  touch pinocchio/models/memory.py
+  touch pinocchio/models/knowledge.py
+  touch pinocchio/models/agent.py
+  ```
+
+- [ ] **创建工具函数文件**
+  ```bash
+  touch pinocchio/utils/__init__.py
+  touch pinocchio/utils/json_parser.py
+  touch pinocchio/utils/file_utils.py
+  ```
+
+#### 1.2 数据模型实现
+
+##### 1.2.1 Session数据模型
+- [ ] **models/session.py** - 实现SessionData类
+  ```python
+  from pydantic import BaseModel
+  from typing import List, Dict, Optional
+  from datetime import datetime
+
+  class SessionData(BaseModel):
+      session_id: str
+      user_prompt: str
+      created_at: datetime
+      completed_at: Optional[datetime] = None
+      summary_logs: List[str] = []
+      communication_logs: List[Dict] = []
+  ```
+
+##### 1.2.2 Memory数据模型
+- [ ] **models/memory.py** - 实现MemoryEntry类
+  ```python
+  from pydantic import BaseModel
+  from typing import Dict, Any
+  from datetime import datetime
+
+  class MemoryEntry(BaseModel):
+      id: str
+      agent_type: str
+      timestamp: datetime
+      prompt: Dict[str, Any]
+      result: Dict[str, Any]
+      summary: str
+  ```
+
+##### 1.2.3 Knowledge数据模型
+- [ ] **models/knowledge.py** - 实现KnowledgeItem类
+  ```python
+  from pydantic import BaseModel
+  from typing import List
+
+  class KnowledgeItem(BaseModel):
+      id: str
+      agent_type: str
+      keywords: List[str]
+      content: str
+      category: str
+  ```
+
+##### 1.2.4 Agent数据模型
+- [ ] **models/agent.py** - 实现Agent请求和响应模型
+  ```python
+  from pydantic import BaseModel
+  from typing import Dict, Any, Optional
+
+  class AgentRequest(BaseModel):
+      agent_type: str
+      prompt: Dict[str, Any]
+      context: Optional[Dict[str, Any]] = None
+
+  class AgentResponse(BaseModel):
+      agent_type: str
+      success: bool
+      output: Dict[str, Any]
+      error_message: Optional[str] = None
+      metadata: Optional[Dict[str, Any]] = None
+  ```
+
+#### 1.3 工具函数实现
+
+##### 1.3.1 JSON解析工具
+- [ ] **utils/json_parser.py** - 实现安全的JSON解析
+  ```python
+  import json
+  from typing import Dict, Any, Optional
+
+  def safe_json_parse(text: str) -> Optional[Dict[str, Any]]:
+      """安全解析JSON字符串"""
+      try:
+          return json.loads(text)
+      except json.JSONDecodeError:
+          return None
+
+  def extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
+      """从文本中提取JSON"""
+      # 实现从文本中提取JSON的逻辑
+      pass
+  ```
+
+##### 1.3.2 文件操作工具
+- [ ] **utils/file_utils.py** - 实现安全的文件操作
+  ```python
+  import json
+  from pathlib import Path
+  from typing import Dict, Any, Optional
+
+  def safe_read_json(filepath: str) -> Optional[Dict[str, Any]]:
+      """安全读取JSON文件"""
+      try:
+          with open(filepath, 'r', encoding='utf-8') as f:
+              return json.load(f)
+      except (FileNotFoundError, json.JSONDecodeError):
+          return None
+
+  def safe_write_json(filepath: str, data: Dict[str, Any]) -> bool:
+      """安全写入JSON文件"""
+      try:
+          Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+          with open(filepath, 'w', encoding='utf-8') as f:
+              json.dump(data, f, indent=2, ensure_ascii=False)
+          return True
+      except Exception:
+          return False
+  ```
+
+#### 1.4 核心组件实现
+
+##### 1.4.1 SessionLogger实现
+- [ ] **session_logger.py** - 实现SessionLogger类
+  ```python
+  import uuid
+  import json
+  from datetime import datetime
+  from typing import List, Dict
+  from .models.session import SessionData
+
+  class SessionLogger:
+      def __init__(self, user_prompt: str):
+          self.session_id = f"session_{uuid.uuid4().hex[:8]}"
+          self.user_prompt = user_prompt
+          self.created_at = datetime.utcnow()
+          self.summary_logs: List[str] = []
+          self.communication_logs: List[Dict] = []
+
+      def log_summary(self, message: str) -> str:
+          """记录摘要信息"""
+          timestamp = datetime.utcnow().strftime("%H:%M:%S")
+          summary = f"[{timestamp}] {message}"
+          self.summary_logs.append(summary)
+          return summary
+
+      def log_communication(self, step_id: int, agent_type: str, prompt: Dict, result: Dict):
+          """记录详细通信"""
+          self.communication_logs.append({
+              "step_id": step_id,
+              "agent_type": agent_type,
+              "timestamp": datetime.utcnow().isoformat(),
+              "prompt": prompt,
+              "result": result
+          })
+
+      def get_context(self) -> Dict:
+          """获取当前上下文"""
+          return {
+              "session_id": self.session_id,
+              "user_prompt": self.user_prompt,
+              "total_steps": len(self.communication_logs),
+              "latest_result": self.communication_logs[-1]["result"] if self.communication_logs else None
+          }
+
+      def save_to_file(self, filepath: str):
+          """保存到JSON文件"""
+          data = {
+              "session_id": self.session_id,
+              "user_prompt": self.user_prompt,
+              "created_at": self.created_at.isoformat(),
+              "summary_logs": self.summary_logs,
+              "communication_logs": self.communication_logs
+          }
+
+          from .utils.file_utils import safe_write_json
+          safe_write_json(filepath, data)
+  ```
+
+##### 1.4.2 基础Agent实现
+- [ ] **agent.py** - 实现Agent基类和具体Agent
+  ```python
+  from abc import ABC, abstractmethod
+  from typing import Dict, Any
+  from .models.agent import AgentRequest, AgentResponse
+
+  class Agent(ABC):
+      def __init__(self, agent_type: str, llm_client: 'LLMClient'):
+          self.agent_type = agent_type
+          self.llm_client = llm_client
+
+      @abstractmethod
+      async def execute(self, prompt: Dict[str, Any]) -> AgentResponse:
+          pass
+
+      def _parse_llm_response(self, response: str) -> Dict[str, Any]:
+          """解析LLM响应"""
+          from .utils.json_parser import safe_json_parse
+          parsed = safe_json_parse(response)
+          return parsed if parsed else {"content": response}
+
+      def _handle_error(self, error: Exception) -> AgentResponse:
+          """处理错误"""
+          return AgentResponse(
+              agent_type=self.agent_type,
+              success=False,
+              output={},
+              error_message=str(error)
+          )
+
+  class GeneratorAgent(Agent):
+      def __init__(self, llm_client: 'LLMClient'):
+          super().__init__("generator", llm_client)
+
+      async def execute(self, prompt: Dict[str, Any]) -> AgentResponse:
+          try:
+              response = await self.llm_client.complete(prompt["prompt_string"])
+              output = self._parse_llm_response(response)
+              return AgentResponse(
+                  agent_type=self.agent_type,
+                  success=True,
+                  output=output
+              )
+          except Exception as e:
+              return self._handle_error(e)
+
+  # 类似实现其他Agent...
+  ```
+
+##### 1.4.3 简单LLM客户端
+- [ ] **llm_client.py** - 实现LLM客户端
+  ```python
+  from abc import ABC, abstractmethod
+  from typing import Dict, Any
+
+  class LLMClient(ABC):
+      @abstractmethod
+      async def complete(self, prompt: str) -> str:
+          pass
+
+  class MockLLMClient(LLMClient):
+      """用于测试的Mock LLM客户端"""
+
+      def __init__(self, responses: Dict[str, str] = None):
+          self.responses = responses or {}
+
+      async def complete(self, prompt: str) -> str:
+          # 简单的关键词匹配
+          if "生成" in prompt or "编写" in prompt:
+              return '{"code": "// 生成的代码", "explanation": "代码说明"}'
+          elif "调试" in prompt:
+              return '{"fixed_code": "// 修复的代码", "issues": ["问题1"]}'
+          else:
+              return '{"content": "默认响应"}'
+
+  class OpenAIClient(LLMClient):
+      """OpenAI客户端"""
+
+      def __init__(self, api_key: str, model: str = "gpt-4"):
+          self.api_key = api_key
+          self.model = model
+
+      async def complete(self, prompt: str) -> str:
+          # 实现OpenAI API调用
+          pass
+  ```
+
+##### 1.4.4 Coordinator基础框架
+- [ ] **coordinator.py** - 实现Coordinator基础功能
+  ```python
+  from typing import AsyncGenerator
+  from .session_logger import SessionLogger
+  from .agent_manager import AgentManager
+  from .prompt_manager import PromptManager
+  from .memory_manager import MemoryManager
+  from .knowledge_manager import KnowledgeManager
+
+  class Coordinator:
+      def __init__(self):
+          self.prompt_manager = PromptManager()
+          self.memory_manager = MemoryManager()
+          self.knowledge_manager = KnowledgeManager()
+          self.agent_manager = AgentManager()
+          self.session = None
+
+      async def process_user_request(self, user_prompt: str) -> AsyncGenerator[str, None]:
+          """处理用户请求"""
+          # 创建session
+          self.session = SessionLogger(user_prompt)
+          yield self.session.log_summary("Session started")
+
+          # 生成简单计划
+          plan = self._generate_simple_plan(user_prompt)
+          yield self.session.log_summary(f"Plan generated: {len(plan)} steps")
+
+          # 执行计划
+          for i, step in enumerate(plan):
+              yield self.session.log_summary(f"Executing step {i+1}: {step['agent_type']}")
+
+              # 获取prompt
+              prompt = await self.prompt_manager.get_comprehensive_prompt(
+                  step['agent_type'],
+                  step['task_description'],
+                  self.session.get_context()
+              )
+
+              # 执行agent
+              result = await self.agent_manager.execute_agent(step['agent_type'], prompt)
+
+              # 记录
+              self.session.log_communication(i+1, step['agent_type'], prompt, result.dict())
+              yield self.session.log_summary(f"Step {i+1} completed")
+
+          yield self.session.log_summary("Session completed")
+
+      def _generate_simple_plan(self, user_prompt: str) -> List[Dict]:
+          """生成简单计划"""
+          plan = []
+
+          if "生成" in user_prompt or "编写" in user_prompt:
+              plan.append({
+                  "agent_type": "generator",
+                  "task_description": "根据用户需求生成代码"
+              })
+
+          if "调试" in user_prompt or "修复" in user_prompt:
+              plan.append({
+                  "agent_type": "debugger",
+                  "task_description": "调试和修复代码问题"
+              })
+
+          return plan
+  ```
+
+#### 1.5 基础测试
+- [ ] **创建测试框架**
+  ```bash
+  # 创建测试文件
+  touch tests/__init__.py
+  touch tests/conftest.py
+  touch tests/unit/__init__.py
+  touch tests/integration/__init__.py
+  ```
+
+- [ ] **编写基础测试**
+  ```python
+  # tests/unit/test_session_logger.py
+  import pytest
+  from pinocchio.session_logger import SessionLogger
+
+  def test_session_logger_creation():
+      logger = SessionLogger("test prompt")
+      assert logger.session_id.startswith("session_")
+      assert logger.user_prompt == "test prompt"
+
+  def test_log_summary():
+      logger = SessionLogger("test prompt")
+      message = logger.log_summary("test message")
+      assert "test message" in message
+      assert len(logger.summary_logs) == 1
+  ```
+
+### 阶段2：功能完善
+
+#### 2.1 MemoryManager实现
+- [ ] **memory_manager.py** - 实现完整的MemoryManager
+  ```python
+  import uuid
+  import json
+  from datetime import datetime
+  from pathlib import Path
+  from typing import List, Dict, Optional
+  from .models.memory import MemoryEntry
+
+  class MemoryManager:
+      def __init__(self, storage_path: str = "./memories"):
+          self.storage_path = Path(storage_path)
+          self.storage_path.mkdir(exist_ok=True)
+          self.memories: List[MemoryEntry] = []
+          self._load_memories()
+
+      def add_memory(self, agent_type: str, prompt: Dict, result: Dict):
+          """添加记忆"""
+          memory = MemoryEntry(
+              id=str(uuid.uuid4()),
+              agent_type=agent_type,
+              timestamp=datetime.utcnow(),
+              prompt=prompt,
+              result=result,
+              summary=self._generate_summary(result)
+          )
+
+          self.memories.append(memory)
+          self._save_memories()
+
+      def search_memories(self, agent_type: str = None, keywords: str = None, limit: int = 10) -> List[Dict]:
+          """搜索相关记忆"""
+          results = []
+
+          for memory in self.memories:
+              # 按agent_type过滤
+              if agent_type and memory.agent_type != agent_type:
+                  continue
+
+              # 按关键词过滤
+              if keywords and keywords.lower() not in memory.summary.lower():
+                  continue
+
+              results.append(memory.dict())
+
+              if len(results) >= limit:
+                  break
+
+          return results
+
+      def _generate_summary(self, result: Dict) -> str:
+          """生成记忆摘要"""
+          if "code" in result:
+              return f"Generated code: {result['code'][:100]}..."
+          elif "fixed_code" in result:
+              return f"Fixed code: {result['fixed_code'][:100]}..."
+          else:
+              return str(result)[:100]
+
+      def _load_memories(self):
+          """加载记忆"""
+          memory_file = self.storage_path / "memories.json"
+          if memory_file.exists():
+              from .utils.file_utils import safe_read_json
+              data = safe_read_json(str(memory_file))
+              if data:
+                  self.memories = [MemoryEntry(**item) for item in data.get("memories", [])]
+
+      def _save_memories(self):
+          """保存记忆"""
+          memory_file = self.storage_path / "memories.json"
+          data = {
+              "memories": [memory.dict() for memory in self.memories]
+          }
+          from .utils.file_utils import safe_write_json
+          safe_write_json(str(memory_file), data)
+  ```
+
+#### 2.2 KnowledgeManager实现
+- [ ] **knowledge_manager.py** - 实现完整的KnowledgeManager
+  ```python
+  from pathlib import Path
+  from typing import List, Dict
+  from .models.knowledge import KnowledgeItem
+
+  class KnowledgeManager:
+      def __init__(self, knowledge_path: str = "./knowledge"):
+          self.knowledge_path = Path(knowledge_path)
+          self.knowledge_path.mkdir(exist_ok=True)
+          self.knowledge: List[KnowledgeItem] = []
+          self._load_knowledge()
+          self._create_default_knowledge()
+
+      def get_relevant_knowledge(self, agent_type: str, task_description: str) -> List[Dict]:
+          """获取相关知识"""
+          relevant = []
+
+          for item in self.knowledge:
+              # 按agent_type匹配
+              if item.agent_type == agent_type:
+                  relevant.append(item.dict())
+
+              # 按关键词匹配
+              if any(keyword in task_description.lower()
+                     for keyword in item.keywords):
+                  relevant.append(item.dict())
+
+          return relevant[:5]  # 限制数量
+
+      def _load_knowledge(self):
+          """加载知识"""
+          knowledge_file = self.knowledge_path / "knowledge.json"
+          if knowledge_file.exists():
+              from .utils.file_utils import safe_read_json
+              data = safe_read_json(str(knowledge_file))
+              if data:
+                  self.knowledge = [KnowledgeItem(**item) for item in data.get("knowledge", [])]
+
+      def _create_default_knowledge(self):
+          """创建默认知识库"""
+          if not self.knowledge:
+              default_knowledge = [
+                  KnowledgeItem(
+                      id="choreo_basics",
+                      agent_type="generator",
+                      keywords=["choreo", "dsl", "算子"],
+                      content="Choreo DSL是用于高性能计算的领域特定语言...",
+                      category="basics"
+                  ),
+                  KnowledgeItem(
+                      id="conv2d_pattern",
+                      agent_type="generator",
+                      keywords=["conv2d", "卷积", "convolution"],
+                      content="Conv2D算子的标准实现模式...",
+                      category="patterns"
+                  )
+              ]
+
+              self.knowledge = default_knowledge
+              self._save_knowledge()
+
+      def _save_knowledge(self):
+          """保存知识"""
+          knowledge_file = self.knowledge_path / "knowledge.json"
+          data = {
+              "knowledge": [item.dict() for item in self.knowledge]
+          }
+          from .utils.file_utils import safe_write_json
+          safe_write_json(str(knowledge_file), data)
+  ```
+
+#### 2.3 PromptManager实现
+- [ ] **prompt_manager.py** - 实现完整的PromptManager
+  ```python
+  from typing import Dict, Any
+
+  class PromptManager:
+      def __init__(self, memory_manager: 'MemoryManager', knowledge_manager: 'KnowledgeManager'):
+          self.memory_manager = memory_manager
+          self.knowledge_manager = knowledge_manager
+
+      async def get_comprehensive_prompt(self, agent_type: str, task_description: str, context: Dict) -> Dict:
+          """构建综合prompt"""
+
+          # 获取相关memory
+          relevant_memories = self.memory_manager.search_memories(
+              agent_type=agent_type,
+              keywords=task_description,
+              limit=5
+          )
+
+          # 获取相关知识
+          relevant_knowledge = self.knowledge_manager.get_relevant_knowledge(
+              agent_type=agent_type,
+              task_description=task_description
+          )
+
+          # 构建综合prompt
+          comprehensive_prompt = {
+              "agent_type": agent_type,
+              "task_description": task_description,
+              "context": context,
+              "relevant_memories": relevant_memories,
+              "relevant_knowledge": relevant_knowledge,
+              "prompt_string": self._build_prompt_string(
+                  agent_type, task_description, context,
+                  relevant_memories, relevant_knowledge
+              )
+          }
+
+          return comprehensive_prompt
+
+      def _build_prompt_string(self, agent_type: str, task_description: str, context: Dict,
+                              memories: List[Dict], knowledge: List[Dict]) -> str:
+          """构建prompt字符串"""
+
+          prompt_parts = []
+
+          # 添加任务描述
+          prompt_parts.append(f"任务: {task_description}")
+
+          # 添加上下文
+          if context:
+              prompt_parts.append(f"上下文: {context}")
+
+          # 添加相关知识
+          if knowledge:
+              prompt_parts.append("相关知识:")
+              for item in knowledge:
+                  prompt_parts.append(f"- {item['content']}")
+
+          # 添加相关记忆
+          if memories:
+              prompt_parts.append("相关经验:")
+              for memory in memories:
+                  prompt_parts.append(f"- {memory['summary']}")
+
+          # 添加输出格式要求
+          if agent_type == "generator":
+              prompt_parts.append("请以JSON格式返回，包含code和explanation字段")
+          elif agent_type == "debugger":
+              prompt_parts.append("请以JSON格式返回，包含fixed_code和issues字段")
+
+          return "\n\n".join(prompt_parts)
+  ```
+
+#### 2.4 AgentManager实现
+- [ ] **agent_manager.py** - 实现Agent管理器
+  ```python
+  from typing import Dict, Any, Optional
+  from .agent import Agent, GeneratorAgent, DebuggerAgent, OptimizerAgent, EvaluatorAgent
+  from .models.agent import AgentResponse
+
+  class AgentManager:
+      def __init__(self):
+          self.agents: Dict[str, Agent] = {}
+          self.llm_client: Optional['LLMClient'] = None
+
+      def register_agent(self, agent: Agent):
+          """注册Agent"""
+          self.agents[agent.agent_type] = agent
+
+      def set_llm_client(self, llm_client: 'LLMClient'):
+          """设置LLM客户端"""
+          self.llm_client = llm_client
+
+      async def execute_agent(self, agent_type: str, prompt: Dict[str, Any]) -> AgentResponse:
+          """执行指定的Agent"""
+          if agent_type not in self.agents:
+              raise ValueError(f"Unknown agent type: {agent_type}")
+
+          agent = self.agents[agent_type]
+          return await agent.execute(prompt)
+
+      def create_agent(self, agent_type: str) -> Agent:
+          """创建Agent实例"""
+          if not self.llm_client:
+              raise ValueError("LLM client not set")
+
+          agent_classes = {
+              "generator": GeneratorAgent,
+              "debugger": DebuggerAgent,
+              "optimizer": OptimizerAgent,
+              "evaluator": EvaluatorAgent
+          }
+
+          if agent_type not in agent_classes:
+              raise ValueError(f"Unknown agent type: {agent_type}")
+
+          return agent_classes[agent_type](self.llm_client)
+
+      def initialize_agents(self):
+          """初始化所有Agent"""
+          if not self.llm_client:
+              raise ValueError("LLM client not set")
+
+          for agent_type in ["generator", "debugger", "optimizer", "evaluator"]:
+              agent = self.create_agent(agent_type)
+              self.register_agent(agent)
+  ```
+
+#### 2.5 完整工作流程测试
+- [ ] **端到端测试**
+  ```python
+  # tests/integration/test_full_workflow.py
+  import pytest
+  import asyncio
+  from pinocchio.coordinator import Coordinator
+  from pinocchio.llm_client import MockLLMClient
+
+  @pytest.mark.asyncio
+  async def test_full_workflow():
+      """测试完整工作流程"""
+      coordinator = Coordinator()
+      coordinator.agent_manager.set_llm_client(MockLLMClient())
+      coordinator.agent_manager.initialize_agents()
+
+      messages = []
+      async for message in coordinator.process_user_request("编写一个conv2d算子"):
+          messages.append(message)
+
+      assert len(messages) > 0
+      assert any("Session started" in msg for msg in messages)
+      assert any("Session completed" in msg for msg in messages)
+  ```
+
+### 阶段3：优化扩展
+
+#### 3.1 性能优化
+- [ ] **异步处理优化**
+  ```python
+  # 实现并发Agent执行
+  async def execute_agents_concurrently(self, tasks: List[Dict]) -> List[AgentResponse]:
+      """并发执行多个Agent任务"""
+      async def execute_task(task):
+          return await self.execute_agent(task["agent_type"], task["prompt"])
+
+      return await asyncio.gather(*[execute_task(task) for task in tasks])
+  ```
+
+- [ ] **缓存机制**
+  ```python
+  # 实现Memory缓存
+  class CachedMemoryManager(MemoryManager):
+      def __init__(self, *args, **kwargs):
+          super().__init__(*args, **kwargs)
+          self.cache = {}
+
+      def search_memories(self, *args, **kwargs):
+          cache_key = f"{args}_{kwargs}"
+          if cache_key in self.cache:
+              return self.cache[cache_key]
+
+          result = super().search_memories(*args, **kwargs)
+          self.cache[cache_key] = result
+          return result
+  ```
+
+#### 3.2 错误处理完善
+- [ ] **自定义异常类**
+  ```python
+  # exceptions.py
+  class PinocchioError(Exception):
+      """基础异常类"""
+      pass
+
+  class AgentExecutionError(PinocchioError):
+      """Agent执行错误"""
+      pass
+
+  class MemoryError(PinocchioError):
+      """Memory操作错误"""
+      pass
+  ```
+
+- [ ] **重试机制**
+  ```python
+  # retry.py
+  import asyncio
+  from typing import Callable, Any
+
+  async def retry_with_backoff(func: Callable, max_retries: int = 3, *args, **kwargs) -> Any:
+      """指数退避重试机制"""
+      for attempt in range(max_retries):
+          try:
+              return await func(*args, **kwargs)
+          except Exception as e:
+              if attempt == max_retries - 1:
+                  raise e
+              delay = 2 ** attempt
+              await asyncio.sleep(delay)
+  ```
+
+#### 3.3 测试覆盖完善
+- [ ] **单元测试覆盖率 > 90%**
+  ```bash
+  # 运行测试覆盖率检查
+  pytest --cov=pinocchio --cov-report=html --cov-report=term-missing
+  ```
+
+- [ ] **集成测试**
+  ```python
+  # tests/integration/test_multi_agent_workflow.py
+  @pytest.mark.asyncio
+  async def test_multi_agent_workflow():
+      """测试多Agent协作工作流"""
+      # 实现完整的多Agent协作测试
+      pass
+  ```
+
+- [ ] **性能测试**
+  ```python
+  # tests/performance/test_performance.py
+  import time
+
+  def test_response_time():
+      """测试响应时间"""
+      start_time = time.time()
+      # 执行测试
+      end_time = time.time()
+      assert end_time - start_time < 30  # 30秒内完成
+  ```
+
+#### 3.4 文档完善
+- [ ] **API文档**
+  ```python
+  # 为所有公共方法添加文档字符串
+  class Coordinator:
+      """
+      系统总指挥，负责协调整个工作流程
+
+      Attributes:
+          prompt_manager: Prompt管理器
+          memory_manager: Memory管理器
+          knowledge_manager: Knowledge管理器
+          agent_manager: Agent管理器
+          session: 当前会话
+      """
+  ```
+
+- [ ] **使用示例**
+  ```python
+  # examples/basic_usage.py
+  import asyncio
+  from pinocchio.coordinator import Coordinator
+
+  async def main():
+      coordinator = Coordinator()
+      async for message in coordinator.process_user_request("编写一个简单的算子"):
+          print(message)
+
+  if __name__ == "__main__":
+      asyncio.run(main())
+  ```
+
+---
+
+## 三、开发优先级
+
+### 高优先级（必须完成）
+1. **SessionLogger** - 核心日志功能
+2. **基础Agent** - 系统执行能力
+3. **LLMClient** - 外部接口
+4. **Coordinator** - 流程控制
+5. **MemoryManager** - 记忆功能
+
+### 中优先级（重要功能）
+1. **KnowledgeManager** - 知识管理
+2. **PromptManager** - 综合prompt构建
+3. **AgentManager** - Agent管理
+4. **完整测试** - 质量保证
+
+### 低优先级（优化功能）
+1. **性能优化** - 系统性能
+2. **错误处理** - 系统稳定性
+3. **文档完善** - 用户体验
+
+---
+
+## 四、验收标准
+
+### 4.1 功能验收
+- [ ] 用户输入能够被正确处理
+- [ ] Session能够正确记录日志
+- [ ] Agent能够正确执行
+- [ ] Memory能够正确存储和检索
+- [ ] 端到端测试通过
+
+### 4.2 质量验收
+- [ ] 通过所有lint检查
+- [ ] 通过所有类型检查
+- [ ] 测试覆盖率 > 90%
+- [ ] 响应时间 < 30秒
+
+### 4.3 用户体验
+- [ ] 安装简单
+- [ ] 配置简单
+- [ ] 使用简单
+- [ ] 清晰的进度显示
+
+---
+
+## 五、里程碑
+
+### 里程碑1：基础框架（Week 2结束）
+- [ ] 完成核心组件实现
+- [ ] 通过基础测试
+- [ ] 能够运行简单示例
+
+### 里程碑2：完整功能（Week 4结束）
+- [ ] 完成所有模块实现
+- [ ] 通过完整测试
+- [ ] 能够运行完整工作流程
+
+### 里程碑3：生产就绪（Week 6结束）
+- [ ] 完成性能优化
+- [ ] 完成错误处理
+- [ ] 完成文档完善
+- [ ] 通过所有验收标准
+
+---
+
+## 六、总结
+
+这个详细的开发TodoList提供了：
+
+1. **具体的实现步骤**：每个任务都有明确的代码示例
+2. **清晰的优先级**：高、中、低优先级分类
+3. **明确的验收标准**：功能、质量、用户体验三个维度
+4. **可执行的里程碑**：分阶段的目标和检查点
+
+通过这个计划，我们能够在6周内完成一个功能完整、质量可靠的Pinocchio系统。
+description:
+globs:
+alwaysApply: false
+---

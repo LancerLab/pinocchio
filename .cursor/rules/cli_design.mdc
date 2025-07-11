@@ -1,0 +1,567 @@
+# Pinocchio CLI 设计文档
+
+## 概述
+
+基于 Gemini CLI 的设计理念，为 Pinocchio 项目设计一个交互式命令行界面。采用简洁的视觉效果，支持流式输出和实时反馈，提供类似聊天 AI 的用户体验。
+
+---
+
+## 一、设计原则
+
+### 1.1 视觉一致性
+- 参考 Gemini CLI 的界面风格
+- 使用相似的颜色主题和布局
+- 保持简洁和现代化的视觉效果
+
+### 1.2 交互体验
+- 流式输出，实时反馈
+- 类似聊天 AI 的对话体验
+- 支持历史记录和上下文管理
+
+### 1.3 功能渐进
+- 第一阶段：基础 prompt 输入和输出
+- 第二阶段：添加 help 命令和查询功能
+- 第三阶段：集成 history、memory 等功能
+
+---
+
+## 二、技术栈选择
+
+### 2.1 核心技术
+- **Python**：与项目主体保持一致
+- **Rich**：用于终端 UI 渲染和格式化
+- **Prompt Toolkit**：用于交互式命令行界面
+- **Asyncio**：支持异步操作和流式输出
+
+### 2.2 依赖管理
+```toml
+[tool.poetry.dependencies]
+python = "^3.9"
+rich = "^13.0.0"
+prompt-toolkit = "^3.0.0"
+click = "^8.0.0"
+pygments = "^2.15.0"
+```
+
+---
+
+## 三、界面设计
+
+### 3.1 启动界面
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    🎭 Pinocchio CLI                       │
+│                                                           │
+│  Welcome to Pinocchio - Multi-Agent Collaboration System  │
+│                                                           │
+│  Type your request and press Enter to start...           │
+│  Type 'help' for available commands                      │
+│  Type 'quit' to exit                                     │
+│                                                           │
+└─────────────────────────────────────────────────────────────┘
+
+>
+```
+
+### 3.2 主题配置
+
+```python
+# 颜色主题配置
+THEMES = {
+    "default": {
+        "primary": "#6366f1",      # Indigo
+        "secondary": "#8b5cf6",    # Violet
+        "success": "#10b981",      # Emerald
+        "warning": "#f59e0b",      # Amber
+        "error": "#ef4444",        # Red
+        "info": "#3b82f6",         # Blue
+        "background": "#0f172a",   # Slate 900
+        "foreground": "#f8fafc",   # Slate 50
+    },
+    "light": {
+        "primary": "#6366f1",
+        "secondary": "#8b5cf6",
+        "success": "#059669",
+        "warning": "#d97706",
+        "error": "#dc2626",
+        "info": "#2563eb",
+        "background": "#ffffff",
+        "foreground": "#1e293b",
+    }
+}
+```
+
+### 3.3 输出格式
+
+```python
+# 消息类型和格式
+MESSAGE_TYPES = {
+    "user": {
+        "prefix": "👤 You",
+        "color": "primary",
+        "style": "bold"
+    },
+    "system": {
+        "prefix": "🤖 Pinocchio",
+        "color": "secondary",
+        "style": "italic"
+    },
+    "progress": {
+        "prefix": "⏳",
+        "color": "info",
+        "style": "dim"
+    },
+    "success": {
+        "prefix": "✅",
+        "color": "success",
+        "style": "bold"
+    },
+    "error": {
+        "prefix": "❌",
+        "color": "error",
+        "style": "bold"
+    }
+}
+```
+
+---
+
+## 四、核心功能设计
+
+### 4.1 基础 CLI 类
+
+```python
+import asyncio
+from typing import AsyncGenerator, Optional
+from rich.console import Console
+from rich.prompt import Prompt
+from rich.panel import Panel
+from rich.text import Text
+from rich.live import Live
+from rich.table import Table
+from prompt_toolkit import PromptSession
+from prompt_toolkit.styles import Style
+
+class PinocchioCLI:
+    """Pinocchio CLI 主类"""
+
+    def __init__(self):
+        self.console = Console()
+        self.session = PromptSession()
+        self.theme = "default"
+        self.history = []
+        self.is_running = True
+
+        # 初始化 Coordinator
+        from pinocchio.coordinator import Coordinator
+        self.coordinator = Coordinator()
+
+    async def start(self):
+        """启动 CLI"""
+        self._show_welcome()
+
+        while self.is_running:
+            try:
+                # 获取用户输入
+                user_input = await self._get_user_input()
+
+                if user_input.lower() in ['quit', 'exit', 'q']:
+                    await self._handle_quit()
+                    break
+                elif user_input.lower() == 'help':
+                    self._show_help()
+                    continue
+                elif user_input.lower() == 'clear':
+                    self.console.clear()
+                    continue
+                elif user_input.lower() == 'history':
+                    self._show_history()
+                    continue
+
+                # 处理用户请求
+                await self._process_request(user_input)
+
+            except KeyboardInterrupt:
+                self.console.print("\n[yellow]Use 'quit' to exit[/yellow]")
+            except Exception as e:
+                self.console.print(f"[red]Error: {str(e)}[/red]")
+
+    def _show_welcome(self):
+        """显示欢迎界面"""
+        welcome_text = Text()
+        welcome_text.append("🎭 ", style="bold blue")
+        welcome_text.append("Pinocchio CLI", style="bold white")
+        welcome_text.append("\n\n", style="white")
+        welcome_text.append("Welcome to Pinocchio - Multi-Agent Collaboration System", style="white")
+        welcome_text.append("\n\n", style="white")
+        welcome_text.append("Type your request and press Enter to start...", style="dim white")
+        welcome_text.append("\n", style="white")
+        welcome_text.append("Type 'help' for available commands", style="dim white")
+        welcome_text.append("\n", style="white")
+        welcome_text.append("Type 'quit' to exit", style="dim white")
+
+        panel = Panel(
+            welcome_text,
+            border_style="blue",
+            padding=(1, 2)
+        )
+
+        self.console.print(panel)
+        self.console.print()
+
+    async def _get_user_input(self) -> str:
+        """获取用户输入"""
+        prompt_text = Text()
+        prompt_text.append("> ", style="bold blue")
+
+        return await self.session.prompt_async(
+            prompt_text,
+            style=Style.from_dict({
+                "prompt": "bold blue",
+            })
+        )
+
+    async def _process_request(self, user_input: str):
+        """处理用户请求"""
+        # 记录到历史
+        self.history.append({
+            "type": "user",
+            "content": user_input,
+            "timestamp": datetime.utcnow()
+        })
+
+        # 显示用户输入
+        self._show_message("user", user_input)
+
+        # 显示进度指示器
+        with Live(self._create_progress_panel("Processing request..."), console=self.console):
+            # 处理请求
+            async for message in self.coordinator.process_user_request(user_input):
+                # 更新进度面板
+                self._update_progress_panel(message)
+
+                # 显示系统消息
+                self._show_message("system", message)
+
+        # 记录系统响应
+        self.history.append({
+            "type": "system",
+            "content": message,
+            "timestamp": datetime.utcnow()
+        })
+
+    def _show_message(self, message_type: str, content: str):
+        """显示消息"""
+        config = MESSAGE_TYPES.get(message_type, MESSAGE_TYPES["system"])
+
+        text = Text()
+        text.append(f"{config['prefix']}: ", style=f"bold {config['color']}")
+        text.append(content, style=config['style'])
+
+        self.console.print(text)
+        self.console.print()
+
+    def _create_progress_panel(self, message: str) -> Panel:
+        """创建进度面板"""
+        text = Text()
+        text.append("⏳ ", style="bold yellow")
+        text.append(message, style="white")
+
+        return Panel(text, border_style="yellow")
+
+    def _update_progress_panel(self, message: str):
+        """更新进度面板"""
+        # 这里可以实现更复杂的进度显示逻辑
+        pass
+
+    def _show_help(self):
+        """显示帮助信息"""
+        help_text = Text()
+        help_text.append("Available Commands:\n\n", style="bold white")
+
+        commands = [
+            ("help", "Show this help message"),
+            ("history", "Show conversation history"),
+            ("clear", "Clear the screen"),
+            ("quit", "Exit the application"),
+            ("memory", "Show memory information"),
+            ("sessions", "List recent sessions"),
+        ]
+
+        for cmd, desc in commands:
+            help_text.append(f"  {cmd:<10}", style="bold blue")
+            help_text.append(f"{desc}\n", style="white")
+
+        panel = Panel(help_text, border_style="blue", title="Help")
+        self.console.print(panel)
+        self.console.print()
+
+    def _show_history(self):
+        """显示历史记录"""
+        if not self.history:
+            self.console.print("[dim]No history available[/dim]")
+            return
+
+        table = Table(title="Conversation History")
+        table.add_column("Time", style="cyan")
+        table.add_column("Type", style="magenta")
+        table.add_column("Content", style="white")
+
+        for entry in self.history[-10:]:  # 显示最近10条
+            time_str = entry["timestamp"].strftime("%H:%M:%S")
+            content = entry["content"][:50] + "..." if len(entry["content"]) > 50 else entry["content"]
+
+            table.add_row(
+                time_str,
+                entry["type"].upper(),
+                content
+            )
+
+        self.console.print(table)
+        self.console.print()
+
+    async def _handle_quit(self):
+        """处理退出"""
+        self.console.print("[yellow]Goodbye! 👋[/yellow]")
+        self.is_running = False
+```
+
+### 4.2 命令处理器
+
+```python
+class CommandProcessor:
+    """命令处理器"""
+
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
+        self.commands = {
+            "help": self._cmd_help,
+            "history": self._cmd_history,
+            "memory": self._cmd_memory,
+            "sessions": self._cmd_sessions,
+            "clear": self._cmd_clear,
+            "quit": self._cmd_quit,
+        }
+
+    async def process_command(self, command: str, args: list = None) -> bool:
+        """处理命令"""
+        if command in self.commands:
+            await self.commands[command](args or [])
+            return True
+        return False
+
+    async def _cmd_help(self, args):
+        """帮助命令"""
+        # 实现帮助功能
+        pass
+
+    async def _cmd_history(self, args):
+        """历史命令"""
+        # 实现历史查询功能
+        pass
+
+    async def _cmd_memory(self, args):
+        """内存命令"""
+        # 实现内存查询功能
+        pass
+
+    async def _cmd_sessions(self, args):
+        """会话命令"""
+        # 实现会话查询功能
+        pass
+
+    async def _cmd_clear(self, args):
+        """清屏命令"""
+        # 实现清屏功能
+        pass
+
+    async def _cmd_quit(self, args):
+        """退出命令"""
+        # 实现退出功能
+        pass
+```
+
+---
+
+## 五、分阶段实现计划
+
+### 5.1 第一阶段：基础功能（Week 1）
+
+#### 5.1.1 核心 CLI 框架
+- [ ] **基础 CLI 类实现**
+  - [ ] 欢迎界面
+  - [ ] 用户输入处理
+  - [ ] 基本命令支持（help, quit, clear）
+  - [ ] 简单的消息显示
+
+#### 5.1.2 与 Coordinator 集成
+- [ ] **集成 Coordinator**
+  - [ ] 异步请求处理
+  - [ ] 流式输出显示
+  - [ ] 进度指示器
+  - [ ] 错误处理
+
+#### 5.1.3 基础 UI 组件
+- [ ] **Rich 组件实现**
+  - [ ] 消息面板
+  - [ ] 进度条
+  - [ ] 状态指示器
+  - [ ] 颜色主题
+
+### 5.2 第二阶段：增强功能（Week 2）
+
+#### 5.2.1 命令系统
+- [ ] **命令处理器**
+  - [ ] 命令解析
+  - [ ] 参数处理
+  - [ ] 命令注册机制
+  - [ ] 帮助系统
+
+#### 5.2.2 历史记录
+- [ ] **历史管理**
+  - [ ] 对话历史记录
+  - [ ] 历史查询
+  - [ ] 历史导出
+  - [ ] 历史搜索
+
+#### 5.2.3 会话管理
+- [ ] **会话功能**
+  - [ ] 会话列表
+  - [ ] 会话详情
+  - [ ] 会话切换
+  - [ ] 会话删除
+
+### 5.3 第三阶段：高级功能（Week 3）
+
+#### 5.3.1 内存管理
+- [ ] **内存查询**
+  - [ ] 内存统计
+  - [ ] 内存搜索
+  - [ ] 内存清理
+  - [ ] 内存导出
+
+#### 5.3.2 配置管理
+- [ ] **配置系统**
+  - [ ] 主题配置
+  - [ ] API 配置
+  - [ ] 代理配置
+  - [ ] 配置导入导出
+
+#### 5.3.3 插件系统
+- [ ] **插件支持**
+  - [ ] 插件加载
+  - [ ] 插件管理
+  - [ ] 自定义命令
+  - [ ] 扩展功能
+
+---
+
+## 六、安装和配置
+
+### 6.1 安装脚本
+
+```python
+# setup.py
+from setuptools import setup, find_packages
+
+setup(
+    name="pinocchio-cli",
+    version="0.1.0",
+    packages=find_packages(),
+    install_requires=[
+        "rich>=13.0.0",
+        "prompt-toolkit>=3.0.0",
+        "click>=8.0.0",
+        "pygments>=2.15.0",
+    ],
+    entry_points={
+        "console_scripts": [
+            "pinocchio=pinocchio.cli.main:main",
+        ],
+    },
+)
+```
+
+### 6.2 配置文件
+
+```yaml
+# config.yaml
+cli:
+  theme: "default"
+  history_size: 100
+  auto_save: true
+
+display:
+  show_timestamps: true
+  show_progress: true
+  max_line_length: 80
+
+api:
+  timeout: 30
+  max_retries: 3
+  model: "gpt-4"
+```
+
+---
+
+## 七、使用示例
+
+### 7.1 基础使用
+
+```bash
+# 安装
+pip install pinocchio-cli
+
+# 启动
+pinocchio
+
+# 交互式使用
+> 编写一个conv2d算子
+🤖 Pinocchio: 正在分析您的需求...
+🤖 Pinocchio: 生成代码中...
+🤖 Pinocchio: 代码生成完成！
+
+> help
+📖 Help: 显示可用命令
+
+> history
+📋 History: 显示对话历史
+
+> quit
+👋 Goodbye!
+```
+
+### 7.2 高级功能
+
+```bash
+# 查看内存信息
+> memory
+🧠 Memory: 显示内存统计
+
+# 查看会话列表
+> sessions
+📁 Sessions: 显示会话列表
+
+# 切换主题
+> theme dark
+🎨 Theme: 切换到深色主题
+```
+
+---
+
+## 八、总结
+
+这个 CLI 设计具有以下特点：
+
+1. **视觉一致性**：参考 Gemini CLI 的设计风格
+2. **交互体验**：流式输出，实时反馈
+3. **功能渐进**：分阶段实现，逐步完善
+4. **易于扩展**：模块化设计，支持插件
+5. **用户友好**：清晰的界面和帮助系统
+
+通过这个设计，用户可以获得类似 Gemini CLI 的现代化命令行体验，同时充分利用 Pinocchio 的多智能体协作能力。
+description:
+globs:
+alwaysApply: false
+---

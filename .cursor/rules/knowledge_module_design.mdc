@@ -1,607 +1,97 @@
+# Pinocchio 多智能体系统 Knowledge 模块设计（重构版）
+
+## 1. 概述
+
+Knowledge 模块负责 Pinocchio 多智能体系统的领域知识、优化技术知识、DSL 语法知识等多源知识的结构化管理与版本追踪。该模块为 generator、debugger、evaluator 等 agent 提供高性能代码生成与调优所需的知识片段，支持 JSON/Markdown 等多种知识类型，并与 prompt、memory、session 模块解耦。
+
 ---
-description:
-globs:
-alwaysApply: false
+
+## 2. 目录结构
+
+```
+knowledge/
+├── __init__.py
+├── models/
+│   ├── __init__.py
+│   └── knowledge.py      # Knowledge数据模型
+├── resources/            # 知识资源（结构化/文档）
+├── manager.py            # Knowledge管理器
+└── utils.py
+```
+
 ---
-# Knowledge Module Design (Optimized)
 
-## Overview
-
-The Knowledge Module is responsible for managing domain-specific knowledge in the Pinocchio multi-agent system. It provides lightweight mechanisms for storing, retrieving, and versioning knowledge resources in both document-style and JSON formats. This module ensures that all agents have access to consistent and up-to-date domain knowledge, which is critical for effective code generation, debugging, and optimization. The optimized design focuses on efficient extraction of specific information for use in prompts.
-
-## Design Goals
-
-1. **Flexibility**: Support both document-style and JSON-formatted content
-2. **Efficiency**: Enable fast extraction of specific information for prompts
-3. **Lightweight**: Minimize overhead and complexity
-4. **Composability**: Allow knowledge fragments to be combined into prompts
-5. **Searchability**: Enable efficient search and retrieval of relevant knowledge
-
-## Core Components
-
-### 1. Knowledge Resource
-
-A simplified base class for all knowledge resources:
+## 3. 数据模型
 
 ```python
-from typing import Dict, Any, Optional, List, Union
-from enum import Enum
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 import uuid
-import json
 
-class ContentFormat(Enum):
-    """Content format types."""
-    MARKDOWN = "markdown"
-    JSON = "json"
-    TEXT = "text"
-    CODE = "code"
+class KnowledgeFragment(BaseModel):
+    fragment_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: Optional[str] = None
+    category: str  # domain/optimization/dsl/other
+    title: str
+    content: Any  # 可为结构化JSON或Markdown文本
+    version: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    parent_version: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
-class KnowledgeResource:
-    """Lightweight base class for all knowledge resources."""
-
-    def __init__(self,
-                content: Union[str, Dict[str, Any]],
-                format_type: ContentFormat,
-                title: str,
-                tags: Optional[List[str]] = None,
-                metadata: Optional[Dict[str, Any]] = None,
-                resource_id: Optional[str] = None):
-        self.content = content
-        self.format_type = format_type
-        self.title = title
-        self.tags = tags or []
-        self.metadata = metadata or {}
-        self.resource_id = resource_id or str(uuid.uuid4())
-        self.created_at = datetime.now().isoformat()
-        self.updated_at = self.created_at
-
-    def update(self, content: Optional[Union[str, Dict[str, Any]]] = None,
-              title: Optional[str] = None,
-              tags: Optional[List[str]] = None,
-              metadata: Optional[Dict[str, Any]] = None) -> None:
-        """Update the resource."""
-        if content is not None:
-            self.content = content
-        if title is not None:
-            self.title = title
-        if tags is not None:
-            self.tags = tags
-        if metadata is not None:
-            self.metadata = {**self.metadata, **metadata}
-        self.updated_at = datetime.now().isoformat()
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary representation."""
-        return {
-            "resource_id": self.resource_id,
-            "format_type": self.format_type.value,
-            "title": self.title,
-            "content": self.content,
-            "tags": self.tags,
-            "metadata": self.metadata,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'KnowledgeResource':
-        """Create from dictionary representation."""
-        return cls(
-            content=data["content"],
-            format_type=ContentFormat(data["format_type"]),
-            title=data["title"],
-            tags=data["tags"],
-            metadata=data["metadata"],
-            resource_id=data["resource_id"]
-        )
-
-    def extract_fragment(self, selector: Union[str, List[str], Dict[str, Any]]) -> Any:
-        """
-        Extract a specific fragment from the content.
-
-        Args:
-            selector: For JSON content, this can be a key path (dot notation string or list).
-                     For markdown/text, this can be a section title or regex pattern.
-
-        Returns:
-            The extracted fragment or None if not found
-        """
-        if self.format_type == ContentFormat.JSON:
-            return self._extract_from_json(selector)
-        elif self.format_type in (ContentFormat.MARKDOWN, ContentFormat.TEXT):
-            return self._extract_from_text(selector)
-        return None
-
-    def _extract_from_json(self, selector: Union[str, List[str], Dict[str, Any]]) -> Any:
-        """Extract data from JSON content using a selector."""
-        if not isinstance(self.content, dict):
-            return None
-
-        if isinstance(selector, str):
-            # Handle dot notation (e.g., "data.items[0].name")
-            keys = selector.replace(']', '').replace('[', '.').split('.')
-            result = self.content
-            for key in keys:
-                if key.isdigit() and isinstance(result, list):
-                    idx = int(key)
-                    if 0 <= idx < len(result):
-                        result = result[idx]
-                    else:
-                        return None
-                elif isinstance(result, dict) and key in result:
-                    result = result[key]
-                else:
-                    return None
-            return result
-        elif isinstance(selector, list):
-            # Handle key path as list
-            result = self.content
-            for key in selector:
-                if isinstance(result, dict) and key in result:
-                    result = result[key]
-                elif isinstance(result, list) and isinstance(key, int) and 0 <= key < len(result):
-                    result = result[key]
-                else:
-                    return None
-            return result
-        elif isinstance(selector, dict):
-            # Handle query-like selector
-            # Example: {"where": {"type": "example"}, "select": "content"}
-            if "where" in selector and "select" in selector:
-                if selector["where"] == "*":  # Select all
-                    return self.content.get(selector["select"])
-                # Implement filtering logic here
-                # ...
-        return None
-
-    def _extract_from_text(self, selector: str) -> str:
-        """Extract section from markdown/text content using a section title or regex."""
-        if not isinstance(self.content, str):
-            return None
-
-        import re
-
-        # Try to extract by section header (e.g., "## Section Title")
-        if selector.startswith('#'):
-            pattern = f"{re.escape(selector)}(.*?)(?:^#|$)"
-            match = re.search(pattern, self.content, re.MULTILINE | re.DOTALL)
-            if match:
-                return match.group(1).strip()
-
-        # Try as regex pattern
-        try:
-            match = re.search(selector, self.content, re.MULTILINE | re.DOTALL)
-            if match:
-                return match.group(0).strip()
-        except re.error:
-            pass
-
-        # Try as plain text search
-        if selector in self.content:
-            # Return the paragraph containing the text
-            paragraphs = self.content.split('\n\n')
-            for p in paragraphs:
-                if selector in p:
-                    return p.strip()
-
-        return None
+class KnowledgeVersionHistory(BaseModel):
+    session_id: Optional[str] = None
+    fragments: List[KnowledgeFragment] = Field(default_factory=list)
+    version_chain: List[str] = Field(default_factory=list)
 ```
 
-### 2. Knowledge Base
-
-A lightweight repository for storing and retrieving knowledge resources:
-
-```python
-from typing import Dict, Any, Optional, List, Union, Callable, TypeVar, Generic
-import os
-import json
-import re
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
-
-T = TypeVar('T')
-
-class KnowledgeBase:
-    """Lightweight repository for knowledge resources."""
-
-    def __init__(self, storage_path: Optional[str] = None, max_workers: int = 4):
-        self.resources: Dict[str, KnowledgeResource] = {}
-        self.storage_path = storage_path
-        self.max_workers = max_workers
-        self._executor = ThreadPoolExecutor(max_workers=max_workers)
-
-    def add_resource(self, resource: KnowledgeResource) -> str:
-        """Add a resource to the knowledge base."""
-        self.resources[resource.resource_id] = resource
-        self._save_resource_async(resource)
-        return resource.resource_id
-
-    def get_resource(self, resource_id: str) -> Optional[KnowledgeResource]:
-        """Get a resource by ID."""
-        return self.resources.get(resource_id)
-
-    def update_resource(self, resource_id: str, content: Optional[Union[str, Dict[str, Any]]] = None,
-                       title: Optional[str] = None, tags: Optional[List[str]] = None,
-                       metadata: Optional[Dict[str, Any]] = None) -> bool:
-        """Update a resource."""
-        if resource_id not in self.resources:
-            return False
-
-        resource = self.resources[resource_id]
-        resource.update(content, title, tags, metadata)
-        self._save_resource_async(resource)
-        return True
-
-    def delete_resource(self, resource_id: str) -> bool:
-        """Delete a resource."""
-        if resource_id not in self.resources:
-            return False
-
-        del self.resources[resource_id]
-        self._delete_resource_file_async(resource_id)
-        return True
-
-    @lru_cache(maxsize=128)
-    def search(self, query: str, format_type: Optional[ContentFormat] = None,
-              tags: Optional[List[str]] = None, limit: int = 10) -> List[KnowledgeResource]:
-        """Search for resources using simple text matching."""
-        results = []
-        query = query.lower()
-
-        for resource in self.resources.values():
-            # Filter by format type
-            if format_type and resource.format_type != format_type:
-                continue
-
-            # Filter by tags
-            if tags and not all(tag in resource.tags for tag in tags):
-                continue
-
-            # Check for query match
-            if self._matches_query(resource, query):
-                results.append(resource)
-
-            # Limit results
-            if len(results) >= limit:
-                break
-
-        return results
-
-    def _matches_query(self, resource: KnowledgeResource, query: str) -> bool:
-        """Check if a resource matches the query."""
-        if query in resource.title.lower():
-            return True
-
-        if any(query in tag.lower() for tag in resource.tags):
-            return True
-
-        if isinstance(resource.content, str):
-            return query in resource.content.lower()
-        elif isinstance(resource.content, dict):
-            # Convert dict to string for simple text search
-            content_str = json.dumps(resource.content).lower()
-            return query in content_str
-
-        return False
-
-    def extract_fragments(self, query: str, selector: Union[str, List[str], Dict[str, Any]],
-                         limit: int = 5) -> List[Any]:
-        """
-        Search for resources and extract specific fragments.
-
-        Args:
-            query: Search query to find relevant resources
-            selector: Selector to extract specific fragments from each resource
-            limit: Maximum number of results
-
-        Returns:
-            List of extracted fragments
-        """
-        resources = self.search(query, limit=limit)
-        fragments = []
-
-        for resource in resources:
-            fragment = resource.extract_fragment(selector)
-            if fragment is not None:
-                fragments.append(fragment)
-
-        return fragments
-
-    def compose_prompt_context(self, query: str, selectors: Dict[str, Union[str, List[str], Dict[str, Any]]]) -> Dict[str, Any]:
-        """
-        Compose a prompt context by extracting multiple fragments.
-
-        Args:
-            query: Search query to find relevant resources
-            selectors: Dict mapping context keys to selectors
-
-        Returns:
-            Dict with extracted fragments
-        """
-        resources = self.search(query, limit=10)
-        context = {}
-
-        for key, selector in selectors.items():
-            for resource in resources:
-                fragment = resource.extract_fragment(selector)
-                if fragment is not None:
-                    if key in context:
-                        # Append to existing context if it's a list
-                        if isinstance(context[key], list):
-                            context[key].append(fragment)
-                        else:
-                            context[key] = [context[key], fragment]
-                    else:
-                        context[key] = fragment
-                    break
-
-        return context
-
-    def load_resources(self) -> None:
-        """Load resources from storage."""
-        if not self.storage_path or not os.path.exists(self.storage_path):
-            return
-
-        # Clear existing resources
-        self.resources = {}
-
-        # Load resources from files using thread pool
-        file_paths = [os.path.join(self.storage_path, f) for f in os.listdir(self.storage_path)
-                     if f.endswith(".json")]
-
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            executor.map(self._load_resource_file, file_paths)
-
-    def _load_resource_file(self, file_path: str) -> None:
-        """Load a resource from a file."""
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                resource = KnowledgeResource.from_dict(data)
-                self.resources[resource.resource_id] = resource
-        except Exception as e:
-            print(f"Error loading resource from {file_path}: {e}")
-
-    def _save_resource_async(self, resource: KnowledgeResource) -> None:
-        """Save a resource to storage asynchronously."""
-        if not self.storage_path:
-            return
-        self._executor.submit(self._save_resource, resource)
-
-    def _save_resource(self, resource: KnowledgeResource) -> None:
-        """Save a resource to storage."""
-        if not self.storage_path:
-            return
-
-        os.makedirs(self.storage_path, exist_ok=True)
-
-        file_path = os.path.join(self.storage_path, f"{resource.resource_id}.json")
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(resource.to_dict(), f, indent=2)
-
-    def _delete_resource_file_async(self, resource_id: str) -> None:
-        """Delete a resource file asynchronously."""
-        if not self.storage_path:
-            return
-        self._executor.submit(self._delete_resource_file, resource_id)
-
-    def _delete_resource_file(self, resource_id: str) -> None:
-        """Delete a resource file."""
-        if not self.storage_path:
-            return
-
-        file_path = os.path.join(self.storage_path, f"{resource_id}.json")
-        if os.path.exists(file_path):
-            os.remove(file_path)
-```
-
-### 3. Knowledge Adapter
-
-A new component to facilitate integration with prompt templates:
-
-```python
-class KnowledgeAdapter:
-    """
-    Adapter for integrating knowledge with prompt templates.
-    Provides a lightweight interface for extracting and formatting knowledge.
-    """
-
-    def __init__(self, knowledge_base: KnowledgeBase):
-        self.knowledge_base = knowledge_base
-
-    def get_context(self, query: str, format_type: Optional[ContentFormat] = None,
-                   max_items: int = 3, max_length: int = 1000) -> str:
-        """
-        Get relevant knowledge context as formatted text.
-
-        Args:
-            query: Search query
-            format_type: Optional filter by format type
-            max_items: Maximum number of items to include
-            max_length: Maximum total length of the context
-
-        Returns:
-            Formatted context string
-        """
-        resources = self.knowledge_base.search(query, format_type=format_type, limit=max_items)
-
-        context_parts = []
-        total_length = 0
-
-        for resource in resources:
-            content = self._format_resource_content(resource)
-            if total_length + len(content) > max_length:
-                # Truncate content to fit within max_length
-                available_length = max_length - total_length
-                if available_length > 100:  # Only add if we can include a meaningful amount
-                    content = content[:available_length] + "..."
-                    context_parts.append(content)
-                break
-
-            context_parts.append(content)
-            total_length += len(content)
-
-        return "\n\n".join(context_parts)
-
-    def _format_resource_content(self, resource: KnowledgeResource) -> str:
-        """Format a resource's content for inclusion in a prompt."""
-        if resource.format_type == ContentFormat.JSON:
-            if isinstance(resource.content, dict):
-                return f"# {resource.title}\n```json\n{json.dumps(resource.content, indent=2)}\n```"
-            return f"# {resource.title}\n{resource.content}"
-        else:
-            return f"# {resource.title}\n{resource.content}"
-
-    def extract_for_prompt(self, query: str, template_vars: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Extract knowledge and add it to template variables.
-
-        Args:
-            query: Search query
-            template_vars: Template variables to augment
-
-        Returns:
-            Augmented template variables
-        """
-        # Extract general context
-        context = self.get_context(query)
-        template_vars["knowledge_context"] = context
-
-        # Extract specific fragments if specified in template_vars
-        if "knowledge_selectors" in template_vars:
-            selectors = template_vars["knowledge_selectors"]
-            fragments = self.knowledge_base.compose_prompt_context(query, selectors)
-            template_vars.update(fragments)
-
-        return template_vars
-```
-
-### 4. Knowledge Module Integration
-
-Integration with the prompt module:
-
-```python
-from prompt import TemplateRegistry, TemplateFormatter
-from knowledge import KnowledgeBase, KnowledgeAdapter
-
-class KnowledgeAwarePromptManager:
-    """Lightweight prompt manager with knowledge integration."""
-
-    def __init__(self, knowledge_base: KnowledgeBase, template_registry: TemplateRegistry = None):
-        self.knowledge_adapter = KnowledgeAdapter(knowledge_base)
-        self.template_registry = template_registry or TemplateRegistry()
-        self.formatter = TemplateFormatter()
-
-    def create_prompt(self, template_name: str, query: str, variables: Dict[str, Any]) -> str:
-        """
-        Create a prompt with integrated knowledge.
-
-        Args:
-            template_name: Name of the template to use
-            query: Knowledge search query
-            variables: Template variables
-
-        Returns:
-            Formatted prompt with knowledge
-        """
-        # Get the template
-        template = self.template_registry.get_template(template_name)
-        if not template:
-            raise ValueError(f"Template not found: {template_name}")
-
-        # Augment variables with knowledge
-        augmented_vars = self.knowledge_adapter.extract_for_prompt(query, variables.copy())
-
-        # Format the template
-        return self.formatter.format_string(template, augmented_vars)
-```
-
-## Usage Examples
-
-### 1. Creating and Searching Knowledge
-
-```python
-# Create a knowledge base
-kb = KnowledgeBase("./knowledge_store")
-
-# Add a markdown document
-doc = KnowledgeResource(
-    content="# Choreo Best Practices\n\n## Performance\n\nOptimize memory access patterns...",
-    format_type=ContentFormat.MARKDOWN,
-    title="Choreo Best Practices",
-    tags=["choreo", "best-practices", "performance"]
-)
-kb.add_resource(doc)
-
-# Add a JSON document
-json_doc = KnowledgeResource(
-    content={
-        "patterns": [
-            {
-                "name": "Map-Reduce",
-                "description": "Process data in parallel then aggregate",
-                "example": "..."
-            }
-        ]
-    },
-    format_type=ContentFormat.JSON,
-    title="Common Patterns",
-    tags=["patterns", "algorithms"]
-)
-kb.add_resource(json_doc)
-
-# Search for resources
-results = kb.search("performance")
-```
-
-### 2. Extracting Knowledge Fragments
-
-```python
-# Extract a specific section from markdown
-fragment = doc.extract_fragment("## Performance")
-
-# Extract data from JSON using dot notation
-pattern = json_doc.extract_fragment("patterns[0].name")  # Returns "Map-Reduce"
-
-# Extract multiple fragments for a prompt
-context = kb.compose_prompt_context(
-    "performance",
-    {
-        "best_practices": "## Performance",
-        "patterns": "patterns[0]"
-    }
-)
-```
-
-### 3. Creating Prompts with Knowledge
-
-```python
-# Create a prompt manager
-prompt_manager = KnowledgeAwarePromptManager(kb)
-
-# Create a prompt with knowledge
-prompt = prompt_manager.create_prompt(
-    "optimize_task",
-    "memory access patterns",
-    {
-        "task": "Optimize matrix multiplication",
-        "code": "def matrix_multiply(a, b): ...",
-        "knowledge_selectors": {
-            "best_practices": "## Performance",
-            "patterns": "patterns[0]"
-        }
-    }
-)
-```
-
-## Benefits of the Optimized Design
-
-1. **Lightweight**: Simplified class structure with focused functionality
-2. **Flexible Content Support**: Native handling of both document-style and JSON content
-3. **Efficient Extraction**: Direct extraction of specific fragments using selectors
-4. **Async Operations**: Background saving and loading for better performance
-5. **Caching**: LRU cache for frequently accessed search results
-6. **Composability**: Easy composition of knowledge fragments into prompt contexts
-7. **Thread Safety**: Thread pool for parallel processing of file operations
+---
+
+## 4. 主要接口
+
+- 知识片段的结构化存储、检索、版本管理
+- 按 session/agent/优化技术等多维度提取知识
+- 支持 JSON/Markdown 等多种知识类型
+- 知识片段与 prompt/memory/session 的引用与追踪
+
+---
+
+## 5. 设计要点
+
+- 所有知识片段均有结构化元数据与版本链路
+- 支持领域知识、优化技术知识、DSL 语法知识等多类别
+- 支持知识片段的多版本管理与历史追踪
+- 与 prompt/memory/session 解耦，仅存储引用
+- 支持知识片段的自动提取与推荐
+
+---
+
+## 6. 典型流程
+
+1. 用户/agent 触发知识片段提取，按任务类型/优化技术/DSL 等维度检索
+2. 生成/调优 prompt 时，自动集成相关知识片段
+3. 每次知识更新均生成新版本，支持历史追踪与回滚
+4. agent 可按需获取结构化知识片段用于推理/生成/分析
+
+---
+
+## 7. 重构优势
+
+- **结构化**：所有知识片段均有结构化元数据，便于自动化处理
+- **多版本**：支持知识片段多版本管理与历史追踪
+- **高适配性**：支持多类别知识与 agent 适配
+- **易集成**：与 prompt/memory/session 解耦，便于模块协作
+
+---
+
+## 8. 测试策略
+
+- 知识片段结构与元数据校验
+- 多版本知识管理与回滚
+- 按需提取与推荐的准确性
+- 知识与 prompt/memory/session 的引用一致性
+
+---
+
+该设计完全对齐 pinocchio_workflow.mdc，满足高性能代码生成与调优场景下多智能体协作、结构化知识管理、优化技术知识集成等核心需求。
