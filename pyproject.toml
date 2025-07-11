@@ -32,6 +32,7 @@ flake8 = "^6.1.0"
 pre-commit = "^3.5.0"
 types-pyyaml = "^6.0.12.20250516"
 types-requests = "^2.32.4.20250611"
+tomli = "^2.2.1"
 
 [build-system]
 requires = ["poetry-core"]

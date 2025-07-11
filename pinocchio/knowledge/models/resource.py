@@ -269,64 +269,47 @@ class KnowledgeMemory(BaseModel):
     def compose_prompt_context(
         self, query: str, selectors: Dict[str, str]
     ) -> Dict[str, Any]:
-        """
-        Compose a context for prompts by extracting fragments from knowledge items.
-
-        Args:
-            query: Query to search for relevant knowledge items
-            selectors: Dictionary mapping context keys to fragment paths
-
-        Returns:
-            Dictionary with extracted fragments for each context key
-        """
+        """Compose a context for prompts by extracting fragments from knowledge items."""
         context = {}
         query_lower = query.lower()
 
-        # Process each selector
         for context_key, fragment_path in selectors.items():
-            # Try to match the selector to the appropriate knowledge item
-            if "algorithm" in context_key.lower() or "code" in context_key.lower():
-                # Look for algorithm/code in matrix-multiply
-                if "matrix-multiply" in self.knowledge_items:
-                    item = self.get_item("matrix-multiply")
-                    if item:
-                        try:
-                            context[context_key] = item.extract_fragment(fragment_path)
-                        except ValueError:
-                            pass
-
-            elif "optim" in context_key.lower():
-                # Look for optimization in matmul-optimization
-                if "matmul-optimization" in self.knowledge_items:
-                    item = self.get_item("matmul-optimization")
-                    if item:
-                        try:
-                            context[context_key] = item.extract_fragment(fragment_path)
-                        except ValueError:
-                            pass
-
-            elif "hardware" in context_key.lower():
-                # Look for hardware in hardware-info
-                if "hardware-info" in self.knowledge_items:
-                    item = self.get_item("hardware-info")
-                    if item:
-                        try:
-                            context[context_key] = item.extract_fragment(fragment_path)
-                        except ValueError:
-                            pass
-
-            # If we haven't found a match yet, try a general search
-            if context_key not in context:
-                for knowledge_id, version_id in self.current_versions.items():
-                    item = self.knowledge_items[knowledge_id][version_id]
-                    content_str = str(item.content).lower()
-
-                    if query_lower in content_str:
-                        try:
-                            fragment = item.extract_fragment(fragment_path)
-                            context[context_key] = fragment
-                            break
-                        except ValueError:
-                            continue
-
+            value = self._extract_context_fragment(
+                context_key, fragment_path, query_lower
+            )
+            if value is not None:
+                context[context_key] = value
         return context
+
+    def _extract_context_fragment(
+        self, context_key: str, fragment_path: str, query_lower: str
+    ) -> Any:
+        """Extract a fragment for a specific context key."""
+        # Specialized selectors
+        if "algorithm" in context_key.lower() or "code" in context_key.lower():
+            return self._try_extract_from_item("matrix-multiply", fragment_path)
+        if "optim" in context_key.lower():
+            return self._try_extract_from_item("matmul-optimization", fragment_path)
+        if "hardware" in context_key.lower():
+            return self._try_extract_from_item("hardware-info", fragment_path)
+        # General search fallback
+        for knowledge_id, version_id in self.current_versions.items():
+            item = self.knowledge_items[knowledge_id][version_id]
+            content_str = str(item.content).lower()
+            if query_lower in content_str:
+                try:
+                    return item.extract_fragment(fragment_path)
+                except ValueError:
+                    continue
+        return None
+
+    def _try_extract_from_item(self, knowledge_id: str, fragment_path: str) -> Any:
+        """Try to extract a fragment from a specific knowledge item."""
+        if knowledge_id in self.knowledge_items:
+            item = self.get_item(knowledge_id)
+            if item:
+                try:
+                    return item.extract_fragment(fragment_path)
+                except ValueError:
+                    pass
+        return None

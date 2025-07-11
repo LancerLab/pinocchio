@@ -12,9 +12,7 @@ from .models.knowledge import KnowledgeCategory, KnowledgeContentType, Knowledge
 
 
 class KnowledgeUtils:
-    """
-    Utility class for knowledge fragment processing and conversion.
-    """
+    """Utility class for knowledge fragment processing and conversion."""
 
     @staticmethod
     def _parse_headers(line: str, result: Dict[str, Any]) -> None:
@@ -180,9 +178,7 @@ class KnowledgeUtils:
     def merge_fragments(
         fragments: List[KnowledgeFragment],
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Merge multiple knowledge fragments by category.
-        """
+        """Merge multiple knowledge fragments by category."""
         merged: Dict[str, List[Dict[str, Any]]] = {
             "optimization_techniques": [],
             "domain_knowledge": [],

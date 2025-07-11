@@ -1,6 +1,4 @@
-"""
-Performance metrics models for Pinocchio multi-agent system.
-"""
+"""Performance metrics models for Pinocchio multi-agent system."""
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -8,6 +6,8 @@ from pydantic import BaseModel, Field
 
 
 class PerformanceMetrics(BaseModel):
+    """Performance metrics for code execution."""
+
     execution_time_ms: float
     memory_usage_mb: float
     cache_miss_rate: Optional[float] = None
@@ -22,18 +22,23 @@ class PerformanceMetrics(BaseModel):
 
 
 class PerformanceHistory(BaseModel):
+    """Performance history tracking for sessions."""
+
     session_id: str
     metrics: List[PerformanceMetrics] = Field(default_factory=list)
 
     def add_metrics(self, metrics: PerformanceMetrics) -> None:
+        """Add performance metrics to history."""
         self.metrics.append(metrics)
 
     def get_latest_metrics(self) -> Optional[PerformanceMetrics]:
+        """Get the latest performance metrics."""
         if self.metrics:
             return self.metrics[-1]
         return None
 
     def get_performance_trend(self) -> Dict[str, List[float]]:
+        """Get performance trend data."""
         if not self.metrics:
             return {}
         trend = {

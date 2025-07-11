@@ -385,12 +385,7 @@ class KnowledgeManager:
             del self.version_histories[session_id]
 
     def get_statistics(self) -> Dict[str, Any]:
-        """
-        Get knowledge manager statistics.
-
-        Returns:
-            Dictionary with statistics
-        """
+        """Return knowledge manager statistics."""
         total_fragments = len(self.fragments)
         total_sessions = len(self.session_fragments)
         total_versions = len(self.version_histories)

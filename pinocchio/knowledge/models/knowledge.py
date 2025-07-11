@@ -31,9 +31,7 @@ class KnowledgeContentType(str, Enum):
 
 
 class KnowledgeType(str, Enum):
-    """
-    Knowledge fragment types for workflow integration.
-    """
+    """Knowledge fragment types for workflow integration."""
 
     OPTIMIZATION_TECHNIQUE = "optimization_technique"
     PERFORMANCE_ANALYSIS = "performance_analysis"
@@ -41,12 +39,7 @@ class KnowledgeType(str, Enum):
 
 
 class KnowledgeFragment(BaseModel):
-    """
-    Knowledge fragment with versioning and session tracking.
-
-    Represents a specific version of a knowledge fragment that can be
-    used by generator, debugger, and evaluator agents.
-    """
+    """Knowledge fragment with versioning and session tracking."""
 
     fragment_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_id: Optional[str] = None
@@ -61,6 +54,8 @@ class KnowledgeFragment(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
+        """Pydantic configuration for KnowledgeFragment."""
+
         use_enum_values = True
 
     @classmethod
@@ -125,9 +120,7 @@ class KnowledgeFragment(BaseModel):
 
 
 class KnowledgeVersionHistory(BaseModel):
-    """
-    Knowledge version history for tracking fragment evolution.
-    """
+    """Knowledge version history for tracking fragment evolution."""
 
     session_id: Optional[str] = None
     fragments: List[KnowledgeFragment] = Field(default_factory=list)
@@ -169,9 +162,7 @@ class KnowledgeVersionHistory(BaseModel):
 
 
 class KnowledgeQuery(BaseModel):
-    """
-    Query model for searching knowledge fragments.
-    """
+    """Query model for searching knowledge fragments."""
 
     session_id: Optional[str] = None
     agent_type: Optional[str] = None
@@ -181,13 +172,13 @@ class KnowledgeQuery(BaseModel):
     limit: int = 10
 
     class Config:
+        """Pydantic configuration for KnowledgeQuery."""
+
         use_enum_values = True
 
 
 class KnowledgeExtractionResult(BaseModel):
-    """
-    Result of knowledge fragment extraction.
-    """
+    """Result of knowledge fragment extraction."""
 
     session_id: Optional[str] = None
     agent_type: Optional[str] = None

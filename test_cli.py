@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Simple test script for Pinocchio CLI
+"""Simple test script for Pinocchio CLI.
 
 This script tests the basic functionality of the CLI.
 """
@@ -16,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 async def test_cli():
-    """Test the CLI functionality"""
+    """Test the CLI functionality."""
     print("Testing Pinocchio CLI...")
 
     # Test welcome screen

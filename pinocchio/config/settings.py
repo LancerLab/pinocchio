@@ -199,14 +199,7 @@ class Settings:
         return default
 
     def set(self, key: str, value: Any, source: str = "runtime") -> None:
-        """
-        Set a configuration value.
-
-        Args:
-            key: Configuration key (supports dot notation for nested configs)
-            value: Configuration value
-            source: Source identifier for tracking
-        """
+        """Set a configuration value."""
         self._set_value(key, value, source)
 
     def _set_value(self, key: str, value: Any, source: str) -> None:

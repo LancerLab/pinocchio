@@ -59,6 +59,8 @@ class Session(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
+        """Pydantic configuration for Session model."""
+
         use_enum_values = True
 
     @classmethod
@@ -256,12 +258,7 @@ class Session(BaseModel):
         return cls(**data)
 
     def get_optimization_summary(self) -> Dict[str, Any]:
-        """
-        Get optimization summary.
-
-        Returns:
-            Optimization summary
-        """
+        """Return optimization summary."""
         return {
             "total_iterations": len(self.optimization_iterations),
             "total_agent_interactions": len(self.agent_interactions),
@@ -285,13 +282,13 @@ class SessionQuery(BaseModel):
     limit: int = 10
 
     class Config:
+        """Pydantic configuration for SessionQuery model."""
+
         use_enum_values = True
 
 
 class SessionExport(BaseModel):
-    """
-    Session export model.
-    """
+    """Session export model."""
 
     session: Session
     memory_data: Optional[Dict[str, Any]] = None

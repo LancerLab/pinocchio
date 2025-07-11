@@ -13,9 +13,7 @@ from .models.session import Session, SessionStatus
 
 
 class SessionUtils:
-    """
-    Utility class for session analysis and management.
-    """
+    """Utility class for session analysis and management."""
 
     @staticmethod
     def analyze_session_performance(session: Session) -> Dict[str, Any]:

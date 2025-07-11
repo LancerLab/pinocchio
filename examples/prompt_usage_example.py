@@ -22,7 +22,7 @@ from pinocchio.prompt import (
 
 
 def main():
-    """Main example function for high-performance kernel optimization."""
+    """Run example for high-performance kernel optimization."""
     print("=== Pinocchio Prompt Module: High-Performance Kernel Optimization ===\n")
 
     # Create temporary directory for storage

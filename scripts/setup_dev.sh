@@ -1,37 +1,28 @@
 #!/bin/bash
 
-# Script for setting up development environment and installing pre-commit hooks
+# Setup development environment for Pinocchio project
+# This script ensures all pre-commit dependencies are properly installed
 
-# Exit on error
 set -e
 
-echo "=== Setting up Pinocchio development environment ==="
+echo "Setting up development environment..."
 
-# Check if Poetry is installed
-if ! command -v poetry &> /dev/null; then
-    echo "Poetry not found, installing..."
-    curl -sSL https://install.python-poetry.org | python3 -
-else
-    echo "Poetry is already installed"
-fi
-
-# Install project dependencies
-echo "Installing project dependencies..."
+# Install poetry dependencies
+echo "Installing poetry dependencies..."
 poetry install
 
 # Install pre-commit hooks
 echo "Installing pre-commit hooks..."
 poetry run pre-commit install
 
-# Run pre-commit hooks initialization
-echo "Running pre-commit hooks initialization..."
-poetry run pre-commit run --all-files || true
+# Install additional dependencies that pre-commit might need
+echo "Installing additional pre-commit dependencies..."
+poetry run pip install tomli click pyflakes
 
-echo "=== Development environment setup complete ==="
-echo "You can run tests with:"
-echo "  poetry run pytest"
-echo "You can format code with:"
-echo "  poetry run black ."
-echo "  poetry run isort ."
-echo ""
-echo "Pre-commit hooks will automatically run on git commit to check and format code"
+# Clean and reinstall pre-commit hooks
+echo "Cleaning and reinstalling pre-commit hooks..."
+poetry run pre-commit clean
+poetry run pre-commit install
+
+echo "Development environment setup complete!"
+echo "You can now run: git commit -m 'your message'"

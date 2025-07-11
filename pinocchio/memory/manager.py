@@ -19,11 +19,10 @@ from .models.performance import PerformanceHistory, PerformanceMetrics
 
 
 class MemoryManager:
-    """
-    Memory manager for session-isolated agent memories, code versions, performance, and optimization.
-    """
+    """Memory manager for session-isolated agent memories, code versions, performance, and optimization."""
 
     def __init__(self, store_dir: str = "./memory_store"):
+        """Initialize memory manager with storage directory."""
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
         self._session_cache: Dict[
@@ -225,6 +224,7 @@ class MemoryManager:
     def get_code_version(
         self, session_id: str, version_id: Optional[str] = None
     ) -> Optional[CodeVersion]:
+        """Get a specific code version or current version if not specified."""
         code_memory = self.get_code_memory(session_id)
         if version_id is None:
             return code_memory.get_current_version()
@@ -268,6 +268,7 @@ class MemoryManager:
         return metrics.timestamp.isoformat()
 
     def get_performance_history(self, session_id: str) -> PerformanceHistory:
+        """Get performance history for a session."""
         if (
             session_id in self._session_cache
             and "performance_history" in self._session_cache[session_id]
@@ -293,6 +294,7 @@ class MemoryManager:
         hyperparameters: Dict[str, Any],
         performance_impact: Dict[str, float],
     ) -> None:
+        """Update optimization history with new iteration data."""
         session_path = self._session_path(session_id)
         fpath = session_path / "optimization_history.json"
         opt_history = self.get_optimization_history(session_id)
@@ -304,6 +306,7 @@ class MemoryManager:
         ] = opt_history
 
     def get_optimization_history(self, session_id: str) -> OptimizationHistory:
+        """Get optimization history for a session."""
         if (
             session_id in self._session_cache
             and "optimization_history" in self._session_cache[session_id]
@@ -323,6 +326,7 @@ class MemoryManager:
         return opt_history
 
     def get_optimization_summary(self, session_id: str) -> Dict[str, Any]:
+        """Get optimization summary for a session."""
         return self.get_optimization_history(session_id).get_optimization_summary()
 
     def query_agent_memories(
@@ -332,6 +336,7 @@ class MemoryManager:
         filter_func: Optional[Callable[[BaseAgentMemory], bool]] = None,
         limit: int = 10,
     ) -> List[BaseAgentMemory]:
+        """Query agent memories with optional filtering."""
         session_path = self._session_path(session_id)
         memories_dir = session_path / "memories"
         results = []
@@ -353,6 +358,7 @@ class MemoryManager:
         return self.query_agent_memories(session_id, limit=100)
 
     def export_logs(self, session_id: str, output_file: Optional[str] = None) -> str:
+        """Export session logs to JSON file."""
         session_path = self._session_path(session_id)
         export_path = output_file or str(session_path / f"export_{session_id}.json")
         export_data: Dict[str, Any] = {

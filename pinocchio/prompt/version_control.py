@@ -520,32 +520,41 @@ class VersionControl:
 
     def _load_version_data(self) -> None:
         """Load version control data from storage."""
-        # Load versions
+        self._load_versions_data()
+        self._load_branches_data()
+
+    def _load_versions_data(self) -> None:
+        """Load versions data from storage."""
         versions_file = self.storage_path / "versions.json"
-        if versions_file.exists():
-            try:
-                with open(versions_file, "r") as f:
-                    versions_data = json.load(f)
+        if not versions_file.exists():
+            return
 
-                for template_name, versions in versions_data.items():
-                    self.versions[template_name] = {}
-                    for version_id, version_info_data in versions.items():
-                        version_info = VersionInfo.from_dict(version_info_data)
-                        self.versions[template_name][version_id] = version_info
-            except Exception as e:
-                print(f"Error loading versions: {e}")
+        try:
+            with open(versions_file, "r") as f:
+                versions_data = json.load(f)
 
-        # Load branches
+            for template_name, versions in versions_data.items():
+                self.versions[template_name] = {}
+                for version_id, version_info_data in versions.items():
+                    version_info = VersionInfo.from_dict(version_info_data)
+                    self.versions[template_name][version_id] = version_info
+        except Exception as e:
+            print(f"Error loading versions: {e}")
+
+    def _load_branches_data(self) -> None:
+        """Load branches data from storage."""
         branches_file = self.storage_path / "branches.json"
-        if branches_file.exists():
-            try:
-                with open(branches_file, "r") as f:
-                    branches_data = json.load(f)
+        if not branches_file.exists():
+            return
 
-                for template_name, branches in branches_data.items():
-                    self.branches[template_name] = {}
-                    for branch_name, branch_info_data in branches.items():
-                        branch_info = BranchInfo.from_dict(branch_info_data)
-                        self.branches[template_name][branch_name] = branch_info
-            except Exception as e:
-                print(f"Error loading branches: {e}")
+        try:
+            with open(branches_file, "r") as f:
+                branches_data = json.load(f)
+
+            for template_name, branches in branches_data.items():
+                self.branches[template_name] = {}
+                for branch_name, branch_info_data in branches.items():
+                    branch_info = BranchInfo.from_dict(branch_info_data)
+                    self.branches[template_name][branch_name] = branch_info
+        except Exception as e:
+            print(f"Error loading branches: {e}")
