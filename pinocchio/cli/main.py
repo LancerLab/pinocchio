@@ -88,33 +88,21 @@ def print_block_logo():
 
 
 def print_logo():
-    """Print the Pinocchio CLI logo with style selection"""
+    """Print the Pinocchio CLI logo with block font style"""
     console = Console()
     
     # Welcome panel
     welcome_panel = Panel(
         "[bold cyan]Welcome to Pinocchio CLI![/bold cyan]\n"
-        "Choose your preferred logo style:",
+        "Loading beautiful block font logo...",
         title="🎭 Pinocchio Multi-Agent System",
         border_style="purple",
         padding=(1, 2)
     )
     console.print(welcome_panel)
     
-    # Check if user has a preferred logo style
-    try:
-        logo_style = Prompt.ask(
-            "[cyan]Choose logo style (1=simple, 2=block, Enter=default)[/cyan]"
-        ).strip()
-    except (EOFError, KeyboardInterrupt):
-        logo_style = ""
-    
     console.clear()
-    
-    if logo_style == "2":
-        print_block_logo()
-    else:
-        print_simple_logo()
+    print_block_logo()
 
 
 def print_help():
