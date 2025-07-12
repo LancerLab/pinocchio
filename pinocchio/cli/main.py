@@ -50,24 +50,27 @@ def print_block_logo():
         from pyfiglet import Figlet
 
         colors = [
-            "#8B5CF6",
-            "#7C3AED",
-            "#6D28D9",
-            "#4C1D95",
-            "#047857",
-            "#059669",
-            "#10B981",
-            "#34D399",
-            "#6EE7B7",
+            "#8B5CF6",  # Purple
+            "#7C3AED",  # Purple
+            "#6D28D9",  # Purple
+            "#4C1D95",  # Purple
+            "#047857",  # Green
+            "#059669",  # Green
+            "#10B981",  # Green
+            "#34D399",  # Green
+            "#6EE7B7",  # Green
         ]
         text = "PINOCCHIO"
         f = Figlet(font="block")
         ascii_art = f.renderText(text).splitlines()
 
+        # Print each line with color gradient
         for i, line in enumerate(ascii_art):
             if line.strip():  # Only color non-empty lines
+                # Use filled block character █ instead of hollow
+                filled_line = line.replace("_", "█").replace("|", "█")
                 color = colors[i % len(colors)]
-                console.print(f"[bold {color}]{line}[/]")
+                console.print(f"[bold {color}]{filled_line}[/]")
 
         console.print(
             "\n🎭 Pinocchio CLI - Multi-Agent Collaboration System", style="bold"
@@ -83,13 +86,12 @@ def print_block_logo():
 
 def print_logo():
     """Print the Pinocchio CLI logo with style selection"""
-    console = Console()
-
     # Check if user has a preferred logo style
-    logo_style = console.input(
-        "[cyan]Choose logo style (1=simple, 2=block, Enter=default): [/cyan]"
-    ).strip()
-
+    try:
+        logo_style = Prompt.ask("[cyan]Choose logo style (1=simple, 2=block, Enter=default)[/cyan]").strip()
+    except (EOFError, KeyboardInterrupt):
+        logo_style = ""
+    
     if logo_style == "2":
         print_block_logo()
     else:
@@ -100,13 +102,13 @@ def print_help():
     """Print help information"""
     help_text = """
     📋 Available Commands:
-
+    
     /help     - Show this help message
     /quit     - Exit the CLI
     /clear    - Clear the screen
     /status   - Show current session status
     /history  - Show recent session history
-
+    
     💡 Usage:
     Simply type your request and press Enter to start the multi-agent workflow.
     Example: "write a matrix multiplication operator"
@@ -114,68 +116,88 @@ def print_help():
     print(help_text)
 
 
+def handle_commands(command: str) -> bool:
+    """Handle CLI commands. Returns True if should continue, False if should quit."""
+    console = Console()
+    
+    if command == '/help':
+        print_help()
+        return True
+    elif command == '/quit':
+        console.print("[yellow]Exiting Pinocchio CLI...[/yellow]")
+        return False
+    elif command == '/clear':
+        console.clear()
+        print_logo()
+        return True
+    elif command == '/status':
+        # TODO: Implement status command
+        console.print("[blue]Status: Ready[/blue]")
+        return True
+    elif command == '/history':
+        # TODO: Implement history command
+        console.print("[blue]No recent sessions[/blue]")
+        return True
+    else:
+        console.print(f"[red]Unknown command: {command}[/red]")
+        console.print("Type '/help' for available commands")
+        return True
+
+
 async def main():
     """Main CLI entry point"""
     console = Console()
-
+    
     # Load configuration
     try:
         config_manager = ConfigManager()
-        config = config_manager.config  # Use .config instead of .get_config()
+        config_manager.config  # Use .config instead of .get_config()
     except Exception as e:
         console.print(f"[red]Error loading configuration: {e}[/red]")
         return
-
-    # Create coordinator
-    coordinator = Coordinator(config)
-
+    
+    # Create LLM client from configuration
+    try:
+        from pinocchio.llm.custom_llm_client import CustomLLMClient
+        llm_config = config_manager.get_llm_config()
+        llm_client = CustomLLMClient(llm_config)
+    except Exception as e:
+        console.print(f"[red]Error creating LLM client: {e}[/red]")
+        return
+    
+    # Create coordinator with LLM client
+    coordinator = Coordinator(llm_client)
+    
     # Print logo
     print_logo()
-
+    
     # Main CLI loop
     while True:
         try:
             # Get user input
             user_input = Prompt.ask("\n> ")
-
+            
             # Handle commands
-            if user_input.startswith("/"):
+            if user_input.startswith('/'):
                 command = user_input.lower().strip()
-
-                if command == "/help":
-                    print_help()
-                    continue
-                elif command == "/quit":
-                    console.print("[yellow]Exiting Pinocchio CLI...[/yellow]")
+                if not handle_commands(command):
                     break
-                elif command == "/clear":
-                    console.clear()
-                    print_logo()
-                    continue
-                elif command == "/status":
-                    # TODO: Implement status command
-                    console.print("[blue]Status: Ready[/blue]")
-                    continue
-                elif command == "/history":
-                    # TODO: Implement history command
-                    console.print("[blue]No recent sessions[/blue]")
-                    continue
-                else:
-                    console.print(f"[red]Unknown command: {command}[/red]")
-                    console.print("Type '/help' for available commands")
-                    continue
-
+                continue
+            
             # Process user request
             if user_input.strip():
                 console.print(f"\n[blue]Processing: {user_input}[/blue]\n")
-
+                
                 async for message in coordinator.process_user_request(user_input):
                     console.print(message)
-
+                
                 console.print("\n[green]✅ Request completed![/green]\n")
-
+        
         except KeyboardInterrupt:
             console.print("\n[yellow]Use '/quit' to exit[/yellow]")
+        except EOFError:
+            console.print("\n[yellow]Use '/quit' to exit[/yellow]")
+            break
         except Exception as e:
             console.print(f"\n[red]Error: {e}[/red]")
 

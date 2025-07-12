@@ -24,15 +24,12 @@
       "max_retries": 3
     }
   },
-  "task_planning": {
-    "debug_repair": {
-      "enabled": true,
-      "max_repair_attempts": 3,
-      "auto_insert_debugger": true,
-      "retry_generator_after_debug": true
-    },
+  "debug_repair": {
+    "max_repair_attempts": 3
+  },
+  "optimization": {
     "max_optimisation_rounds": 3,
-    "enable_optimiser": true
+    "optimizer_enabled": true
   },
   "session": {
     "auto_save": true,
