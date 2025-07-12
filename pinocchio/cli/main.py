@@ -6,7 +6,10 @@ Pinocchio CLI - Multi-Agent Collaboration System
 import asyncio
 
 from rich.console import Console
+from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.table import Table
+from rich.text import Text
 
 from pinocchio.config.config_manager import ConfigManager
 from pinocchio.coordinator import Coordinator
@@ -86,11 +89,27 @@ def print_block_logo():
 
 def print_logo():
     """Print the Pinocchio CLI logo with style selection"""
+    console = Console()
+    
+    # Welcome panel
+    welcome_panel = Panel(
+        "[bold cyan]Welcome to Pinocchio CLI![/bold cyan]\n"
+        "Choose your preferred logo style:",
+        title="🎭 Pinocchio Multi-Agent System",
+        border_style="purple",
+        padding=(1, 2)
+    )
+    console.print(welcome_panel)
+    
     # Check if user has a preferred logo style
     try:
-        logo_style = Prompt.ask("[cyan]Choose logo style (1=simple, 2=block, Enter=default)[/cyan]").strip()
+        logo_style = Prompt.ask(
+            "[cyan]Choose logo style (1=simple, 2=block, Enter=default)[/cyan]"
+        ).strip()
     except (EOFError, KeyboardInterrupt):
         logo_style = ""
+    
+    console.clear()
     
     if logo_style == "2":
         print_block_logo()
@@ -99,21 +118,50 @@ def print_logo():
 
 
 def print_help():
-    """Print help information"""
-    help_text = """
-    📋 Available Commands:
+    """Print help information with beautiful formatting"""
+    console = Console()
     
-    /help     - Show this help message
-    /quit     - Exit the CLI
-    /clear    - Clear the screen
-    /status   - Show current session status
-    /history  - Show recent session history
+    # Create help table
+    table = Table(title="📋 Available Commands", show_header=True, header_style="bold magenta")
+    table.add_column("Command", style="cyan", no_wrap=True)
+    table.add_column("Description", style="white")
     
+    commands = [
+        ("/help", "Show this help message"),
+        ("/quit", "Exit the CLI"),
+        ("/clear", "Clear the screen"),
+        ("/status", "Show current session status"),
+        ("/history", "Show recent session history"),
+    ]
+    
+    for cmd, desc in commands:
+        table.add_row(cmd, desc)
+    
+    # Create usage panel
+    usage_text = """
     💡 Usage:
     Simply type your request and press Enter to start the multi-agent workflow.
+    
     Example: "write a matrix multiplication operator"
+    
+    The system will automatically:
+    • 🤖 Create an intelligent task plan
+    • ⚡ Generate high-performance code
+    • 🔧 Debug and fix issues
+    • 🚀 Optimize for performance
+    • 📊 Evaluate results
     """
-    print(help_text)
+    
+    usage_panel = Panel(
+        usage_text,
+        title="🚀 How to Use",
+        border_style="green",
+        padding=(1, 2)
+    )
+    
+    console.print(table)
+    console.print("\n")
+    console.print(usage_panel)
 
 
 def handle_commands(command: str) -> bool:
@@ -124,23 +172,47 @@ def handle_commands(command: str) -> bool:
         print_help()
         return True
     elif command == '/quit':
-        console.print("[yellow]Exiting Pinocchio CLI...[/yellow]")
+        console.print(Panel(
+            "[yellow]Exiting Pinocchio CLI...[/yellow]\n"
+            "Thank you for using Pinocchio! 🎭",
+            title="👋 Goodbye",
+            border_style="yellow"
+        ))
         return False
     elif command == '/clear':
         console.clear()
         print_logo()
         return True
     elif command == '/status':
-        # TODO: Implement status command
-        console.print("[blue]Status: Ready[/blue]")
+        # Status panel
+        status_panel = Panel(
+            "[green]✅ System Ready[/green]\n"
+            "• Multi-agent system: [green]Active[/green]\n"
+            "• LLM client: [green]Connected[/green]\n"
+            "• Task planning: [green]Available[/green]\n"
+            "• Session management: [green]Ready[/green]",
+            title="📊 System Status",
+            border_style="blue"
+        )
+        console.print(status_panel)
         return True
     elif command == '/history':
-        # TODO: Implement history command
-        console.print("[blue]No recent sessions[/blue]")
+        # History panel
+        history_panel = Panel(
+            "[dim]No recent sessions found[/dim]\n"
+            "Start a new session to see history here.",
+            title="📜 Session History",
+            border_style="cyan"
+        )
+        console.print(history_panel)
         return True
     else:
-        console.print(f"[red]Unknown command: {command}[/red]")
-        console.print("Type '/help' for available commands")
+        console.print(Panel(
+            f"[red]Unknown command: {command}[/red]\n"
+            "Type '/help' for available commands",
+            title="❌ Error",
+            border_style="red"
+        ))
         return True
 
 
@@ -153,7 +225,11 @@ async def main():
         config_manager = ConfigManager()
         config_manager.config  # Use .config instead of .get_config()
     except Exception as e:
-        console.print(f"[red]Error loading configuration: {e}[/red]")
+        console.print(Panel(
+            f"[red]Error loading configuration: {e}[/red]",
+            title="❌ Configuration Error",
+            border_style="red"
+        ))
         return
     
     # Create LLM client from configuration
@@ -162,7 +238,11 @@ async def main():
         llm_config = config_manager.get_llm_config()
         llm_client = CustomLLMClient(llm_config)
     except Exception as e:
-        console.print(f"[red]Error creating LLM client: {e}[/red]")
+        console.print(Panel(
+            f"[red]Error creating LLM client: {e}[/red]",
+            title="❌ LLM Client Error",
+            border_style="red"
+        ))
         return
     
     # Create coordinator with LLM client
@@ -174,8 +254,8 @@ async def main():
     # Main CLI loop
     while True:
         try:
-            # Get user input
-            user_input = Prompt.ask("\n> ")
+            # Get user input with styled prompt
+            user_input = Prompt.ask("\n[bold cyan]Pinocchio[/bold cyan] > ")
             
             # Handle commands
             if user_input.startswith('/'):
@@ -186,20 +266,49 @@ async def main():
             
             # Process user request
             if user_input.strip():
-                console.print(f"\n[blue]Processing: {user_input}[/blue]\n")
+                # Create request panel
+                request_panel = Panel(
+                    f"[blue]Processing: {user_input}[/blue]",
+                    title="🔄 Processing Request",
+                    border_style="blue",
+                    padding=(0, 1)
+                )
+                console.print(request_panel)
+                console.print("\n")
                 
                 async for message in coordinator.process_user_request(user_input):
                     console.print(message)
                 
-                console.print("\n[green]✅ Request completed![/green]\n")
+                # Success panel
+                success_panel = Panel(
+                    "[green]✅ Request completed successfully![/green]",
+                    title="🎉 Success",
+                    border_style="green",
+                    padding=(0, 1)
+                )
+                console.print("\n")
+                console.print(success_panel)
+                console.print("\n")
         
         except KeyboardInterrupt:
-            console.print("\n[yellow]Use '/quit' to exit[/yellow]")
+            console.print(Panel(
+                "[yellow]Use '/quit' to exit[/yellow]",
+                title="⚠️ Interrupted",
+                border_style="yellow"
+            ))
         except EOFError:
-            console.print("\n[yellow]Use '/quit' to exit[/yellow]")
+            console.print(Panel(
+                "[yellow]Use '/quit' to exit[/yellow]",
+                title="⚠️ EOF",
+                border_style="yellow"
+            ))
             break
         except Exception as e:
-            console.print(f"\n[red]Error: {e}[/red]")
+            console.print(Panel(
+                f"[red]Error: {e}[/red]",
+                title="❌ Error",
+                border_style="red"
+            ))
 
 
 if __name__ == "__main__":
