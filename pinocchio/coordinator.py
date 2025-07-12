@@ -3,15 +3,14 @@
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from .agents.generator import GeneratorAgent
-from .llm.mock_client import MockLLMClient
 from .session_logger import SessionLogger
+from .task_planning import TaskExecutor, TaskPlanner
 
 logger = logging.getLogger(__name__)
 
 
 class Coordinator:
-    """Central coordinator for managing multi-agent workflows."""
+    """Central coordinator for managing multi-agent task planning and execution."""
 
     def __init__(
         self, llm_client: Optional[Any] = None, sessions_dir: str = "./sessions"
@@ -20,14 +19,12 @@ class Coordinator:
         Initialize coordinator.
 
         Args:
-            llm_client: LLM client instance (uses MockLLMClient if None)
+            llm_client: LLM client instance
             sessions_dir: Directory to store session files
         """
-        # Initialize LLM client
-        self.llm_client = llm_client or MockLLMClient(response_delay_ms=200)
-
-        # Initialize agents
-        self.generator_agent = GeneratorAgent(self.llm_client)
+        # Initialize task planning components
+        self.task_planner = TaskPlanner(llm_client)
+        self.task_executor = TaskExecutor(llm_client)
 
         # Session management
         self.sessions_dir = sessions_dir
@@ -37,11 +34,11 @@ class Coordinator:
         self.total_sessions = 0
         self.successful_sessions = 0
 
-        logger.info("Coordinator initialized")
+        logger.info("Coordinator initialized with task planning system")
 
     async def process_user_request(self, user_prompt: str) -> AsyncGenerator[str, None]:
         """
-        Process user request through multi-agent workflow.
+        Process user request through intelligent task planning and execution.
 
         Args:
             user_prompt: User's input prompt
@@ -51,18 +48,22 @@ class Coordinator:
         """
         self.total_sessions += 1
         self._final_result = None
+
         try:
             # Initialize session
             async for msg in self._initialize_session(user_prompt):
                 yield msg
 
-            # Execute workflow
-            async for msg in self._execute_workflow(user_prompt):
+            # Create task plan
+            async for msg in self._create_task_plan(user_prompt):
                 yield msg
-            final_result = self._final_result
+
+            # Execute task plan
+            async for msg in self._execute_task_plan():
+                yield msg
 
             # Process results
-            async for msg in self._process_results(final_result):
+            async for msg in self._process_results():
                 yield msg
 
             # Save session
@@ -78,41 +79,61 @@ class Coordinator:
         self.current_session = SessionLogger(user_prompt, self.sessions_dir)
         yield self.current_session.log_summary("Session started")
 
-    async def _execute_workflow(self, user_prompt: str) -> AsyncGenerator[str, None]:
-        """Execute the workflow steps."""
-        plan = self._generate_simple_plan(user_prompt)
-        yield self.current_session.log_summary(f"Plan generated: {len(plan)} steps")
+    async def _create_task_plan(self, user_prompt: str) -> AsyncGenerator[str, None]:
+        """Create intelligent task plan from user request."""
+        yield self.current_session.log_summary("🤖 Creating intelligent task plan...")
 
-        self._final_result = None
-        for i, step in enumerate(plan):
-            step_id = f"step_{i+1}"
-            agent_type = step["agent_type"]
-            task_description = step["task_description"]
-
-            yield self.current_session.log_summary(
-                f"Executing step {i+1}: {agent_type}"
+        try:
+            # Create task plan using task planner
+            self.current_plan = await self.task_planner.create_task_plan(
+                user_prompt, session_id=self.current_session.session_id
             )
 
-            result = await self._execute_agent_step(
-                step_id, agent_type, task_description
-            )
+            # Validate plan
+            validation = self.task_planner.validate_plan(self.current_plan)
 
-            if result.success:
+            if validation["valid"]:
                 yield self.current_session.log_summary(
-                    f"Step {i+1} completed successfully"
+                    f"✅ Task plan created: {len(self.current_plan.tasks)} tasks"
                 )
-                self._final_result = result
+
+                if validation["warnings"]:
+                    yield self.current_session.log_summary(
+                        f"⚠️ Plan warnings: {', '.join(validation['warnings'])}"
+                    )
             else:
                 yield self.current_session.log_summary(
-                    f"Step {i+1} failed: {result.error_message}"
+                    f"❌ Plan validation failed: {', '.join(validation['issues'])}"
                 )
-                self._final_result = result
-                break
+                raise Exception("Task plan validation failed")
 
-    async def _process_results(self, final_result: Any) -> AsyncGenerator[str, None]:
+        except Exception as e:
+            yield self.current_session.log_summary(
+                f"❌ Failed to create task plan: {str(e)}"
+            )
+            raise
+
+    async def _execute_task_plan(self) -> AsyncGenerator[str, None]:
+        """Execute the task plan with progress reporting."""
+        if not hasattr(self, "current_plan"):
+            yield self.current_session.log_summary("❌ No task plan available")
+            return
+
+        yield self.current_session.log_summary("🚀 Starting task execution...")
+
+        # Execute plan and collect results
+        async for progress_msg in self.task_executor.execute_plan(self.current_plan):
+            yield self.current_session.log_summary(progress_msg)
+
+            # Store final result if plan completed
+            if "🎉 Plan" in progress_msg and "completed successfully" in progress_msg:
+                if hasattr(self.current_plan, "final_result"):
+                    self._final_result = self.current_plan.final_result
+
+    async def _process_results(self) -> AsyncGenerator[str, None]:
         """Process and display final results."""
-        if final_result and final_result.success:
-            async for msg in self._display_success_results(final_result):
+        if self._final_result and self.current_plan.is_completed():
+            async for msg in self._display_success_results(self._final_result):
                 yield msg
             self.current_session.complete_session("completed")
             self.successful_sessions += 1
@@ -122,29 +143,64 @@ class Coordinator:
             yield self.current_session.log_summary("Session failed")
 
     async def _display_success_results(
-        self, final_result: Any
+        self, final_result: Dict[str, Any]
     ) -> AsyncGenerator[str, None]:
-        """Display successful results."""
-        code = final_result.output.get("code", "")
-        if code:
-            yield f"\n🎉 Code generation completed!\n\n```choreo\n{code}\n```"
+        """Display successful results with enhanced information."""
+        # Display primary result (code generation)
+        if "primary_result" in final_result:
+            primary = final_result["primary_result"]
+            code = primary.get("code", "")
+            if code:
+                yield f"\n🎉 Code generation completed!\n\n```choreo\n{code}\n```"
 
-            explanation = final_result.output.get("explanation", "")
-            if explanation:
-                yield f"\n📋 Explanation: {explanation}"
+                explanation = primary.get("explanation", "")
+                if explanation:
+                    yield f"\n📋 Explanation: {explanation}"
 
-            optimization_techniques = final_result.output.get(
-                "optimization_techniques", []
-            )
-            if optimization_techniques:
-                yield f"\n⚡ Optimizations applied: {', '.join(optimization_techniques)}"
+                optimization_techniques = primary.get("optimization_techniques", [])
+                if optimization_techniques:
+                    yield f"\n⚡ Optimizations applied: {', '.join(optimization_techniques)}"
+
+        # Display optimization results if available
+        if "optimization_results" in final_result:
+            opt_results = final_result["optimization_results"]
+            suggestions = opt_results.get("optimization_suggestions", [])
+            if suggestions:
+                yield "\n🔧 Optimization suggestions:"
+                for i, suggestion in enumerate(suggestions[:3], 1):  # Show top 3
+                    yield f"  {i}. {suggestion.get('description', 'N/A')}"
+
+        # Display debugging results if available
+        if "debugging_results" in final_result:
+            debug_results = final_result["debugging_results"]
+            issues = debug_results.get("issues_found", [])
+            if issues:
+                yield f"\n🐛 Issues found: {len(issues)} issues detected"
+                for i, issue in enumerate(issues[:2], 1):  # Show top 2
+                    yield f"  {i}. {issue.get('description', 'N/A')}"
+
+        # Display evaluation results if available
+        if "evaluation_results" in final_result:
+            eval_results = final_result["evaluation_results"]
+            performance = eval_results.get("performance_analysis", {})
+            if performance:
+                yield "\n📊 Performance analysis:"
+                yield f"  Time complexity: {performance.get('time_complexity', 'N/A')}"
+                yield f"  Memory efficiency: {performance.get('memory_efficiency', 'N/A')}"
+
+        # Display execution summary
+        if "execution_summary" in final_result:
+            summary = final_result["execution_summary"]
+            yield "\n📈 Execution summary:"
+            yield f"  Tasks completed: {summary.get('completed_tasks', 0)}/{summary.get('total_tasks', 0)}"
+            yield f"  Success rate: {summary.get('success_rate', 0):.1%}"
 
     async def _save_session(self) -> AsyncGenerator[str, None]:
         """Save session to file."""
         try:
             session_file = self.current_session.save_to_file()
             yield self.current_session.log_summary(
-                f"Session saved to: {session_file.name}"
+                f"Session saved to: {getattr(session_file, 'name', str(session_file))}"
             )
         except Exception as e:
             logger.warning(f"Failed to save session: {e}")
@@ -163,170 +219,22 @@ class Coordinator:
         else:
             yield f"❌ Error: {str(error)}"
 
-    def _generate_simple_plan(self, user_prompt: str) -> List[Dict[str, Any]]:
-        """
-        Generate simple execution plan based on user prompt.
-
-        Args:
-            user_prompt: User's input prompt
-
-        Returns:
-            List of execution steps
-        """
-        plan = []
-
-        # For MVP, we only implement the generator step
-        # Later this will be expanded to include debugging, optimization, and evaluation
-
-        # Always start with code generation
-        plan.append(
-            {
-                "agent_type": "generator",
-                "task_description": user_prompt,
-                "requirements": self._extract_requirements(user_prompt),
-                "optimization_goals": self._extract_optimization_goals(user_prompt),
-            }
-        )
-
-        # TODO: Add conditional steps based on user prompt analysis
-        # if "debug" in user_prompt.lower():
-        #     plan.append({"agent_type": "debugger", ...})
-        # if "optimize" in user_prompt.lower():
-        #     plan.append({"agent_type": "optimizer", ...})
-        # if "evaluate" in user_prompt.lower():
-        #     plan.append({"agent_type": "evaluator", ...})
-
-        return plan
-
-    def _extract_requirements(self, user_prompt: str) -> Dict[str, Any]:
-        """
-        Extract requirements from user prompt.
-
-        Args:
-            user_prompt: User's input prompt
-
-        Returns:
-            Dictionary of extracted requirements
-        """
-        requirements = {}
-
-        # Simple keyword-based requirement extraction
-        prompt_lower = user_prompt.lower()
-
-        # Performance requirements
-        if (
-            "fast" in prompt_lower
-            or "performance" in prompt_lower
-            or "快速" in user_prompt
-            or "高性能" in user_prompt
-        ):
-            requirements["performance"] = "high"
-        if "memory" in prompt_lower or "内存" in user_prompt:
-            requirements["memory_efficient"] = True
-
-        # Operation type
-        if "conv" in prompt_lower or "conv2d" in prompt_lower:
-            requirements["operation_type"] = "convolution"
-        elif (
-            "matmul" in prompt_lower or "matrix" in prompt_lower or "矩阵" in user_prompt
-        ):
-            requirements["operation_type"] = "matrix_multiplication"
-        elif "add" in prompt_lower or "加法" in user_prompt:
-            requirements["operation_type"] = "element_wise_addition"
-
-        # Input/output requirements
-        if "tensor" in prompt_lower or "tensor" in user_prompt:
-            requirements["data_type"] = "tensor"
-
-        return requirements
-
-    def _extract_optimization_goals(self, user_prompt: str) -> List[str]:
-        """
-        Extract optimization goals from user prompt.
-
-        Args:
-            user_prompt: User's input prompt
-
-        Returns:
-            List of optimization goals
-        """
-        goals = []
-        prompt_lower = user_prompt.lower()
-
-        if "fast" in prompt_lower or "speed" in prompt_lower or "快速" in user_prompt:
-            goals.append("maximize_throughput")
-        if "memory" in prompt_lower or "内存" in user_prompt:
-            goals.append("minimize_memory_usage")
-        if "cache" in prompt_lower or "cache" in user_prompt:
-            goals.append("optimize_cache_locality")
-        if "parallel" in prompt_lower or "并行" in user_prompt:
-            goals.append("enable_parallelization")
-
-        # Default goals if none specified
-        if not goals:
-            goals = ["maximize_throughput", "optimize_cache_locality"]
-
-        return goals
-
-    async def _execute_agent_step(
-        self, step_id: str, agent_type: str, task_description: str
-    ) -> Any:
-        """
-        Execute a single agent step.
-
-        Args:
-            step_id: Unique step identifier
-            agent_type: Type of agent to execute
-            task_description: Task description for the agent
-
-        Returns:
-            Agent response
-        """
-        # Build request
-        request = {
-            "request_id": f"{self.current_session.session_id}_{step_id}",
-            "agent_type": agent_type,
-            "task_description": task_description,
-            "context": self.current_session.get_context(),
-            "session_id": self.current_session.session_id,
-        }
-
-        # Execute based on agent type
-        if agent_type == "generator":
-            result = await self.generator_agent.execute(request)
-        else:
-            # For MVP, only generator is implemented
-            raise NotImplementedError(f"Agent type '{agent_type}' not yet implemented")
-
-        # Log communication
-        self.current_session.log_communication(
-            step_id=step_id,
-            agent_type=agent_type,
-            request=request,
-            response=result.model_dump(),
-        )
-
-        return result
-
     def get_stats(self) -> Dict[str, Any]:
         """
         Get coordinator statistics.
 
         Returns:
-            Statistics dictionary
+            Dictionary with statistics
         """
-        success_rate = 0.0
-        if self.total_sessions > 0:
-            success_rate = self.successful_sessions / self.total_sessions
-
         return {
             "total_sessions": self.total_sessions,
             "successful_sessions": self.successful_sessions,
-            "success_rate": success_rate,
-            "current_session_id": self.current_session.session_id
-            if self.current_session
-            else None,
-            "agent_stats": {"generator": self.generator_agent.get_stats()},
+            "success_rate": (
+                self.successful_sessions / self.total_sessions * 100
+                if self.total_sessions > 0
+                else 0
+            ),
+            "agent_stats": self.task_executor.get_agent_status(),
         }
 
     def get_session_history(self) -> List[Dict[str, Any]]:
@@ -334,58 +242,52 @@ class Coordinator:
         Get session history.
 
         Returns:
-            List of session summaries
+            List of session information
         """
-        return SessionLogger.list_sessions(self.sessions_dir)
+        try:
+            return SessionLogger.list_sessions(self.sessions_dir)
+        except Exception as e:
+            logger.warning(f"Failed to list sessions: {e}")
+            return []
 
     async def load_session(self, session_id: str) -> Optional[SessionLogger]:
         """
-        Load a previous session.
+        Load a specific session.
 
         Args:
-            session_id: Session ID to load
+            session_id: Session identifier
 
         Returns:
-            Loaded session or None if not found
+            SessionLogger if found, None otherwise
         """
-        sessions = self.get_session_history()
-
-        for session_info in sessions:
-            if session_info["session_id"] == session_id:
-                try:
-                    session = SessionLogger.load_from_file(session_info["file_path"])
-                    logger.info(f"Session loaded: {session_id}")
-                    return session
-                except Exception as e:
-                    logger.error(f"Failed to load session {session_id}: {e}")
-                    return None
-
-        logger.warning(f"Session not found: {session_id}")
-        return None
+        try:
+            session = SessionLogger.load_from_file(session_id, self.sessions_dir)
+            return session
+        except Exception as e:
+            logger.warning(f"Failed to load session {session_id}: {e}")
+            return None
 
     def reset_stats(self) -> None:
         """Reset coordinator statistics."""
         self.total_sessions = 0
         self.successful_sessions = 0
-        self.generator_agent.reset_stats()
-        logger.info("Coordinator stats reset")
+        self.task_executor.reset_agent_stats()
 
 
-# Convenience function for simple usage
 async def process_simple_request(user_prompt: str) -> str:
     """
-    Process a simple request and return the result.
+    Convenience function for simple request processing.
 
     Args:
         user_prompt: User's input prompt
 
     Returns:
-        Final result string
+        Final result as string
     """
     coordinator = Coordinator()
-    messages = []
+    result = ""
 
     async for message in coordinator.process_user_request(user_prompt):
-        messages.append(message)
+        result += message + "\n"
 
-    return "\n".join(messages)
+    return result

@@ -14,6 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from pinocchio.config import ConfigManager
+from pinocchio.data_models.task_planning import TaskPlan, TaskStatus
 from pinocchio.llm import CustomLLMClient
 
 logger = logging.getLogger(__name__)
@@ -160,7 +161,19 @@ class PinocchioCLI:
         self._show_message("user", user_input)
 
         # Process request with real-time streaming
+        # --- New: todolist visualization ---
+        plan_displayed = False
+        last_plan_state = None
         async for message in self.coordinator.process_user_request(user_input):
+            # Check if current_plan is available
+            plan = getattr(self.coordinator, "current_plan", None)
+            if plan and isinstance(plan, TaskPlan):
+                # Refresh todolist whenever plan changes
+                plan_state = [(t.task_id, t.status) for t in plan.tasks]
+                if not plan_displayed or plan_state != last_plan_state:
+                    self._show_todolist(plan)
+                    plan_displayed = True
+                    last_plan_state = plan_state
             # Show system message
             self._show_message("system", message)
 
@@ -187,6 +200,40 @@ class PinocchioCLI:
         text.append(message, style="white")
 
         return Panel(text, border_style="yellow")
+
+    def _show_todolist(self, plan: TaskPlan) -> None:
+        """Display the current todolist (task plan) in the console."""
+        table = Table(title="Todolist (Task Plan)", show_lines=True, box=None)
+        table.add_column("#", style="bold", justify="right")
+        table.add_column("Task Description", style="white")
+        table.add_column("Agent", style="cyan")
+        table.add_column("Status", style="bold")
+        table.add_column("Depends On", style="dim")
+
+        status_emoji = {
+            TaskStatus.PENDING: "🟡 pending",
+            TaskStatus.RUNNING: "🟠 running",
+            TaskStatus.COMPLETED: "🟢 completed",
+            TaskStatus.FAILED: "🔴 failed",
+            TaskStatus.SKIPPED: "⚪ skipped",
+            TaskStatus.CANCELLED: "⚫ cancelled",
+        }
+
+        for idx, task in enumerate(plan.tasks, 1):
+            depends = (
+                ", ".join([d.task_id for d in task.dependencies])
+                if task.dependencies
+                else "-"
+            )
+            table.add_row(
+                str(idx),
+                task.task_description,
+                str(task.agent_type),
+                status_emoji.get(task.status, str(task.status)),
+                depends,
+            )
+        self.console.print(table)
+        self.console.print()
 
     def _show_help(self) -> None:
         """Display help information."""

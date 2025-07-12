@@ -32,80 +32,11 @@ class TestCoordinator:
 
     def test_coordinator_initialization(self, coordinator):
         """Test coordinator initialization."""
-        assert coordinator.llm_client is not None
-        assert coordinator.generator_agent is not None
+        assert coordinator.task_planner is not None
+        assert coordinator.task_executor is not None
         assert coordinator.total_sessions == 0
         assert coordinator.successful_sessions == 0
         assert coordinator.current_session is None
-
-    def test_requirement_extraction(self, coordinator):
-        """Test requirement extraction from prompts."""
-        test_cases = [
-            ("conv2d算子", {"operation_type": "convolution"}),
-            ("矩阵乘法", {"operation_type": "matrix_multiplication"}),
-            ("快速加法", {"operation_type": "element_wise_addition"}),
-            ("高性能conv", {"operation_type": "convolution", "performance": "high"}),
-            ("内存高效tensor", {"memory_efficient": True, "data_type": "tensor"}),
-        ]
-
-        for prompt, expected in test_cases:
-            requirements = coordinator._extract_requirements(prompt)
-
-            for key, value in expected.items():
-                assert requirements[key] == value
-
-    def test_optimization_goal_extraction(self, coordinator):
-        """Test optimization goal extraction."""
-        test_cases = [
-            ("快速算子", ["maximize_throughput"]),
-            ("内存优化", ["minimize_memory_usage"]),
-            ("并行处理", ["enable_parallelization"]),
-            ("cache优化", ["optimize_cache_locality"]),
-            ("普通算子", ["maximize_throughput", "optimize_cache_locality"]),  # default
-        ]
-
-        for prompt, expected_goals in test_cases:
-            goals = coordinator._extract_optimization_goals(prompt)
-
-            for goal in expected_goals:
-                assert goal in goals
-
-    def test_simple_plan_generation(self, coordinator):
-        """Test simple plan generation."""
-        user_prompt = "编写一个conv2d算子"
-        plan = coordinator._generate_simple_plan(user_prompt)
-
-        assert len(plan) == 1
-        assert plan[0]["agent_type"] == "generator"
-        assert plan[0]["task_description"] == user_prompt
-        assert "requirements" in plan[0]
-        assert "optimization_goals" in plan[0]
-
-    @pytest.mark.asyncio
-    async def test_agent_step_execution(self, coordinator):
-        """Test agent step execution."""
-        step_id = "test_step"
-        agent_type = "generator"
-        task_description = "测试任务"
-
-        # Create a session first
-        coordinator.current_session = Mock()
-        coordinator.current_session.session_id = "test_session"
-        coordinator.current_session.get_context.return_value = {"test": "context"}
-        coordinator.current_session.log_communication = Mock()
-
-        # Execute step
-        result = await coordinator._execute_agent_step(
-            step_id, agent_type, task_description
-        )
-
-        # Verify result
-        assert result is not None
-        assert hasattr(result, "success")
-        assert hasattr(result, "output")
-
-        # Verify communication was logged
-        coordinator.current_session.log_communication.assert_called_once()
 
     def test_stats_tracking(self, coordinator):
         """Test statistics tracking."""
@@ -114,8 +45,6 @@ class TestCoordinator:
         assert initial_stats["total_sessions"] == 0
         assert initial_stats["successful_sessions"] == 0
         assert initial_stats["success_rate"] == 0.0
-        assert initial_stats["current_session_id"] is None
-        assert "generator" in initial_stats["agent_stats"]
 
     def test_stats_reset(self, coordinator):
         """Test statistics reset."""
