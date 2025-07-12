@@ -1,0 +1,36 @@
+{
+  "llm": {
+    "provider": "custom",
+    "base_url": "http://10.0.16.46:8001",
+    "model_name": "Qwen/Qwen3-32B",
+    "timeout": 120,
+    "max_retries": 3
+  },
+  "agents": {
+    "generator": {
+      "enabled": true,
+      "max_retries": 3
+    },
+    "debugger": {
+      "enabled": true,
+      "max_retries": 3
+    },
+    "optimizer": {
+      "enabled": true,
+      "max_retries": 3
+    },
+    "evaluator": {
+      "enabled": true,
+      "max_retries": 3
+    }
+  },
+  "session": {
+    "auto_save": true,
+    "save_interval_seconds": 300
+  },
+  "storage": {
+    "sessions_path": "./sessions",
+    "memories_path": "./memories",
+    "knowledge_path": "./knowledge"
+  }
+}

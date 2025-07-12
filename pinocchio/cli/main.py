@@ -13,6 +13,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from pinocchio.config import ConfigManager
+from pinocchio.llm import CustomLLMClient
+
 logger = logging.getLogger(__name__)
 
 # Color themes configuration
@@ -60,14 +63,25 @@ class PinocchioCLI:
         self.history: list = []
         self.is_running: bool = True
 
-        # Initialize real Coordinator
+        # Initialize configuration manager
+        self.config_manager = ConfigManager()
+
+        # Initialize real Coordinator with CustomLLMClient
         try:
             from pinocchio.coordinator import Coordinator
 
-            self.coordinator = Coordinator()
-            logger.info("Real Coordinator initialized")
+            # Get LLM configuration using Pydantic model
+            llm_config = self.config_manager.get_llm_config()
+
+            self.llm_client = CustomLLMClient(config=llm_config)
+            self.coordinator = Coordinator(llm_client=self.llm_client)
+            logger.info(
+                f"Coordinator with CustomLLMClient initialized using {llm_config.model_name}"
+            )
         except Exception as e:
-            logger.warning(f"Failed to initialize Coordinator, using mock: {e}")
+            logger.warning(
+                f"Failed to initialize Coordinator with CustomLLMClient, using mock: {e}"
+            )
             self.coordinator = MockCoordinator()
 
     async def start(self) -> None:

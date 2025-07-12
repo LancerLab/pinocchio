@@ -51,7 +51,7 @@ jobs:
 
     - name: Run tests with coverage
       run: |
-        poetry run pytest tests/ --cov=pinocchio --cov-report=xml --cov-report=term
+        poetry run pytest tests/ --cov=pinocchio --cov-report=xml --cov-report=term -m "not real_llm"
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

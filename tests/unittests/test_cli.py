@@ -8,6 +8,10 @@ import asyncio
 import os
 import sys
 
+import pytest
+
+pytestmark = pytest.mark.asyncio
+
 from pinocchio.cli.main import cli
 
 # Add the project root to the Python path
