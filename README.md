@@ -72,6 +72,102 @@ func conv_kernel(input: tensor, output: tensor) {
 - **💾 完整记录**: 自动保存会话日志，支持历史查询和调试
 - **⚡ 智能优化**: 自动应用性能优化技术（循环分块、内存合并等）
 
+## 🧠 智能任务规划系统
+
+Pinocchio 的核心创新在于其智能任务规划机制，能够自动分解复杂需求并动态调整执行策略。
+
+### 多轮优化链
+
+系统支持多轮生成→调试→优化循环，每轮都包含完整的代码生成、错误检测和性能优化流程：
+
+```
+Round 1: Generator → Debugger → Optimizer
+Round 2: Generator → Debugger → Optimizer
+Round 3: Generator → Debugger → Optimizer
+...
+```
+
+### 动态调试插入
+
+当检测到编译错误或运行时问题时，系统会自动插入调试任务：
+
+```
+原始计划: Generator → Optimizer
+检测到错误 → 动态插入: Generator → Debugger → Optimizer
+```
+
+### 实时任务可视化
+
+系统提供实时的任务计划可视化界面，显示每个任务的执行状态和依赖关系：
+
+```text
+                                       Todolist (Task Plan)
+  #  Task Description                                         Agent      Status        Depends On
+  1  [Round 1] write a matmul for me                          generator  🟢 completed  -
+  2  [Round 1] Compile and debug generated code               debugger   🟢 completed  task_1
+  3  [Round 1] Optimise code for: performance and efficiency  optimizer  🟢 completed  task_2
+  4  [Round 2] write a matmul for me                          generator  🟢 completed  task_3
+  5  [Round 2] Compile and debug generated code               debugger   🟢 completed  task_4
+  6  [Round 2] Optimise code for: performance and efficiency  optimizer  🟢 completed  task_5
+  7  [Round 3] write a matmul for me                          generator  🟢 completed  task_6
+  8  [Round 3] Compile and debug generated code               debugger   🟢 completed  task_7
+  9  [Round 3] Optimise code for: performance and efficiency  optimizer  🟡 pending    task_8
+ 10  [Round 2] Continue code generation after bug fix         generator  🟢 completed  task_2
+ 11  [Round 2] Compile and debug generated code               debugger   🟢 completed  task_10
+ 12  [Round 2] Optimise code after bug fix                    optimizer  🟢 completed  task_11
+ 13  [Round 3] Continue code generation after bug fix         generator  🟢 completed  task_11
+ 14  [Round 3] Compile and debug generated code               debugger   🟢 completed  task_13
+ 15  [Round 3] Optimise code after bug fix                    optimizer  🟢 completed  task_14
+ 16  [Round 3] Continue code generation after bug fix         generator  🟢 completed  task_5
+ 17  [Round 3] Compile and debug generated code               debugger   🟢 completed  task_16
+ 18  [Round 3] Optimise code after bug fix                    optimizer  🟡 pending    task_17
+```
+
+> **说明**：每一轮任务链条（生成→调试→优化）自动串联，遇到错误时动态插入调试与修复任务，所有任务依赖关系、状态（🟢已完成/🟡待处理）一目了然，便于追踪和分析。
+
+### 智能配置管理
+
+系统通过配置文件控制优化行为：
+
+```json
+{
+  "debug_repair": {
+    "max_repair_attempts": 3
+  },
+  "optimization": {
+    "max_optimisation_rounds": 3,
+    "optimizer_enabled": true
+  }
+}
+```
+
+### 详细执行反馈
+
+每个任务执行时提供详细的指令和状态反馈：
+
+```
+🤖 Pinocchio: [session_16763a26] 🔄 Executing 🔧 DEBUGGER (Task task_2)
+🤖 Pinocchio: [session_16763a26]    📋 Description: [Round 1] Compile and debug generated code
+🤖 Pinocchio: [session_16763a26]    💡 Detailed Instruction:
+🤖 Pinocchio: [session_16763a26]       Compile and analyze the generated Choreo DSL code for errors.
+🤖 Pinocchio: [session_16763a26]       Debugging Goals:
+🤖 Pinocchio: [session_16763a26]       - Identify compilation errors
+🤖 Pinocchio: [session_16763a26]       - Detect runtime issues
+🤖 Pinocchio: [session_16763a26]       - Provide detailed error analysis
+🤖 Pinocchio: [session_16763a26]       - Suggest fixes and improvements
+```
+
+### 智能体参与统计
+
+系统提供详细的智能体参与统计信息：
+
+```
+🤖 Pinocchio: [session_16763a26] 🤖 Agent Participation Summary:
+🤖 Pinocchio: [session_16763a26]    ⚡ GENERATOR: 6/6 (100.0% success)
+🤖 Pinocchio: [session_16763a26]    🔧 DEBUGGER: 6/6 (100.0% success)
+🤖 Pinocchio: [session_16763a26]    🚀 OPTIMIZER: 6/6 (100.0% success)
+```
+
 ## 🚀 核心特性
 
 - **简洁架构**：清晰的模块职责和通信路径
@@ -79,28 +175,32 @@ func conv_kernel(input: tensor, output: tensor) {
 - **完整记录**：结构化日志记录，便于调试和分析
 - **模块化设计**：松耦合架构，便于扩展和维护
 - **易于调试**：JSON文件存储，便于查看和调试
+- **智能任务规划**：自动分解复杂需求，动态调整执行策略
+- **多轮优化**：支持多轮生成→调试→优化循环
+- **动态调试插入**：根据错误自动插入调试任务
+- **实时可视化**：任务计划的可视化界面和状态跟踪
 
 ## 🏗️ 系统架构
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   User Input    │───▶│  Coordinator    │───▶│  Planning Agent │
+│   User Input    │───▶│  Coordinator    │───▶│  TaskPlanner    │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                                 │                       │
                                 ▼                       ▼
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  SessionLogger  │◀───│  PromptManager  │◀───│  Plan: TodoList │
+│  SessionLogger  │◀───│  TaskExecutor   │◀───│  Task Plan      │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
+                                │                       │
+                                ▼                       ▼
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  MemoryManager  │◀───│     Agent       │───▶│      LLM        │
+│  MemoryManager  │◀───│  PromptManager  │◀───│  Agent Pool     │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │ KnowledgeManager│
-                       └─────────────────┘
+                                │                       │
+                                ▼                       ▼
+                       ┌─────────────────┐    ┌─────────────────┐
+                       │ KnowledgeManager│    │      LLM        │
+                       └─────────────────┘    └─────────────────┘
 ```
 
 ### 核心组件
@@ -108,9 +208,11 @@ func conv_kernel(input: tensor, output: tensor) {
 | 组件 | 职责 | 核心功能 |
 |------|------|----------|
 | **Coordinator** | 系统总指挥 | 流程控制、Session管理、流式输出 |
+| **TaskPlanner** | 任务规划器 | 智能任务分解、多轮优化链生成 |
+| **TaskExecutor** | 任务执行器 | 动态任务调度、错误恢复、依赖管理 |
 | **SessionLogger** | 结构化logger | 摘要日志、详细通信记录、持久化 |
 | **PromptManager** | 综合prompt构建器 | 整合Memory+Knowledge+Context |
-| **Agent** | 纯执行器 | 调用LLM、解析结构化输出 |
+| **Agent Pool** | 智能体池 | Generator、Debugger、Optimizer管理 |
 | **MemoryManager** | 记忆管理 | 存储Agent交互、检索相关记忆 |
 | **KnowledgeManager** | 知识管理 | 只读知识、按需检索 |
 | **LLM** | 大语言模型接口 | 统一的LLM调用封装 |
@@ -224,12 +326,15 @@ asyncio.run(main())
 ```
 pinocchio/
 ├── coordinator.py          # 总指挥 - 多智能体协作核心
+├── task_planner.py        # 智能任务规划器
+├── task_executor.py       # 任务执行器
 ├── session_logger.py      # 结构化logger - 会话管理
 ├── agents/               # 智能体模块
 │   ├── __init__.py
 │   ├── base.py           # 智能体基类
 │   ├── generator.py      # 代码生成智能体
-│   └── planner.py        # 规划智能体
+│   ├── debugger.py       # 调试智能体
+│   └── optimizer.py      # 优化智能体
 ├── cli/                  # 命令行界面
 │   ├── __init__.py
 │   └── main.py          # CLI 主程序
@@ -248,7 +353,8 @@ pinocchio/
 │   └── models/          # 提示词模型
 ├── data_models/          # 数据模型
 │   ├── __init__.py
-│   └── agent.py         # 智能体数据模型
+│   ├── agent.py         # 智能体数据模型
+│   └── task.py          # 任务数据模型
 └── utils/               # 工具函数
     ├── __init__.py
     ├── file_utils.py    # 文件操作工具
@@ -296,7 +402,18 @@ PINOCCHIO_STORAGE_PATH=./data
     "debugger": {
       "enabled": true,
       "max_retries": 3
+    },
+    "optimizer": {
+      "enabled": true,
+      "max_retries": 3
     }
+  },
+  "debug_repair": {
+    "max_repair_attempts": 3
+  },
+  "optimization": {
+    "max_optimisation_rounds": 3,
+    "optimizer_enabled": true
   }
 }
 ```
@@ -360,6 +477,55 @@ class CustomAgent(Agent):
             }
         }
         """
+```
+
+### 自定义任务规划策略
+
+```python
+from pinocchio.task_planner import TaskPlanner
+from pinocchio.data_models.task import Task, TaskStatus, AgentType
+
+class CustomTaskPlanner(TaskPlanner):
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+
+    def generate_plan(self, user_request: str) -> List[Task]:
+        """生成自定义任务计划"""
+        tasks = []
+
+        # 添加自定义任务
+        tasks.append(Task(
+            task_id=f"task_{len(tasks) + 1}",
+            description="Custom analysis task",
+            agent_type=AgentType.GENERATOR,
+            priority=1,
+            dependencies=[],
+            status=TaskStatus.PENDING
+        ))
+
+        return tasks
+```
+
+### 扩展任务执行逻辑
+
+```python
+from pinocchio.task_executor import TaskExecutor
+
+class CustomTaskExecutor(TaskExecutor):
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+
+    async def _execute_task(self, task: Task, context: Dict[str, Any]) -> TaskResult:
+        """自定义任务执行逻辑"""
+        # 实现自定义执行逻辑
+        result = await super()._execute_task(task, context)
+
+        # 添加自定义后处理
+        if result.success and task.agent_type == AgentType.GENERATOR:
+            # 自定义生成后处理
+            pass
+
+        return result
 ```
 
 ### 扩展记忆管理
