@@ -64,19 +64,17 @@ def print_block_logo():
             "#6EE7B7",  # Green
         ]
         text = "PINOCCHIO"
-        f = Figlet(font="block")
-        ascii_art = f.renderText(text).splitlines()
-
-        # Print each line with color gradient
-        for i, line in enumerate(ascii_art):
-            if line.strip():  # Only color non-empty lines
-                # Use filled block character █ instead of hollow
-                filled_line = line.replace("_", "█").replace("|", "█")
-                color = colors[i % len(colors)]
-                console.print(f"[bold {color}]{filled_line}[/]")
-
+        
+        # Create a simple colored text logo that won't wrap
+        colored_text = ""
+        for i, char in enumerate(text):
+            color = colors[i % len(colors)]
+            colored_text += f"[bold {color}]{char}[/]"
+        
+        # Center the logo
+        console.print("\n" + colored_text.center(80) + "\n")
         console.print(
-            "\n🎭 Pinocchio CLI - Multi-Agent Collaboration System", style="bold"
+            "🎭 Pinocchio CLI - Multi-Agent Collaboration System", style="bold"
         )
         console.print("Type your request and press Enter to start...")
         console.print("Type '/help' for available commands")
