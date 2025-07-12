@@ -72,6 +72,7 @@ class EvaluatorAgent(AgentWithRetry):
         baseline_metrics = request.get("baseline_metrics", {})
         context = request.get("context", {})
         evaluation_criteria = request.get("evaluation_criteria", [])
+        detailed_instruction = request.get("detailed_instruction", "")
 
         prompt_parts = [
             "You are an Evaluator agent in the Pinocchio multi-agent system.",
@@ -82,6 +83,20 @@ class EvaluatorAgent(AgentWithRetry):
             code,
             "```",
         ]
+
+        # Add detailed instruction if available
+        if detailed_instruction:
+            prompt_parts.extend(["", "Detailed Instructions:", detailed_instruction])
+        else:
+            # Fallback to basic evaluation criteria
+            if evaluation_criteria:
+                prompt_parts.extend(
+                    [
+                        "",
+                        "Evaluation Criteria:",
+                        "- " + "\n- ".join(evaluation_criteria),
+                    ]
+                )
 
         if performance_metrics:
             prompt_parts.extend(
@@ -99,11 +114,6 @@ class EvaluatorAgent(AgentWithRetry):
                     "Baseline Metrics:",
                     self._format_performance_metrics(baseline_metrics),
                 ]
-            )
-
-        if evaluation_criteria:
-            prompt_parts.extend(
-                ["", "Evaluation Criteria:", "- " + "\n- ".join(evaluation_criteria)]
             )
 
         if context:

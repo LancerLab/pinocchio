@@ -71,6 +71,7 @@ class GeneratorAgent(AgentWithRetry):
         context = request.get("context", {})
         requirements = request.get("requirements", {})
         optimization_goals = request.get("optimization_goals", [])
+        detailed_instruction = request.get("detailed_instruction", "")
 
         prompt_parts = [
             "You are a Generator agent in the Pinocchio multi-agent system.",
@@ -79,15 +80,20 @@ class GeneratorAgent(AgentWithRetry):
             f"Task Description: {task_description}",
         ]
 
-        if requirements:
-            prompt_parts.extend(
-                ["", "Requirements:", self._format_requirements(requirements)]
-            )
+        # Add detailed instruction if available
+        if detailed_instruction:
+            prompt_parts.extend(["", "Detailed Instructions:", detailed_instruction])
+        else:
+            # Fallback to basic requirements
+            if requirements:
+                prompt_parts.extend(
+                    ["", "Requirements:", self._format_requirements(requirements)]
+                )
 
-        if optimization_goals:
-            prompt_parts.extend(
-                ["", "Optimization Goals:", "- " + "\n- ".join(optimization_goals)]
-            )
+            if optimization_goals:
+                prompt_parts.extend(
+                    ["", "Optimization Goals:", "- " + "\n- ".join(optimization_goals)]
+                )
 
         if context:
             prompt_parts.extend(["", "Context:", str(context)])

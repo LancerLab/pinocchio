@@ -193,6 +193,7 @@ Please provide your analysis in JSON format:
         task_counter = 1
 
         # Always start with code generation
+        generator_instruction = self._build_generator_instruction(context)
         generator_task = Task(
             task_id=f"task_{task_counter}",
             agent_type=AgentType.GENERATOR,
@@ -200,13 +201,17 @@ Please provide your analysis in JSON format:
             requirements=context.requirements,
             optimization_goals=context.optimization_goals,
             priority=TaskPriority.CRITICAL,
-            input_data={"user_request": context.user_request},
+            input_data={
+                "user_request": context.user_request,
+                "instruction": generator_instruction,
+            },
         )
         tasks.append(generator_task)
         task_counter += 1
 
         # Add optimization task if optimization goals exist
         if context.optimization_goals:
+            optimizer_instruction = self._build_optimizer_instruction(context)
             optimizer_task = Task(
                 task_id=f"task_{task_counter}",
                 agent_type=AgentType.OPTIMIZER,
@@ -216,13 +221,17 @@ Please provide your analysis in JSON format:
                 dependencies=[
                     TaskDependency(task_id="task_1", dependency_type="required")
                 ],
-                input_data={"optimization_goals": context.optimization_goals},
+                input_data={
+                    "optimization_goals": context.optimization_goals,
+                    "instruction": optimizer_instruction,
+                },
             )
             tasks.append(optimizer_task)
             task_counter += 1
 
         # Add debugging task if error handling is needed
         if "error_handling" in context.constraints:
+            debugger_instruction = self._build_debugger_instruction(context)
             debugger_task = Task(
                 task_id=f"task_{task_counter}",
                 agent_type=AgentType.DEBUGGER,
@@ -232,7 +241,10 @@ Please provide your analysis in JSON format:
                 dependencies=[
                     TaskDependency(task_id="task_1", dependency_type="required")
                 ],
-                input_data={"error_handling": True},
+                input_data={
+                    "error_handling": True,
+                    "instruction": debugger_instruction,
+                },
             )
             tasks.append(debugger_task)
             task_counter += 1
@@ -241,6 +253,7 @@ Please provide your analysis in JSON format:
         if context.optimization_goals or context.requirements.get(
             "performance_requirements"
         ):
+            evaluator_instruction = self._build_evaluator_instruction(context)
             evaluator_task = Task(
                 task_id=f"task_{task_counter}",
                 agent_type=AgentType.EVALUATOR,
@@ -250,11 +263,159 @@ Please provide your analysis in JSON format:
                 dependencies=[
                     TaskDependency(task_id="task_1", dependency_type="required")
                 ],
-                input_data={"evaluation_criteria": context.optimization_goals},
+                input_data={
+                    "evaluation_criteria": context.optimization_goals,
+                    "instruction": evaluator_instruction,
+                },
             )
             tasks.append(evaluator_task)
 
         return tasks
+
+    def _build_generator_instruction(self, context: TaskPlanningContext) -> str:
+        """Build detailed instruction for generator agent."""
+        instruction_parts = [
+            "Generate high-performance Choreo DSL operator code based on the user request.",
+            "",
+            "Key Requirements:",
+        ]
+
+        if context.requirements:
+            for key, value in context.requirements.items():
+                instruction_parts.append(f"- {key}: {value}")
+
+        if context.optimization_goals:
+            instruction_parts.extend(
+                [
+                    "",
+                    "Optimization Goals:",
+                    "- " + "\n- ".join(context.optimization_goals),
+                ]
+            )
+
+        if context.constraints:
+            instruction_parts.extend(
+                ["", "Constraints:", "- " + "\n- ".join(context.constraints)]
+            )
+
+        instruction_parts.extend(
+            [
+                "",
+                "Focus on:",
+                "- Performance optimization (loop tiling, vectorization, memory coalescing)",
+                "- Memory efficiency and access patterns",
+                "- Correctness and safety with proper error checking",
+                "- Code readability and maintainability",
+                "- Following Choreo DSL syntax and conventions",
+            ]
+        )
+
+        return "\n".join(instruction_parts)
+
+    def _build_optimizer_instruction(self, context: TaskPlanningContext) -> str:
+        """Build detailed instruction for optimizer agent."""
+        instruction_parts = [
+            "Analyze and optimize the generated Choreo DSL code for better performance.",
+            "",
+            "Optimization Goals:",
+            "- " + "\n- ".join(context.optimization_goals),
+        ]
+
+        if context.requirements:
+            instruction_parts.extend(
+                [
+                    "",
+                    "Additional Requirements:",
+                    "- "
+                    + "\n- ".join(
+                        [f"{k}: {v}" for k, v in context.requirements.items()]
+                    ),
+                ]
+            )
+
+        instruction_parts.extend(
+            [
+                "",
+                "Optimization Focus:",
+                "- Identify performance bottlenecks",
+                "- Apply advanced optimization techniques",
+                "- Maintain code correctness",
+                "- Provide detailed optimization explanations",
+                "- Suggest hyperparameter tuning",
+            ]
+        )
+
+        return "\n".join(instruction_parts)
+
+    def _build_debugger_instruction(self, context: TaskPlanningContext) -> str:
+        """Build detailed instruction for debugger agent."""
+        instruction_parts = [
+            "Analyze the generated code for potential issues, errors, and improvements.",
+            "",
+            "Debugging Focus:",
+            "- Syntax errors and compatibility issues",
+            "- Logic errors and edge cases",
+            "- Performance bottlenecks",
+            "- Memory access patterns",
+            "- Error handling and validation",
+        ]
+
+        if context.constraints:
+            instruction_parts.extend(
+                [
+                    "",
+                    "Specific Constraints to Check:",
+                    "- " + "\n- ".join(context.constraints),
+                ]
+            )
+
+        instruction_parts.extend(
+            [
+                "",
+                "Provide:",
+                "- Detailed analysis of issues found",
+                "- Specific fixes with explanations",
+                "- Improved code version",
+                "- Recommendations for robustness",
+            ]
+        )
+
+        return "\n".join(instruction_parts)
+
+    def _build_evaluator_instruction(self, context: TaskPlanningContext) -> str:
+        """Build detailed instruction for evaluator agent."""
+        instruction_parts = [
+            "Evaluate the generated code for performance, correctness, and quality.",
+            "",
+            "Evaluation Criteria:",
+        ]
+
+        if context.optimization_goals:
+            instruction_parts.append("- " + "\n- ".join(context.optimization_goals))
+
+        if context.requirements.get("performance_requirements"):
+            instruction_parts.extend(
+                [
+                    "",
+                    "Performance Requirements:",
+                    f"- {context.requirements['performance_requirements']}",
+                ]
+            )
+
+        instruction_parts.extend(
+            [
+                "",
+                "Evaluation Focus:",
+                "- Code quality and maintainability",
+                "- Performance characteristics",
+                "- Memory usage patterns",
+                "- Correctness and safety",
+                "- Optimization effectiveness",
+                "- Scalability considerations",
+            ]
+        )
+
+        return "\n".join(instruction_parts)
 
     async def create_adaptive_plan(
         self, user_request: str, previous_results: Dict[str, Any]

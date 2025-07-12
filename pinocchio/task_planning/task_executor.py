@@ -10,6 +10,7 @@ from ..data_models.task_planning import (
     TaskPlan,
     TaskPriority,
     TaskResult,
+    TaskStatus,
 )
 from ..llm.mock_client import MockLLMClient
 
@@ -51,11 +52,55 @@ class TaskExecutor:
         plan.mark_started()
         yield f"🤖 Starting execution of plan {plan.plan_id} with {len(plan.tasks)} tasks"
 
+        # Display task plan details
+        async for msg in self._display_task_plan_overview(plan):
+            yield msg
+
         # Track execution state
         completed_tasks = []
         failed_tasks = []
         execution_results = {}
 
+        # Execute tasks
+        async for msg in self._execute_tasks(
+            plan, completed_tasks, failed_tasks, execution_results
+        ):
+            yield msg
+
+        # Finalize plan
+        async for msg in self._finalize_plan(plan, execution_results):
+            yield msg
+
+    async def _display_task_plan_overview(
+        self, plan: TaskPlan
+    ) -> AsyncGenerator[str, None]:
+        """Display task plan overview."""
+        yield "📋 Task Plan Overview:"
+        for i, task in enumerate(plan.tasks, 1):
+            agent_emoji = self._get_agent_emoji(task.agent_type)
+            priority_emoji = self._get_priority_emoji(task.priority)
+            yield f"  {i}. {agent_emoji} {task.agent_type.upper()} ({priority_emoji} {task.priority})"
+            yield f"     📝 {task.task_description}"
+            if task.input_data.get("instruction"):
+                instruction_preview = (
+                    task.input_data["instruction"][:100] + "..."
+                    if len(task.input_data["instruction"]) > 100
+                    else task.input_data["instruction"]
+                )
+                yield f"     💡 Instruction: {instruction_preview}"
+            if task.dependencies:
+                deps = ", ".join([dep.task_id for dep in task.dependencies])
+                yield f"     🔗 Dependencies: {deps}"
+            yield ""
+
+    async def _execute_tasks(
+        self,
+        plan: TaskPlan,
+        completed_tasks: list,
+        failed_tasks: list,
+        execution_results: dict,
+    ) -> AsyncGenerator[str, None]:
+        """Execute tasks in the plan."""
         while not plan.is_completed() and not plan.is_failed():
             # Get ready tasks
             ready_tasks = plan.get_ready_tasks()
@@ -70,37 +115,78 @@ class TaskExecutor:
 
             # Execute ready tasks (could be parallel in the future)
             for task in ready_tasks:
-                yield f"🔄 Executing task {task.task_id}: {task.agent_type}"
+                async for msg in self._execute_single_task_with_verbose(
+                    task, execution_results, completed_tasks, failed_tasks
+                ):
+                    yield msg
 
-                try:
-                    result = await self._execute_task(task, execution_results)
-
-                    if result.success:
-                        task.mark_completed(result)
-                        completed_tasks.append(task.task_id)
-                        execution_results[task.task_id] = result.output
-                        yield f"✅ Task {task.task_id} completed successfully"
-                    else:
-                        task.mark_failed(result.error_message or "Unknown error")
-                        failed_tasks.append(task.task_id)
-                        yield f"❌ Task {task.task_id} failed: {result.error_message}"
-
-                        # Check if this is a critical task
-                        if task.priority == TaskPriority.CRITICAL:
-                            plan.mark_failed()
-                            yield f"💥 Critical task {task.task_id} failed, stopping execution"
-                            break
-
-                except Exception as e:
-                    error_msg = f"Exception in task {task.task_id}: {str(e)}"
-                    task.mark_failed(error_msg)
-                    failed_tasks.append(task.task_id)
-                    yield f"💥 Task {task.task_id} failed with exception: {str(e)}"
-
-                    if task.priority == TaskPriority.CRITICAL:
+                    # Check if we should stop due to critical failure
+                    if (
+                        task.priority == TaskPriority.CRITICAL
+                        and task.status == TaskStatus.FAILED
+                    ):
                         plan.mark_failed()
-                        break
+                        yield f"💥 Critical task {task.task_id} failed, stopping execution"
+                        return
 
+                yield ""  # Add spacing between tasks
+
+    async def _execute_single_task_with_verbose(
+        self,
+        task: Task,
+        execution_results: dict,
+        completed_tasks: list,
+        failed_tasks: list,
+    ) -> AsyncGenerator[str, None]:
+        """Execute a single task with verbose output."""
+        agent_emoji = self._get_agent_emoji(task.agent_type)
+        yield f"🔄 Executing {agent_emoji} {task.agent_type.upper()} (Task {task.task_id})"
+        yield f"   📋 Description: {task.task_description}"
+
+        if task.input_data.get("instruction"):
+            yield "   💡 Detailed Instruction:"
+            instruction_lines = task.input_data["instruction"].split("\n")
+            for line in instruction_lines:
+                if line.strip():
+                    yield f"      {line}"
+            yield ""
+
+        try:
+            result = await self._execute_task(task, execution_results)
+
+            if result.success:
+                task.mark_completed(result)
+                completed_tasks.append(task.task_id)
+                execution_results[task.task_id] = result.output
+
+                # Show success summary
+                yield f"✅ {agent_emoji} {task.agent_type.upper()} completed successfully"
+                if result.output:
+                    output_summary = self._get_output_summary(
+                        task.agent_type, result.output
+                    )
+                    if output_summary:
+                        yield f"   📊 {output_summary}"
+
+                # Show execution time
+                if result.execution_time_ms:
+                    yield f"   ⏱️ Execution time: {result.execution_time_ms}ms"
+
+            else:
+                task.mark_failed(result.error_message or "Unknown error")
+                failed_tasks.append(task.task_id)
+                yield f"❌ {agent_emoji} {task.agent_type.upper()} failed: {result.error_message}"
+
+        except Exception as e:
+            error_msg = f"Exception in task {task.task_id}: {str(e)}"
+            task.mark_failed(error_msg)
+            failed_tasks.append(task.task_id)
+            yield f"💥 {agent_emoji} {task.agent_type.upper()} failed with exception: {str(e)}"
+
+    async def _finalize_plan(
+        self, plan: TaskPlan, execution_results: dict
+    ) -> AsyncGenerator[str, None]:
+        """Finalize plan and show summary."""
         # Finalize plan
         if plan.is_completed():
             final_result = self._compile_final_result(execution_results, plan)
@@ -113,6 +199,31 @@ class TaskExecutor:
         # Report final statistics
         progress = plan.get_progress()
         yield f"📊 Final statistics: {progress['completed_tasks']}/{progress['total_tasks']} tasks completed"
+
+        # Show agent participation summary
+        yield "🤖 Agent Participation Summary:"
+        agent_stats = self._calculate_agent_stats(plan)
+
+        for agent_type, stats in agent_stats.items():
+            agent_emoji = self._get_agent_emoji(agent_type)
+            success_rate = (
+                (stats["completed"] / stats["total"]) * 100 if stats["total"] > 0 else 0
+            )
+            yield f"   {agent_emoji} {agent_type.upper()}: {stats['completed']}/{stats['total']} ({success_rate:.1f}% success)"
+
+    def _calculate_agent_stats(self, plan: TaskPlan) -> dict:
+        """Calculate agent participation statistics."""
+        agent_stats = {}
+        for task in plan.tasks:
+            agent_type = task.agent_type
+            if agent_type not in agent_stats:
+                agent_stats[agent_type] = {"total": 0, "completed": 0, "failed": 0}
+            agent_stats[agent_type]["total"] += 1
+            if task.status == TaskStatus.COMPLETED:
+                agent_stats[agent_type]["completed"] += 1
+            elif task.status == TaskStatus.FAILED:
+                agent_stats[agent_type]["failed"] += 1
+        return agent_stats
 
     async def _execute_task(
         self, task: Task, previous_results: Dict[str, Any]
@@ -185,6 +296,10 @@ class TaskExecutor:
             "context": task.input_data,
             "timestamp": task.created_at.timestamp(),
         }
+
+        # Add detailed instruction if available
+        if "instruction" in task.input_data:
+            request["detailed_instruction"] = task.input_data["instruction"]
 
         # Add previous results as context
         if previous_results:
@@ -315,3 +430,50 @@ class TaskExecutor:
         """Reset statistics for all agents."""
         for agent in self.agents.values():
             agent.reset_stats()
+
+    def _get_agent_emoji(self, agent_type: AgentType) -> str:
+        """Get emoji for agent type."""
+        emoji_map = {
+            AgentType.GENERATOR: "⚡",
+            AgentType.OPTIMIZER: "🚀",
+            AgentType.DEBUGGER: "🔧",
+            AgentType.EVALUATOR: "📊",
+        }
+        return emoji_map.get(agent_type, "🤖")
+
+    def _get_priority_emoji(self, priority: TaskPriority) -> str:
+        """Get emoji for task priority."""
+        emoji_map = {
+            TaskPriority.CRITICAL: "🔴",
+            TaskPriority.HIGH: "🟡",
+            TaskPriority.MEDIUM: "🟢",
+            TaskPriority.LOW: "🔵",
+        }
+        return emoji_map.get(priority, "⚪")
+
+    def _get_output_summary(self, agent_type: AgentType, output: Dict[str, Any]) -> str:
+        """Get a summary of agent output."""
+        if agent_type == AgentType.GENERATOR:
+            if "code" in output:
+                code_lines = len(output["code"].split("\n"))
+                return f"Generated {code_lines} lines of code"
+            return "Code generation completed"
+
+        elif agent_type == AgentType.OPTIMIZER:
+            if "optimization_suggestions" in output:
+                suggestions = len(output["optimization_suggestions"])
+                return f"Provided {suggestions} optimization suggestions"
+            return "Optimization analysis completed"
+
+        elif agent_type == AgentType.DEBUGGER:
+            if "issues_found" in output:
+                issues = len(output["issues_found"])
+                return f"Found {issues} issues"
+            return "Debugging analysis completed"
+
+        elif agent_type == AgentType.EVALUATOR:
+            if "performance_metrics" in output:
+                return "Performance evaluation completed"
+            return "Evaluation completed"
+
+        return "Task completed"

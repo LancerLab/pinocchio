@@ -69,13 +69,12 @@ class DebuggerAgent(AgentWithRetry):
         """
         code = request.get("code", "")
         error_message = request.get("error_message", "")
-        error_type = request.get("error_type", "")
         context = request.get("context", {})
-        runtime_info = request.get("runtime_info", {})
+        detailed_instruction = request.get("detailed_instruction", "")
 
         prompt_parts = [
             "You are a Debugger agent in the Pinocchio multi-agent system.",
-            "Your primary task is to analyze Choreo DSL code for errors and provide debugging solutions.",
+            "Your primary task is to analyze Choreo DSL code for issues and provide fixes.",
             "",
             "Code to debug:",
             "```choreo",
@@ -87,16 +86,14 @@ class DebuggerAgent(AgentWithRetry):
             prompt_parts.extend(
                 [
                     "",
-                    "Error Information:",
-                    f"Type: {error_type}",
-                    f"Message: {error_message}",
+                    "Error Message:",
+                    error_message,
                 ]
             )
 
-        if runtime_info:
-            prompt_parts.extend(
-                ["", "Runtime Information:", self._format_runtime_info(runtime_info)]
-            )
+        # Add detailed instruction if available
+        if detailed_instruction:
+            prompt_parts.extend(["", "Detailed Instructions:", detailed_instruction])
 
         if context:
             prompt_parts.extend(["", "Context:", str(context)])

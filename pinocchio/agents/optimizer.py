@@ -71,6 +71,7 @@ class OptimizerAgent(AgentWithRetry):
         performance_metrics = request.get("performance_metrics", {})
         context = request.get("context", {})
         current_performance = request.get("current_performance", {})
+        detailed_instruction = request.get("detailed_instruction", "")
 
         prompt_parts = [
             "You are an Optimizer agent in the Pinocchio multi-agent system.",
@@ -82,10 +83,15 @@ class OptimizerAgent(AgentWithRetry):
             "```",
         ]
 
-        if optimization_goals:
-            prompt_parts.extend(
-                ["", "Optimization Goals:", "- " + "\n- ".join(optimization_goals)]
-            )
+        # Add detailed instruction if available
+        if detailed_instruction:
+            prompt_parts.extend(["", "Detailed Instructions:", detailed_instruction])
+        else:
+            # Fallback to basic optimization goals
+            if optimization_goals:
+                prompt_parts.extend(
+                    ["", "Optimization Goals:", "- " + "\n- ".join(optimization_goals)]
+                )
 
         if current_performance:
             prompt_parts.extend(
