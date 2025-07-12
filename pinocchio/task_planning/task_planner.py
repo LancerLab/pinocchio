@@ -145,7 +145,7 @@ Please provide your analysis in JSON format:
         return self._fallback_analysis(user_request)
 
     def _fallback_analysis(self, user_request: str) -> Dict[str, Any]:
-        """Fallback analysis when LLM fails."""
+        """Enhanced fallback analysis when LLM fails."""
         user_request_lower = user_request.lower()
 
         requirements = {
@@ -154,22 +154,139 @@ Please provide your analysis in JSON format:
             "code_requirements": [],
         }
 
+        # Enhanced optimization goals detection
         optimization_goals = []
-        if any(
-            word in user_request_lower
-            for word in ["optimize", "performance", "fast", "efficient"]
-        ):
+
+        # Performance optimization keywords
+        performance_keywords = [
+            "optimize",
+            "performance",
+            "fast",
+            "efficient",
+            "speed",
+            "quick",
+            "high-performance",
+            "optimization",
+            "tune",
+            "accelerate",
+        ]
+        if any(word in user_request_lower for word in performance_keywords):
             optimization_goals.append("performance")
-        if any(
-            word in user_request_lower for word in ["memory", "efficient", "compact"]
-        ):
+
+        # Memory optimization keywords
+        memory_keywords = [
+            "memory",
+            "efficient",
+            "compact",
+            "memory-efficient",
+            "low-memory",
+            "memory-optimized",
+            "cache",
+            "memory-usage",
+        ]
+        if any(word in user_request_lower for word in memory_keywords):
             optimization_goals.append("memory_efficiency")
-        if any(word in user_request_lower for word in ["scale", "parallel", "thread"]):
+
+        # Scalability keywords
+        scalability_keywords = [
+            "scale",
+            "parallel",
+            "thread",
+            "concurrent",
+            "distributed",
+            "multi-thread",
+            "scalable",
+            "parallelization",
+        ]
+        if any(word in user_request_lower for word in scalability_keywords):
             optimization_goals.append("scalability")
 
+        # Enhanced constraints detection
         constraints = []
-        if any(word in user_request_lower for word in ["debug", "error", "fix"]):
+
+        # Error handling and debugging keywords
+        debug_keywords = [
+            "debug",
+            "error",
+            "fix",
+            "bug",
+            "issue",
+            "problem",
+            "troubleshoot",
+            "error-handling",
+            "robust",
+            "reliable",
+            "safe",
+            "validation",
+        ]
+        if any(word in user_request_lower for word in debug_keywords):
             constraints.append("error_handling")
+
+        # Evaluation and assessment keywords
+        evaluation_keywords = [
+            "evaluate",
+            "assess",
+            "test",
+            "verify",
+            "validate",
+            "check",
+            "quality",
+            "analysis",
+            "review",
+            "inspect",
+        ]
+        if any(word in user_request_lower for word in evaluation_keywords):
+            constraints.append("performance_evaluation")
+
+        # Code quality keywords
+        quality_keywords = [
+            "quality",
+            "maintainable",
+            "readable",
+            "clean",
+            "best-practices",
+            "standards",
+            "conventions",
+        ]
+        if any(word in user_request_lower for word in quality_keywords):
+            constraints.append("code_quality")
+
+        # Auto-detect optimization needs based on operation types
+        operation_keywords = {
+            "convolution": ["performance", "memory_efficiency"],
+            "matrix": ["performance", "memory_efficiency"],
+            "matmul": ["performance", "memory_efficiency"],
+            "conv": ["performance", "memory_efficiency"],
+            "kernel": ["performance", "memory_efficiency"],
+            "operator": ["performance", "memory_efficiency"],
+            "algorithm": ["performance", "scalability"],
+            "computation": ["performance", "memory_efficiency"],
+        }
+
+        for operation, default_goals in operation_keywords.items():
+            if operation in user_request_lower:
+                for goal in default_goals:
+                    if goal not in optimization_goals:
+                        optimization_goals.append(goal)
+                break
+
+        # Auto-detect evaluation needs for complex operations
+        complex_operations = [
+            "convolution",
+            "matrix",
+            "matmul",
+            "conv",
+            "kernel",
+            "operator",
+        ]
+        if any(op in user_request_lower for op in complex_operations):
+            if "performance_evaluation" not in constraints:
+                constraints.append("performance_evaluation")
+
+        # Auto-detect debugging needs for new code generation
+        if "generate" in user_request_lower or "create" in user_request_lower:
+            if "error_handling" not in constraints:
+                constraints.append("error_handling")
 
         return {
             "requirements": requirements,
@@ -181,94 +298,99 @@ Please provide your analysis in JSON format:
 
     async def _generate_tasks(self, context: TaskPlanningContext) -> List[Task]:
         """
-        Generate tasks based on planning context.
-
-        Args:
-            context: Task planning context
-
-        Returns:
-            List of tasks to execute
+        Generate tasks as a multi-round generator→debugger→optimiser chain.
         """
+        from ..config.settings import Settings
+
+        config = Settings()
+        try:
+            config.load_from_file("pinocchio.json")
+        except Exception:
+            pass
+        max_rounds = int(config.get("task_planning.max_optimisation_rounds", 3))
+        enable_optimiser = bool(config.get("task_planning.enable_optimiser", True))
+
         tasks = []
         task_counter = 1
-
-        # Always start with code generation
-        generator_instruction = self._build_generator_instruction(context)
-        generator_task = Task(
-            task_id=f"task_{task_counter}",
-            agent_type=AgentType.GENERATOR,
-            task_description=context.user_request,
-            requirements=context.requirements,
-            optimization_goals=context.optimization_goals,
-            priority=TaskPriority.CRITICAL,
-            input_data={
-                "user_request": context.user_request,
-                "instruction": generator_instruction,
-            },
-        )
-        tasks.append(generator_task)
-        task_counter += 1
-
-        # Add optimization task if optimization goals exist
-        if context.optimization_goals:
-            optimizer_instruction = self._build_optimizer_instruction(context)
-            optimizer_task = Task(
-                task_id=f"task_{task_counter}",
-                agent_type=AgentType.OPTIMIZER,
-                task_description=f"Optimize generated code for: {', '.join(context.optimization_goals)}",
-                requirements={"optimization_goals": context.optimization_goals},
-                priority=TaskPriority.HIGH,
+        prev_task_id = None
+        for round_idx in range(1, max_rounds + 1):
+            # Generator
+            generator_instruction = self._build_generator_instruction(context)
+            generator_task_id = f"task_{task_counter}"
+            generator_task = Task(
+                task_id=generator_task_id,
+                agent_type=AgentType.GENERATOR,
+                task_description=f"[Round {round_idx}] {context.user_request}",
+                requirements=context.requirements,
+                optimization_goals=context.optimization_goals,
+                priority=TaskPriority.CRITICAL,
                 dependencies=[
-                    TaskDependency(task_id="task_1", dependency_type="required")
-                ],
+                    TaskDependency(task_id=prev_task_id, dependency_type="required")
+                ]
+                if prev_task_id
+                else [],
                 input_data={
-                    "optimization_goals": context.optimization_goals,
-                    "instruction": optimizer_instruction,
+                    "user_request": context.user_request,
+                    "instruction": generator_instruction,
+                    "optimisation_round": round_idx,
                 },
             )
-            tasks.append(optimizer_task)
+            tasks.append(generator_task)
             task_counter += 1
+            prev_task_id = generator_task_id
 
-        # Add debugging task if error handling is needed
-        if "error_handling" in context.constraints:
+            # Debugger (must follow every generator)
             debugger_instruction = self._build_debugger_instruction(context)
+            debugger_task_id = f"task_{task_counter}"
             debugger_task = Task(
-                task_id=f"task_{task_counter}",
+                task_id=debugger_task_id,
                 agent_type=AgentType.DEBUGGER,
-                task_description="Analyze code for potential issues and errors",
+                task_description=f"[Round {round_idx}] Compile and debug generated code",
                 requirements={"error_handling": True},
-                priority=TaskPriority.HIGH,
+                priority=TaskPriority.CRITICAL,
                 dependencies=[
-                    TaskDependency(task_id="task_1", dependency_type="required")
+                    TaskDependency(
+                        task_id=generator_task_id, dependency_type="required"
+                    )
                 ],
                 input_data={
                     "error_handling": True,
                     "instruction": debugger_instruction,
+                    "optimisation_round": round_idx,
                 },
             )
             tasks.append(debugger_task)
             task_counter += 1
+            prev_task_id = debugger_task_id
 
-        # Add evaluation task for performance assessment
-        if context.optimization_goals or context.requirements.get(
-            "performance_requirements"
-        ):
-            evaluator_instruction = self._build_evaluator_instruction(context)
-            evaluator_task = Task(
-                task_id=f"task_{task_counter}",
-                agent_type=AgentType.EVALUATOR,
-                task_description="Evaluate code performance and provide assessment",
-                requirements={"evaluation_criteria": context.optimization_goals},
-                priority=TaskPriority.MEDIUM,
-                dependencies=[
-                    TaskDependency(task_id="task_1", dependency_type="required")
-                ],
-                input_data={
-                    "evaluation_criteria": context.optimization_goals,
-                    "instruction": evaluator_instruction,
-                },
-            )
-            tasks.append(evaluator_task)
+            # Optimiser (optional)
+            if enable_optimiser:
+                optimizer_instruction = self._build_optimizer_instruction(context)
+                optimizer_task_id = f"task_{task_counter}"
+                optimizer_task = Task(
+                    task_id=optimizer_task_id,
+                    agent_type=AgentType.OPTIMIZER,
+                    task_description=f"[Round {round_idx}] Optimise code for: {', '.join(context.optimization_goals) if context.optimization_goals else 'performance and efficiency'}",
+                    requirements={
+                        "optimization_goals": context.optimization_goals
+                        or ["performance", "memory_efficiency"]
+                    },
+                    priority=TaskPriority.HIGH,
+                    dependencies=[
+                        TaskDependency(
+                            task_id=debugger_task_id, dependency_type="required"
+                        )
+                    ],
+                    input_data={
+                        "optimization_goals": context.optimization_goals
+                        or ["performance", "memory_efficiency"],
+                        "instruction": optimizer_instruction,
+                        "optimisation_round": round_idx,
+                    },
+                )
+                tasks.append(optimizer_task)
+                task_counter += 1
+                prev_task_id = optimizer_task_id
 
         return tasks
 
