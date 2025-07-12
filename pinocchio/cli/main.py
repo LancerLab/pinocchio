@@ -65,18 +65,18 @@ def print_block_logo():
         ]
         text = "PINOCCHIO"
         
-        # Use block font but with better handling
+        # Use block font with smaller size
         f = Figlet(font="block")
         ascii_art = f.renderText(text).splitlines()
 
-        # Print each line with color gradient, but limit width
+        # Print each line with color gradient, with very strict width limit
         for i, line in enumerate(ascii_art):
             if line.strip():  # Only color non-empty lines
-                # Use filled block character █ instead of hollow
-                filled_line = line.replace("_", "█").replace("|", "█")
-                # Truncate if too long to prevent wrapping
-                if len(filled_line) > 80:
-                    filled_line = filled_line[:80]
+                # Use filled block character █ instead of # or hollow characters
+                filled_line = line.replace("#", "█").replace("_", "█").replace("|", "█")
+                # Very strict width limit to fit all letters
+                if len(filled_line) > 35:
+                    filled_line = filled_line[:35]
                 color = colors[i % len(colors)]
                 console.print(f"[bold {color}]{filled_line}[/]")
 
