@@ -64,17 +64,22 @@ def print_block_logo():
         f = Figlet(font="block")
         ascii_art = f.renderText(text).splitlines()
 
-        # Print each line with left-to-right color gradient
+        # Find the maximum width of the logo
+        max_width = max(len(line) for line in ascii_art if line.strip())
+
+        # Print each line with left-to-right color gradient across the entire logo
         for line in ascii_art:
             if line.strip():  # Only color non-empty lines
                 # Use filled block character █ instead of hollow
                 filled_line = line.replace("_", "█").replace("|", "█")
                 
-                # Apply color gradient from left to right
+                # Apply color gradient from left to right across the entire line
                 colored_line = ""
                 for i, char in enumerate(filled_line):
                     if char == "█":
-                        color = colors[i % len(colors)]
+                        # Calculate color index based on position across the entire logo width
+                        color_index = int((i / max_width) * (len(colors) - 1))
+                        color = colors[color_index]
                         colored_line += f"[bold {color}]█[/]"
                     else:
                         colored_line += char
