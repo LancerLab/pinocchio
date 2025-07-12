@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import aiohttp
 
-from ..config.models import LLMConfig
+from ..config.models import LLMConfigEntry
 from .base_client import BaseLLMClient
 
 logger = logging.getLogger(__name__)
@@ -15,16 +15,16 @@ logger = logging.getLogger(__name__)
 class CustomLLMClient(BaseLLMClient):
     """Custom LLM client for local network deployment."""
 
-    def __init__(self, config: LLMConfig):
+    def __init__(self, config: LLMConfigEntry):
         """
         Initialize Custom LLM client.
 
         Args:
-            config: LLM configuration object
+            config: LLM configuration entry object
         """
         super().__init__()
         self.config = config
-        self.base_url = config.base_url.rstrip("/")
+        self.base_url = config.base_url.rstrip("/") if config.base_url else None
         self.model_name = config.model_name
         self.timeout = config.timeout
         self.max_retries = config.max_retries

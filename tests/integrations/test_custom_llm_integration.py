@@ -16,6 +16,7 @@ pytestmark = pytest.mark.asyncio
 pytestmark = [pytest.mark.asyncio, pytest.mark.real_llm]
 
 from pinocchio.config import ConfigManager
+from pinocchio.config.models import LLMConfigEntry, LLMProvider
 from pinocchio.llm import CustomLLMClient
 
 # Configure logging
@@ -277,3 +278,108 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+def test_llm_priority_selection():
+    # Multiple LLM configs with different priorities
+    config_data = {
+        "llm": [
+            {
+                "provider": "openai",
+                "model_name": "gpt-4",
+                "api_key": "sk-xxx",
+                "priority": 10,
+            },
+            {
+                "provider": "custom",
+                "base_url": "http://10.0.16.46:8001",
+                "model_name": "Qwen/Qwen3-32B",
+                "priority": 1,
+            },
+            {
+                "provider": "anthropic",
+                "model_name": "claude-3",
+                "api_key": "sk-yyy",
+                "priority": 20,
+            },
+        ]
+    }
+    cm = ConfigManager()
+    cm.config.llm = config_data["llm"]
+    best = cm.get_llm_config()
+    assert isinstance(best, LLMConfigEntry)
+    assert best.provider == LLMProvider.CUSTOM
+    assert best.model_name == "Qwen/Qwen3-32B"
+    assert best.priority == 1
+
+
+@pytest.mark.asyncio
+def test_llm_priority_fallback():
+    # No custom provider, openai preferred
+    config_data = {
+        "llm": [
+            {
+                "provider": "openai",
+                "model_name": "gpt-4",
+                "api_key": "sk-xxx",
+                "priority": 2,
+            },
+            {
+                "provider": "anthropic",
+                "model_name": "claude-3",
+                "api_key": "sk-yyy",
+                "priority": 1,
+            },
+        ]
+    }
+    cm = ConfigManager()
+    cm.config.llm = config_data["llm"]
+    best = cm.get_llm_config()
+    assert best.provider == LLMProvider.ANTHROPIC
+    assert best.priority == 1
+
+
+@pytest.mark.asyncio
+def test_llm_single_entry():
+    # Single LLM object compatibility
+    config_data = {
+        "llm": {
+            "provider": "custom",
+            "base_url": "http://localhost:8001",
+            "model_name": "Qwen/Qwen3-32B",
+            "priority": 1,
+        }
+    }
+    cm = ConfigManager()
+    cm.config.llm = config_data["llm"]
+    best = cm.get_llm_config()
+    assert best.provider == LLMProvider.CUSTOM
+    assert best.model_name == "Qwen/Qwen3-32B"
+    assert best.priority == 1
+
+
+@pytest.mark.asyncio
+def test_llm_priority_same_base_url():
+    # Same base_url, different model_name, priority takes effect
+    config_data = {
+        "llm": [
+            {
+                "provider": "custom",
+                "base_url": "http://localhost:8001",
+                "model_name": "Qwen3-32B-A",
+                "priority": 5,
+            },
+            {
+                "provider": "custom",
+                "base_url": "http://localhost:8001",
+                "model_name": "Qwen3-32B-B",
+                "priority": 1,
+            },
+        ]
+    }
+    cm = ConfigManager()
+    cm.config.llm = config_data["llm"]
+    best = cm.get_llm_config()
+    assert best.provider == LLMProvider.CUSTOM
+    assert best.model_name == "Qwen3-32B-B"
+    assert best.priority == 1

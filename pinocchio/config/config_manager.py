@@ -6,7 +6,13 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-from .models import LLMConfig, PinocchioConfig, SessionConfig, StorageConfig
+from .models import (
+    LLMConfigEntry,
+    LLMConfigList,
+    PinocchioConfig,
+    SessionConfig,
+    StorageConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +76,46 @@ class ConfigManager:
 
             return default_config
 
-    def get_llm_config(self) -> LLMConfig:
-        """Get LLM configuration."""
-        return self.config.llm
+    def get_llm_config(self) -> LLMConfigEntry:
+        """Get the best LLM configuration (auto select by priority)."""
+        llm = self.config.llm
+        if isinstance(llm, list):
+            # Already a list of dicts (from JSON), parse to LLMConfigList
+            llm_list = LLMConfigList(
+                llms=[
+                    LLMConfigEntry(**item)
+                    if not isinstance(item, LLMConfigEntry)
+                    else item
+                    for item in llm
+                ]
+            )
+            return llm_list.get_best_llm()
+        elif isinstance(llm, LLMConfigList):
+            return llm.get_best_llm()
+        elif isinstance(llm, LLMConfigEntry):
+            return llm
+        elif isinstance(llm, dict):
+            # Single dict, treat as one LLMConfigEntry
+            return LLMConfigEntry(**llm)
+        else:
+            raise ValueError("Invalid LLM config format")
+
+    def get_all_llm_configs(self):
+        """Return all LLM configs as a list of LLMConfigEntry."""
+        llm = self.config.llm
+        if isinstance(llm, list):
+            return [
+                LLMConfigEntry(**item) if not isinstance(item, LLMConfigEntry) else item
+                for item in llm
+            ]
+        elif isinstance(llm, LLMConfigList):
+            return llm.llms
+        elif isinstance(llm, LLMConfigEntry):
+            return [llm]
+        elif isinstance(llm, dict):
+            return [LLMConfigEntry(**llm)]
+        else:
+            return []
 
     def get_agent_config(self, agent_type: str) -> Optional[Any]:
         """Get agent configuration."""

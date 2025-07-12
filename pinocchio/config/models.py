@@ -1,13 +1,13 @@
 """Pydantic data models for Pinocchio configuration."""
 
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
 
 class LLMProvider(str, Enum):
-    """LLM provider types."""
+    """Enumeration of supported LLM providers."""
 
     CUSTOM = "custom"
     OPENAI = "openai"
@@ -15,67 +15,75 @@ class LLMProvider(str, Enum):
     MOCK = "mock"
 
 
-class LLMConfig(BaseModel):
-    """LLM configuration data model."""
+class LLMConfigEntry(BaseModel):
+    """Configuration entry for a single LLM provider."""
 
-    provider: LLMProvider = Field(
-        default=LLMProvider.CUSTOM, description="LLM provider type"
+    provider: LLMProvider = Field(..., description="LLM provider type")
+    base_url: Optional[str] = Field(
+        None, description="Base URL for the LLM service (for custom)"
     )
-
-    base_url: str = Field(
-        default="http://localhost:8001", description="Base URL for the LLM service"
-    )
-
-    model_name: str = Field(default="default", description="Model name or identifier")
-
+    model_name: str = Field(..., description="Model name or identifier")
     timeout: int = Field(
         default=120, ge=1, le=600, description="Request timeout in seconds"
     )
-
     max_retries: int = Field(
         default=3, ge=0, le=10, description="Maximum number of retry attempts"
     )
-
     api_key: Optional[str] = Field(
-        default=None, description="API key for the LLM service"
+        None, description="API key for the LLM service (for openai/anthropic)"
     )
-
     headers: Optional[Dict[str, str]] = Field(
         default=None, description="Additional headers for requests"
     )
+    priority: int = Field(
+        default=10,
+        ge=0,
+        le=100,
+        description="Priority for auto selection, lower is higher priority",
+    )
+    label: Optional[str] = Field(None, description="Optional label for this LLM config")
+
+    def __str__(self):
+        """Return string representation of the LLM config entry."""
+        return f"LLMConfigEntry(provider={self.provider}, model_name={self.model_name}, base_url={self.base_url}, priority={self.priority})"
 
     @field_validator("base_url")
     @classmethod
-    def validate_base_url(cls, v):
-        """Validate base URL format."""
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("base_url must start with http:// or https://")
+    def validate_base_url(cls, v, values):
+        """Validate base_url for custom providers."""
+        provider = values.data.get("provider")
+        if provider == LLMProvider.CUSTOM and (
+            not v or not v.startswith(("http://", "https://"))
+        ):
+            raise ValueError(
+                "base_url must be set and start with http:// or https:// for custom provider"
+            )
         return v
 
-    @field_validator("timeout")
-    @classmethod
-    def validate_timeout(cls, v):
-        """Validate timeout value."""
-        if v < 1:
-            raise ValueError("timeout must be at least 1 second")
-        if v > 600:
-            raise ValueError("timeout must not exceed 600 seconds")
-        return v
+    model_config = {"extra": "forbid", "validate_assignment": True}
 
-    @field_validator("max_retries")
-    @classmethod
-    def validate_max_retries(cls, v):
-        """Validate max retries value."""
-        if v < 0:
-            raise ValueError("max_retries must be non-negative")
-        if v > 10:
-            raise ValueError("max_retries must not exceed 10")
-        return v
 
-    model_config = {
-        "extra": "forbid",  # Prevent additional fields
-        "validate_assignment": True,  # Validate on assignment
-    }
+class LLMConfigList(BaseModel):
+    """List of LLM configurations with priority-based selection."""
+
+    llms: List[LLMConfigEntry] = Field(..., description="List of LLM configurations")
+
+    def get_best_llm(self) -> LLMConfigEntry:
+        """Get the best LLM configuration based on priority and provider ranking."""
+
+        # Sort by priority (lower is better), custom > openai > anthropic > mock
+        def sort_key(entry: LLMConfigEntry):
+            provider_rank = {
+                LLMProvider.CUSTOM: 0,
+                LLMProvider.OPENAI: 1,
+                LLMProvider.ANTHROPIC: 2,
+                LLMProvider.MOCK: 3,
+            }.get(entry.provider, 99)
+            return (entry.priority, provider_rank)
+
+        return sorted(self.llms, key=sort_key)[0]
+
+    model_config = {"extra": "forbid", "validate_assignment": True}
 
 
 class AgentConfig(BaseModel):
@@ -153,18 +161,24 @@ class StorageConfig(BaseModel):
 class PinocchioConfig(BaseModel):
     """Main Pinocchio configuration data model."""
 
-    llm: LLMConfig = Field(default_factory=LLMConfig, description="LLM configuration")
-
+    llm: Union[LLMConfigEntry, List[LLMConfigEntry]] = Field(
+        default_factory=lambda: [
+            LLMConfigEntry(
+                provider=LLMProvider.CUSTOM,
+                base_url="http://localhost:8001",
+                model_name="default",
+                priority=1,
+            )
+        ],
+        description="LLM configuration(s)",
+    )
     agents: AgentsConfig = Field(
         default_factory=AgentsConfig, description="Agents configuration"
     )
-
     session: SessionConfig = Field(
         default_factory=SessionConfig, description="Session configuration"
     )
-
     storage: StorageConfig = Field(
         default_factory=StorageConfig, description="Storage configuration"
     )
-
     model_config = {"extra": "forbid", "validate_assignment": True}
