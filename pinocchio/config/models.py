@@ -158,6 +158,30 @@ class StorageConfig(BaseModel):
     model_config = {"extra": "forbid", "validate_assignment": True}
 
 
+class DebugRepairConfig(BaseModel):
+    """Debug repair configuration data model."""
+
+    max_repair_attempts: int = Field(
+        default=3, ge=1, le=10, description="Maximum number of repair attempts"
+    )
+
+    model_config = {"extra": "forbid", "validate_assignment": True}
+
+
+class OptimizationConfig(BaseModel):
+    """Optimization configuration data model."""
+
+    max_optimisation_rounds: int = Field(
+        default=3, ge=1, le=10, description="Maximum number of optimization rounds"
+    )
+
+    optimizer_enabled: bool = Field(
+        default=True, description="Whether optimizer is enabled"
+    )
+
+    model_config = {"extra": "forbid", "validate_assignment": True}
+
+
 class PinocchioConfig(BaseModel):
     """Main Pinocchio configuration data model."""
 
@@ -180,5 +204,11 @@ class PinocchioConfig(BaseModel):
     )
     storage: StorageConfig = Field(
         default_factory=StorageConfig, description="Storage configuration"
+    )
+    debug_repair: DebugRepairConfig = Field(
+        default_factory=DebugRepairConfig, description="Debug repair configuration"
+    )
+    optimization: OptimizationConfig = Field(
+        default_factory=OptimizationConfig, description="Optimization configuration"
     )
     model_config = {"extra": "forbid", "validate_assignment": True}

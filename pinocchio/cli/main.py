@@ -121,7 +121,7 @@ async def main():
     # Load configuration
     try:
         config_manager = ConfigManager()
-        config = config_manager.get_config()
+        config = config_manager.config  # Use .config instead of .get_config()
     except Exception as e:
         console.print(f"[red]Error loading configuration: {e}[/red]")
         return
@@ -181,4 +181,9 @@ async def main():
 
 
 if __name__ == "__main__":
+    asyncio.run(main())
+
+
+def run():
+    """Entry point for the CLI script"""
     asyncio.run(main())
