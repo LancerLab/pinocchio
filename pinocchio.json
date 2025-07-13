@@ -39,5 +39,18 @@
     "sessions_path": "./sessions",
     "memories_path": "./memories",
     "knowledge_path": "./knowledge"
+  },
+  "verbose": {
+    "enabled": true,
+    "level": "detailed",
+    "show_agent_instructions": true,
+    "show_execution_times": true,
+    "show_task_details": true,
+    "show_progress_updates": true
+  },
+  "logging": {
+    "level": "DEBUG",
+    "console_output": false,
+    "file_output": true
   }
 }

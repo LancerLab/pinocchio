@@ -1,7 +1,7 @@
 """Task executor for executing task plans and managing agent interactions."""
 
 import logging
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from ..agents import DebuggerAgent, EvaluatorAgent, GeneratorAgent, OptimizerAgent
 from ..config.settings import Settings
@@ -67,12 +67,28 @@ class TaskExecutor:
             "task_planning.debug_repair.retry_generator_after_debug", True
         )
 
+        # Verbose configuration
+        self.verbose_enabled = self.config.get("verbose.enabled", True)
+        self.verbose_level = self.config.get("verbose.level", "detailed")
+        self.show_agent_instructions = self.config.get(
+            "verbose.show_agent_instructions", True
+        )
+        self.show_execution_times = self.config.get(
+            "verbose.show_execution_times", True
+        )
+        self.show_task_details = self.config.get("verbose.show_task_details", True)
+        self.show_progress_updates = self.config.get(
+            "verbose.show_progress_updates", True
+        )
+
         # Track repair attempts
         self.repair_attempts = {}
 
         logger.info(
             f"TaskExecutor initialized with debug repair loop support (max_attempts={self.max_repair_attempts})"
         )
+        if self.verbose_enabled:
+            logger.info(f"Verbose output enabled (level: {self.verbose_level})")
 
     async def execute_plan(self, plan: TaskPlan) -> AsyncGenerator[str, None]:
         """
@@ -116,17 +132,9 @@ class TaskExecutor:
             priority_emoji = self._get_priority_emoji(task.priority)
             yield f"  {i}. {agent_emoji} {task.agent_type.upper()} ({priority_emoji} {task.priority})"
             yield f"     📝 {task.task_description}"
-            if task.input_data.get("instruction"):
-                instruction_preview = (
-                    task.input_data["instruction"][:100] + "..."
-                    if len(task.input_data["instruction"]) > 100
-                    else task.input_data["instruction"]
-                )
-                yield f"     💡 Instruction: {instruction_preview}"
-            if task.dependencies:
-                deps = ", ".join([dep.task_id for dep in task.dependencies])
-                yield f"     🔗 Dependencies: {deps}"
             yield ""
+        # Add end marker for CLI panel buffering
+        yield "<<END_TASK_PLAN>>"
 
     async def _execute_tasks(
         self,
@@ -177,15 +185,19 @@ class TaskExecutor:
         """Execute a single task with verbose output and support dynamic debugger insertion."""
         agent_emoji = self._get_agent_emoji(task.agent_type)
         yield f"🔄 Executing {agent_emoji} {task.agent_type.upper()} (Task {task.task_id})"
-        yield f"   📋 Description: {task.task_description}"
 
-        if task.input_data.get("instruction"):
-            yield "   💡 Detailed Instruction:"
-            instruction_lines = task.input_data["instruction"].split("\n")
-            for line in instruction_lines:
-                if line.strip():
-                    yield f"      {line}"
-            yield ""
+        # Generate task details panel content
+        if self.verbose_enabled:
+            task_details = self._generate_task_details_panel(task)
+            if task_details:
+                yield "📋 Task Details:"
+                for line in task_details:
+                    yield line
+                yield "<<END_TASK_DETAILS>>"
+
+        # Show progress updates if enabled
+        if self.verbose_enabled and self.show_progress_updates:
+            yield "   ⏳ Starting task execution..."
 
         try:
             result = await self._execute_task(task, execution_results)
@@ -197,21 +209,39 @@ class TaskExecutor:
 
                 # Show success summary
                 yield f"✅ {agent_emoji} {task.agent_type.upper()} completed successfully"
-                if result.output:
+
+                # Show output summary if verbose is enabled
+                if self.verbose_enabled and result.output:
                     output_summary = self._get_output_summary(
                         task.agent_type, result.output
                     )
                     if output_summary:
                         yield f"   📊 {output_summary}"
 
-                # Show execution time
-                if result.execution_time_ms:
+                # Show execution time if verbose is enabled
+                if (
+                    self.verbose_enabled
+                    and self.show_execution_times
+                    and result.execution_time_ms
+                ):
                     yield f"   ⏱️ Execution time: {result.execution_time_ms}ms"
+
+                # Show additional verbose information
+                if self.verbose_enabled and self.verbose_level == "detailed":
+                    if hasattr(result, "processing_time_ms"):
+                        yield f"   🧠 Processing time: {result.processing_time_ms}ms"
+                    if hasattr(result, "llm_calls"):
+                        yield f"   🤖 LLM calls: {result.llm_calls}"
 
             else:
                 task.mark_failed(result.error_message or "Unknown error")
                 failed_tasks.append(task.task_id)
                 yield f"❌ {agent_emoji} {task.agent_type.upper()} failed: {result.error_message}"
+
+                # Show detailed error information if verbose is enabled
+                if self.verbose_enabled and self.verbose_level == "detailed":
+                    if hasattr(result, "error_details"):
+                        yield f"   🔍 Error details: {result.error_details}"
 
         except Exception as e:
             error_msg = f"Exception in task {task.task_id}: {str(e)}"
@@ -219,6 +249,52 @@ class TaskExecutor:
             failed_tasks.append(task.task_id)
             yield f"💥 {agent_emoji} {task.agent_type.upper()} failed with exception: {str(e)}"
 
+            # Show detailed exception information if verbose is enabled
+            if self.verbose_enabled and self.verbose_level == "detailed":
+                import traceback
+
+                yield f"   📋 Exception traceback: {traceback.format_exc()}"
+
+        # Handle dynamic debugger insertion
+        async for msg in self._handle_dynamic_debugger_insertion(task, result, plan):
+            yield msg
+
+    def _generate_task_details_panel(self, task: Task) -> List[str]:
+        """Generate task details panel content."""
+        details = []
+
+        # Add task description
+        details.append(f"   📋 Description: {task.task_description}")
+
+        # Show detailed task information if enabled
+        if self.show_task_details:
+            if task.priority:
+                priority_emoji = self._get_priority_emoji(task.priority)
+                details.append(f"   🎯 Priority: {priority_emoji} {task.priority}")
+
+            if task.dependencies:
+                deps = ", ".join([dep.task_id for dep in task.dependencies])
+                details.append(f"   🔗 Dependencies: {deps}")
+
+            if task.requirements:
+                reqs = ", ".join([f"{k}={v}" for k, v in task.requirements.items()])
+                details.append(f"   📋 Requirements: {reqs}")
+
+        # Show detailed instructions if enabled
+        if self.show_agent_instructions and task.input_data.get("instruction"):
+            details.append("   💡 Detailed Instruction:")
+            instruction_lines = task.input_data["instruction"].split("\n")
+            for line in instruction_lines:
+                if line.strip():
+                    details.append(f"      {line}")
+            details.append("")
+
+        return details
+
+    async def _handle_dynamic_debugger_insertion(
+        self, task: Task, result, plan
+    ) -> AsyncGenerator[str, None]:
+        """Handle dynamic debugger insertion logic."""
         # --- Dynamic debugger insertion logic for generator/optimizer failures ---
         if (
             plan is not None
@@ -263,44 +339,15 @@ class TaskExecutor:
                     and not already_has_debugger
                     and current_repair_attempts < self.max_repair_attempts
                 ):
-                    from pinocchio.task_planning.task_planner import (
-                        TaskPlanner,
-                        TaskPlanningContext,
-                    )
+                    # Show verbose debugger insertion information
+                    if self.verbose_enabled:
+                        yield f"   🔧 Error detected in {task.task_id}, initiating debug repair cycle"
+                        yield f"   📊 Repair attempt {current_repair_attempts + 1}/{self.max_repair_attempts}"
 
-                    # Create proper context from plan data
-                    context_data = getattr(plan, "context", {})
-                    if isinstance(context_data, dict):
-                        # Convert dict to TaskPlanningContext
-                        context = TaskPlanningContext(
-                            user_request=context_data.get(
-                                "user_request", task.input_data.get("user_request", "")
-                            ),
-                            requirements=context_data.get("requirements", {}),
-                            optimization_goals=context_data.get(
-                                "optimization_goals", []
-                            ),
-                            constraints=context_data.get("constraints", []),
-                            context_type=context_data.get(
-                                "context_type", "code_generation"
-                            ),
-                            complexity_level=context_data.get(
-                                "complexity_level", "medium"
-                            ),
-                            previous_results=context_data.get("previous_results", {}),
-                        )
-                    else:
-                        # Fallback to minimal context
-                        context = TaskPlanningContext(
-                            user_request=task.input_data.get(
-                                "user_request", task.task_description
-                            ),
-                            requirements=task.requirements,
-                            optimization_goals=task.optimization_goals or [],
-                            constraints=[],
-                            context_type="code_generation",
-                            complexity_level="medium",
-                        )
+                    # Create context for debugger instruction
+                    from ..task_planning.task_planner import TaskPlanner
+
+                    context = TaskPlanner._create_context_from_task(task)
 
                     planner = TaskPlanner()
                     debugger_instruction = planner._build_debugger_instruction(context)
@@ -332,37 +379,6 @@ class TaskExecutor:
 
                     yield f"🆕 Dynamically inserted DEBUGGER after {task.task_id} due to detected error (attempt {current_repair_attempts + 1}/{self.max_repair_attempts})"
 
-                    # If retry_generator_after_debug is enabled, add a new generator task after debugger
-                    if self.retry_generator_after_debug:
-                        generator_instruction = planner._build_generator_instruction(
-                            context
-                        )
-                        new_generator_task = Task(
-                            task_id=f"task_{len(plan.tasks)+1}",
-                            agent_type=AgentType.GENERATOR,
-                            task_description=f"Retry code generation after debug repair (attempt {current_repair_attempts + 1})",
-                            requirements=task.requirements,
-                            optimization_goals=task.optimization_goals,
-                            priority=TaskPriority.CRITICAL,
-                            dependencies=[
-                                TaskDependency(
-                                    task_id=new_debugger_task.task_id,
-                                    dependency_type="required",
-                                )
-                            ],
-                            input_data={
-                                "user_request": task.input_data.get(
-                                    "user_request", task.task_description
-                                ),
-                                "instruction": generator_instruction,
-                                "retry_after_debug": True,
-                                "repair_attempt": current_repair_attempts + 1,
-                                "original_task_id": task.task_id,
-                            },
-                        )
-                        plan.tasks.append(new_generator_task)
-                        yield f"🔄 Added retry GENERATOR after debugger (attempt {current_repair_attempts + 1}/{self.max_repair_attempts})"
-
                 elif current_repair_attempts >= self.max_repair_attempts:
                     yield f"⚠️ Max repair attempts ({self.max_repair_attempts}) reached for {task.task_id}, stopping debug repair loop"
 
@@ -390,134 +406,86 @@ class TaskExecutor:
                 or task.status == TaskStatus.FAILED
             )
 
-            if bugs_detected:
-                # Get current optimisation round from task
-                current_round = task.input_data.get("optimisation_round", 1)
-                max_rounds = self.config.get("task_planning.max_optimisation_rounds", 3)
+            if bugs_detected and self.retry_generator_after_debug:
+                # Show verbose retry information
+                if self.verbose_enabled:
+                    yield "   🔍 Debugger found issues, initiating retry cycle"
 
-                # Check if we can add more rounds
-                if current_round < max_rounds:
-                    from pinocchio.task_planning.task_planner import (
-                        TaskPlanner,
-                        TaskPlanningContext,
+                # Get the original task that failed
+                original_task_id = task.input_data.get("original_task_id")
+                if original_task_id:
+                    # Find the original task
+                    original_task = next(
+                        (t for t in plan.tasks if t.task_id == original_task_id), None
                     )
 
-                    # Create context for additional tasks
-                    context_data = getattr(plan, "context", {})
-                    if isinstance(context_data, dict):
-                        context = TaskPlanningContext(
-                            user_request=context_data.get("user_request", ""),
-                            requirements=context_data.get("requirements", {}),
-                            optimization_goals=context_data.get(
-                                "optimization_goals", []
-                            ),
-                            constraints=context_data.get("constraints", []),
-                            context_type=context_data.get(
-                                "context_type", "code_generation"
-                            ),
-                            complexity_level=context_data.get(
-                                "complexity_level", "medium"
-                            ),
-                            previous_results=context_data.get("previous_results", {}),
-                        )
-                    else:
-                        context = TaskPlanningContext(
-                            user_request="Continue code generation",
-                            requirements={},
-                            optimization_goals=[],
-                            constraints=[],
-                            context_type="code_generation",
-                            complexity_level="medium",
-                        )
+                    if original_task:
+                        # Create retry generator task
+                        from ..task_planning.task_planner import TaskPlanner
 
-                    planner = TaskPlanner()
-                    next_round = current_round + 1
+                        context = TaskPlanner._create_context_from_task(original_task)
 
-                    # Add generator for next round
-                    generator_instruction = planner._build_generator_instruction(
-                        context
-                    )
-                    new_generator_task = Task(
-                        task_id=f"task_{len(plan.tasks)+1}",
-                        agent_type=AgentType.GENERATOR,
-                        task_description=f"[Round {next_round}] Continue code generation after bug fix",
-                        requirements=context.requirements,
-                        optimization_goals=context.optimization_goals,
-                        priority=TaskPriority.CRITICAL,
-                        dependencies=[
-                            TaskDependency(
-                                task_id=task.task_id, dependency_type="required"
-                            )
-                        ],
-                        input_data={
-                            "user_request": context.user_request,
-                            "instruction": generator_instruction,
-                            "optimisation_round": next_round,
-                            "dynamic_insertion": True,
-                        },
-                    )
-                    plan.tasks.append(new_generator_task)
-
-                    # Add debugger for next round
-                    debugger_instruction = planner._build_debugger_instruction(context)
-                    new_debugger_task = Task(
-                        task_id=f"task_{len(plan.tasks)+1}",
-                        agent_type=AgentType.DEBUGGER,
-                        task_description=f"[Round {next_round}] Compile and debug generated code",
-                        requirements={"error_handling": True},
-                        priority=TaskPriority.CRITICAL,
-                        dependencies=[
-                            TaskDependency(
-                                task_id=new_generator_task.task_id,
-                                dependency_type="required",
-                            )
-                        ],
-                        input_data={
-                            "error_handling": True,
-                            "instruction": debugger_instruction,
-                            "optimisation_round": next_round,
-                            "dynamic_insertion": True,
-                        },
-                    )
-                    plan.tasks.append(new_debugger_task)
-
-                    # Add optimiser if enabled
-                    enable_optimiser = self.config.get(
-                        "task_planning.enable_optimiser", True
-                    )
-                    if enable_optimiser:
-                        optimizer_instruction = planner._build_optimizer_instruction(
+                        planner = TaskPlanner()
+                        generator_instruction = planner._build_generator_instruction(
                             context
                         )
-                        new_optimizer_task = Task(
+
+                        new_generator_task = Task(
                             task_id=f"task_{len(plan.tasks)+1}",
-                            agent_type=AgentType.OPTIMIZER,
-                            task_description=f"[Round {next_round}] Optimise code after bug fix",
-                            requirements={
-                                "optimization_goals": context.optimization_goals
-                                or ["performance", "memory_efficiency"]
-                            },
-                            priority=TaskPriority.HIGH,
+                            agent_type=AgentType.GENERATOR,
+                            task_description=f"Retry generation after debug fix (attempt {task.input_data.get('repair_attempt', 1)})",
+                            requirements=original_task.requirements,
+                            priority=TaskPriority.CRITICAL,
                             dependencies=[
                                 TaskDependency(
-                                    task_id=new_debugger_task.task_id,
+                                    task_id=task.task_id, dependency_type="required"
+                                )
+                            ],
+                            input_data={
+                                "user_request": original_task.input_data.get(
+                                    "user_request", ""
+                                ),
+                                "instruction": generator_instruction,
+                                "retry_after_debug": True,
+                                "repair_attempt": task.input_data.get(
+                                    "repair_attempt", 1
+                                ),
+                            },
+                        )
+                        plan.tasks.append(new_generator_task)
+
+                        yield "🔄 Added retry GENERATOR after debugger completion"
+
+                        # Add another debugger for the retry
+                        debugger_instruction = planner._build_debugger_instruction(
+                            context
+                        )
+
+                        new_debugger_task = Task(
+                            task_id=f"task_{len(plan.tasks)+1}",
+                            agent_type=AgentType.DEBUGGER,
+                            task_description=f"Verify retry generation (attempt {task.input_data.get('repair_attempt', 1)})",
+                            requirements={"error_handling": True},
+                            priority=TaskPriority.CRITICAL,
+                            dependencies=[
+                                TaskDependency(
+                                    task_id=new_generator_task.task_id,
                                     dependency_type="required",
                                 )
                             ],
                             input_data={
-                                "optimization_goals": context.optimization_goals
-                                or ["performance", "memory_efficiency"],
-                                "instruction": optimizer_instruction,
-                                "optimisation_round": next_round,
-                                "dynamic_insertion": True,
+                                "error_handling": True,
+                                "instruction": debugger_instruction,
+                                "repair_attempt": task.input_data.get(
+                                    "repair_attempt", 1
+                                ),
+                                "max_repair_attempts": self.max_repair_attempts,
+                                "original_task_id": original_task_id,
                             },
                         )
-                        plan.tasks.append(new_optimizer_task)
+                        plan.tasks.append(new_debugger_task)
 
-                    yield f"🔄 Dynamically inserted Round {next_round} tasks after debugger found bugs (Round {current_round}/{max_rounds})"
-
-                else:
-                    yield f"⚠️ Max optimisation rounds ({max_rounds}) reached, cannot add more rounds after debugger found bugs"
+                        yield "🆕 Added verification DEBUGGER for retry generation"
 
     async def _finalize_plan(
         self, plan: TaskPlan, execution_results: dict

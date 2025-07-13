@@ -182,6 +182,35 @@ class OptimizationConfig(BaseModel):
     model_config = {"extra": "forbid", "validate_assignment": True}
 
 
+class VerboseConfig(BaseModel):
+    """Verbose output configuration."""
+
+    enabled: bool = Field(default=True, description="Enable verbose output")
+    level: str = Field(
+        default="detailed", description="Verbose level (basic, detailed, debug)"
+    )
+    show_agent_instructions: bool = Field(
+        default=True, description="Show detailed agent instructions"
+    )
+    show_execution_times: bool = Field(default=True, description="Show execution times")
+    show_task_details: bool = Field(
+        default=True, description="Show detailed task information"
+    )
+    show_progress_updates: bool = Field(
+        default=True, description="Show progress updates"
+    )
+
+
+class LoggingConfig(BaseModel):
+    """Logging configuration."""
+
+    level: str = Field(
+        default="INFO", description="Log level (DEBUG, INFO, WARNING, ERROR)"
+    )
+    console_output: bool = Field(default=True, description="Enable console logging")
+    file_output: bool = Field(default=True, description="Enable file logging")
+
+
 class PinocchioConfig(BaseModel):
     """Main Pinocchio configuration data model."""
 
@@ -210,5 +239,11 @@ class PinocchioConfig(BaseModel):
     )
     optimization: OptimizationConfig = Field(
         default_factory=OptimizationConfig, description="Optimization configuration"
+    )
+    verbose: VerboseConfig = Field(
+        default_factory=VerboseConfig, description="Verbose output configuration"
+    )
+    logging: LoggingConfig = Field(
+        default_factory=LoggingConfig, description="Logging configuration"
     )
     model_config = {"extra": "forbid", "validate_assignment": True}

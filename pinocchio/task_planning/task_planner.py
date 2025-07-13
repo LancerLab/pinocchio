@@ -145,156 +145,80 @@ Please provide your analysis in JSON format:
         return self._fallback_analysis(user_request)
 
     def _fallback_analysis(self, user_request: str) -> Dict[str, Any]:
-        """Enhanced fallback analysis when LLM fails."""
-        user_request_lower = user_request.lower()
+        """Provide fallback analysis when LLM fails."""
+        # Extract basic requirements
+        requirements = self._extract_basic_requirements(user_request)
 
-        requirements = {
-            "primary_goal": "code_generation",
-            "secondary_goals": [],
-            "code_requirements": [],
-        }
+        # Determine optimization goals
+        optimization_goals = self._determine_optimization_goals(user_request)
 
-        # Enhanced optimization goals detection
-        optimization_goals = []
+        # Identify constraints
+        constraints = self._identify_constraints(user_request)
 
-        # Performance optimization keywords
-        performance_keywords = [
-            "optimize",
-            "performance",
-            "fast",
-            "efficient",
-            "speed",
-            "quick",
-            "high-performance",
-            "optimization",
-            "tune",
-            "accelerate",
-        ]
-        if any(word in user_request_lower for word in performance_keywords):
-            optimization_goals.append("performance")
-
-        # Memory optimization keywords
-        memory_keywords = [
-            "memory",
-            "efficient",
-            "compact",
-            "memory-efficient",
-            "low-memory",
-            "memory-optimized",
-            "cache",
-            "memory-usage",
-        ]
-        if any(word in user_request_lower for word in memory_keywords):
-            optimization_goals.append("memory_efficiency")
-
-        # Scalability keywords
-        scalability_keywords = [
-            "scale",
-            "parallel",
-            "thread",
-            "concurrent",
-            "distributed",
-            "multi-thread",
-            "scalable",
-            "parallelization",
-        ]
-        if any(word in user_request_lower for word in scalability_keywords):
-            optimization_goals.append("scalability")
-
-        # Enhanced constraints detection
-        constraints = []
-
-        # Error handling and debugging keywords
-        debug_keywords = [
-            "debug",
-            "error",
-            "fix",
-            "bug",
-            "issue",
-            "problem",
-            "troubleshoot",
-            "error-handling",
-            "robust",
-            "reliable",
-            "safe",
-            "validation",
-        ]
-        if any(word in user_request_lower for word in debug_keywords):
-            constraints.append("error_handling")
-
-        # Evaluation and assessment keywords
-        evaluation_keywords = [
-            "evaluate",
-            "assess",
-            "test",
-            "verify",
-            "validate",
-            "check",
-            "quality",
-            "analysis",
-            "review",
-            "inspect",
-        ]
-        if any(word in user_request_lower for word in evaluation_keywords):
-            constraints.append("performance_evaluation")
-
-        # Code quality keywords
-        quality_keywords = [
-            "quality",
-            "maintainable",
-            "readable",
-            "clean",
-            "best-practices",
-            "standards",
-            "conventions",
-        ]
-        if any(word in user_request_lower for word in quality_keywords):
-            constraints.append("code_quality")
-
-        # Auto-detect optimization needs based on operation types
-        operation_keywords = {
-            "convolution": ["performance", "memory_efficiency"],
-            "matrix": ["performance", "memory_efficiency"],
-            "matmul": ["performance", "memory_efficiency"],
-            "conv": ["performance", "memory_efficiency"],
-            "kernel": ["performance", "memory_efficiency"],
-            "operator": ["performance", "memory_efficiency"],
-            "algorithm": ["performance", "scalability"],
-            "computation": ["performance", "memory_efficiency"],
-        }
-
-        for operation, default_goals in operation_keywords.items():
-            if operation in user_request_lower:
-                for goal in default_goals:
-                    if goal not in optimization_goals:
-                        optimization_goals.append(goal)
-                break
-
-        # Auto-detect evaluation needs for complex operations
-        complex_operations = [
-            "convolution",
-            "matrix",
-            "matmul",
-            "conv",
-            "kernel",
-            "operator",
-        ]
-        if any(op in user_request_lower for op in complex_operations):
-            if "performance_evaluation" not in constraints:
-                constraints.append("performance_evaluation")
-
-        # Auto-detect debugging needs for new code generation
-        if "generate" in user_request_lower or "create" in user_request_lower:
-            if "error_handling" not in constraints:
-                constraints.append("error_handling")
+        # Determine planning strategy
+        planning_strategy = self._determine_planning_strategy(user_request)
 
         return {
             "requirements": requirements,
             "optimization_goals": optimization_goals,
             "constraints": constraints,
             "user_preferences": {},
-            "planning_strategy": "standard",
+            "planning_strategy": planning_strategy,
         }
+
+    def _extract_basic_requirements(self, user_request: str) -> Dict[str, Any]:
+        """Extract basic requirements from user request."""
+        requirements = {
+            "primary_goal": user_request,
+            "secondary_goals": [],
+            "code_requirements": [],
+        }
+
+        # Add common requirements based on keywords
+        if any(word in user_request.lower() for word in ["matrix", "vector", "array"]):
+            requirements["code_requirements"].append("efficient_data_structures")
+
+        if any(
+            word in user_request.lower() for word in ["performance", "fast", "optimize"]
+        ):
+            requirements["code_requirements"].append("performance_optimization")
+
+        return requirements
+
+    def _determine_optimization_goals(self, user_request: str) -> List[str]:
+        """Determine optimization goals from user request."""
+        goals = ["performance"]
+
+        if any(word in user_request.lower() for word in ["memory", "efficient"]):
+            goals.append("memory_efficiency")
+
+        if any(word in user_request.lower() for word in ["scale", "large"]):
+            goals.append("scalability")
+
+        return goals
+
+    def _identify_constraints(self, user_request: str) -> List[str]:
+        """Identify constraints from user request."""
+        constraints = []
+
+        if any(word in user_request.lower() for word in ["simple", "basic"]):
+            constraints.append("simplicity")
+
+        if any(word in user_request.lower() for word in ["safe", "robust"]):
+            constraints.append("safety")
+
+        return constraints
+
+    def _determine_planning_strategy(self, user_request: str) -> str:
+        """Determine planning strategy based on user request."""
+        if any(
+            word in user_request.lower() for word in ["complex", "advanced", "optimize"]
+        ):
+            return "aggressive"
+        elif any(word in user_request.lower() for word in ["simple", "basic"]):
+            return "conservative"
+        else:
+            return "standard"
 
     async def _generate_tasks(self, context: TaskPlanningContext) -> List[Task]:
         """
@@ -672,3 +596,16 @@ Please provide your analysis in JSON format:
             "task_count": len(plan.tasks),
             "critical_task_count": len(critical_tasks),
         }
+
+    @staticmethod
+    def _create_context_from_task(task: Task) -> TaskPlanningContext:
+        """Create a TaskPlanningContext from a task."""
+        return TaskPlanningContext(
+            user_request=task.input_data.get("user_request", task.task_description),
+            requirements=task.requirements or {},
+            optimization_goals=task.optimization_goals or [],
+            constraints=[],
+            context_type="code_generation",
+            complexity_level="medium",
+            previous_results={},
+        )
