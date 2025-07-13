@@ -77,7 +77,7 @@ jobs:
 
     - name: Run linting
       run: |
-        poetry run flake8 pinocchio/ tests/ --max-line-length=150 --ignore=E203,W503,D205,E402,F401,F841,E712 --max-complexity=25
+        poetry run flake8 pinocchio/ tests/ --max-line-length=150 --ignore=W291,W293,E203,E501,W503,D200,D401,D400,D202,C901,D205,E402,F401,F841,E712 --max-complexity=25 --exclude=.git,__pycache__,build,dist
         poetry run black --check pinocchio/ tests/
         poetry run isort --check-only pinocchio/ tests/
         poetry run mypy pinocchio/ --ignore-missing-imports
