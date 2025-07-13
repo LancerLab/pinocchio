@@ -15,6 +15,13 @@ from pinocchio.data_models.task_planning import (
     TaskStatus,
 )
 from pinocchio.task_planning import TaskExecutor, TaskPlanner
+from tests.utils import (
+    create_multi_task_plan,
+    create_simple_task_plan,
+    create_test_task,
+    create_test_task_dependency,
+    create_test_task_plan,
+)
 
 
 class TestTaskPlanner:
@@ -104,17 +111,8 @@ class TestTaskPlanner:
 
     def test_validate_plan_valid(self, task_planner):
         """Test plan validation with valid plan."""
-        # Create a simple valid plan
-        tasks = [
-            Task(
-                task_id="task_1",
-                agent_type=AgentType.GENERATOR,
-                task_description="Generate code",
-                priority=TaskPriority.CRITICAL,
-            )
-        ]
-
-        plan = TaskPlan(plan_id="test_plan", user_request="Test request", tasks=tasks)
+        # Use factory to create a simple valid plan
+        plan = create_simple_task_plan()
 
         validation = task_planner.validate_plan(plan)
 
@@ -123,20 +121,12 @@ class TestTaskPlanner:
 
     def test_validate_plan_invalid(self, task_planner):
         """Test plan validation with invalid plan."""
-        # Create plan with circular dependency
-        tasks = [
-            Task(
-                task_id="task_1",
-                agent_type=AgentType.GENERATOR,
-                task_description="Generate code",
-                priority=TaskPriority.CRITICAL,
-                dependencies=[
-                    TaskDependency(task_id="task_1", dependency_type="required")
-                ],
-            )
-        ]
-
-        plan = TaskPlan(plan_id="test_plan", user_request="Test request", tasks=tasks)
+        # Create plan with circular dependency using factory
+        task = create_test_task(
+            task_id="task_1",
+            dependencies=[create_test_task_dependency("task_1", "required")],
+        )
+        plan = create_test_task_plan(tasks=[task])
 
         validation = task_planner.validate_plan(plan)
 
@@ -251,17 +241,8 @@ class TestTaskExecutor:
     @pytest.mark.asyncio
     async def test_execute_plan_simple(self, task_executor):
         """Test executing a simple task plan."""
-        # Create a simple plan with one task
-        tasks = [
-            Task(
-                task_id="task_1",
-                agent_type=AgentType.GENERATOR,
-                task_description="Generate code",
-                priority=TaskPriority.CRITICAL,
-            )
-        ]
-
-        plan = TaskPlan(plan_id="test_plan", user_request="Test request", tasks=tasks)
+        # Use factory to create a simple plan
+        plan = create_simple_task_plan()
 
         messages = []
         async for msg in task_executor.execute_plan(plan):
@@ -273,26 +254,8 @@ class TestTaskExecutor:
     @pytest.mark.asyncio
     async def test_execute_plan_with_dependencies(self, task_executor):
         """Test executing a plan with task dependencies."""
-        # Create a plan with generator and optimizer
-        tasks = [
-            Task(
-                task_id="task_1",
-                agent_type=AgentType.GENERATOR,
-                task_description="Generate code",
-                priority=TaskPriority.CRITICAL,
-            ),
-            Task(
-                task_id="task_2",
-                agent_type=AgentType.OPTIMIZER,
-                task_description="Optimize code",
-                priority=TaskPriority.HIGH,
-                dependencies=[
-                    TaskDependency(task_id="task_1", dependency_type="required")
-                ],
-            ),
-        ]
-
-        plan = TaskPlan(plan_id="test_plan", user_request="Test request", tasks=tasks)
+        # Use factory to create a plan with dependencies
+        plan = create_multi_task_plan()
 
         messages = []
         async for msg in task_executor.execute_plan(plan):
@@ -304,10 +267,8 @@ class TestTaskExecutor:
 
     def test_prepare_agent_request(self, task_executor):
         """Test preparing agent request."""
-        task = Task(
+        task = create_test_task(
             task_id="test_task",
-            agent_type=AgentType.GENERATOR,
-            task_description="Generate code",
             requirements={"test": "value"},
             optimization_goals=["performance"],
         )
@@ -336,7 +297,7 @@ class TestTaskExecutor:
             },
         }
 
-        plan = TaskPlan(plan_id="test_plan", user_request="Test request", tasks=[])
+        plan = create_test_task_plan(tasks=[])
 
         final_result = task_executor._compile_final_result(execution_results, plan)
 
