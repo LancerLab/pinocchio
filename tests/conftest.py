@@ -13,6 +13,33 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import fixtures here if needed
+from tests.utils.mock_factories import (
+    create_async_mock_llm_client,
+    create_mock_llm_client,
+    create_task_planner_mock_response,
+)
+
+
+@pytest.fixture
+def mock_llm_client():
+    """Standard mock LLM client fixture."""
+    return create_mock_llm_client()
+
+
+@pytest.fixture
+def async_mock_llm_client():
+    """Standard async mock LLM client fixture."""
+    return create_async_mock_llm_client()
+
+
+@pytest.fixture
+def task_planner_mock_llm_client():
+    """Mock LLM client for TaskPlanner tests."""
+    from unittest.mock import AsyncMock
+
+    client = AsyncMock()
+    client.complete = AsyncMock(return_value=create_task_planner_mock_response())
+    return client
 
 
 @pytest.fixture
