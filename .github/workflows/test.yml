@@ -45,7 +45,7 @@ jobs:
         ENABLE_REAL_LLM_TESTS: 0
         PYTHONPATH: .
       run: |
-        poetry run pytest tests/ -v --strict-markers -m "not local_only and not real_llm" --cov=pinocchio --cov-report=xml
+        poetry run pytest tests/ --cov=pinocchio --cov-report=xml
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
