@@ -32,12 +32,10 @@ class TaskExecutor:
             llm_client: LLM client for agents (uses MockLLMClient if None)
             config: Configuration settings (uses default if None)
         """
+        # Load config
         self.llm_client = llm_client or MockLLMClient(response_delay_ms=200)
-
-        # Initialize config
         if config is None:
             self.config = Settings()
-            # Load config from pinocchio.json if it exists
             try:
                 self.config.load_from_file("pinocchio.json")
             except Exception as e:
@@ -45,12 +43,16 @@ class TaskExecutor:
         else:
             self.config = config
 
-        # Initialize agents
+        # Get verbose flag
+
+        # Get LLM config
+
+        # Initialize agents (let each agent manage its own LLM client)
         self.agents = {
-            AgentType.GENERATOR: GeneratorAgent(self.llm_client),
-            AgentType.OPTIMIZER: OptimizerAgent(self.llm_client),
-            AgentType.DEBUGGER: DebuggerAgent(self.llm_client),
-            AgentType.EVALUATOR: EvaluatorAgent(self.llm_client),
+            AgentType.GENERATOR: GeneratorAgent(),
+            AgentType.OPTIMIZER: OptimizerAgent(),
+            AgentType.DEBUGGER: DebuggerAgent(),
+            AgentType.EVALUATOR: EvaluatorAgent(),
         }
 
         # Debug repair configuration

@@ -122,6 +122,18 @@ class ConfigManager:
         agents = self.config.agents
         return getattr(agents, agent_type, None)
 
+    def get_agent_llm_config(self, agent_type: str) -> LLMConfigEntry:
+        """Get agent-specific LLM configuration with fallback to global config."""
+        # Try to get agent-specific config
+        agent_llm_key = f"llm_{agent_type}"
+        agent_config = getattr(self.config, agent_llm_key, None)
+
+        if agent_config is not None:
+            return agent_config
+
+        # Fallback to global config
+        return self.get_llm_config()
+
     def get_session_config(self) -> SessionConfig:
         """Get session configuration."""
         return self.config.session

@@ -4,6 +4,9 @@ import logging
 import time
 from typing import Any, Dict, List
 
+from pinocchio.config import ConfigManager
+from pinocchio.llm.custom_llm_client import CustomLLMClient
+
 from ..data_models.agent import AgentResponse
 from .base import AgentWithRetry
 
@@ -13,16 +16,21 @@ logger = logging.getLogger(__name__)
 class EvaluatorAgent(AgentWithRetry):
     """Agent responsible for performance analysis and evaluation."""
 
-    def __init__(self, llm_client: Any, max_retries: int = 3):
+    def __init__(self, llm_client: Any = None, max_retries: int = 3):
         """
         Initialize Evaluator agent.
 
         Args:
-            llm_client: LLM client instance
+            llm_client: LLM client instance (optional)
             max_retries: Maximum retry attempts for LLM calls
         """
+        if llm_client is None:
+            config_manager = ConfigManager()
+            agent_llm_config = config_manager.get_agent_llm_config("evaluator")
+            verbose = config_manager.get("verbose.enabled", True)
+            llm_client = CustomLLMClient(agent_llm_config, verbose=verbose)
         super().__init__("evaluator", llm_client, max_retries)
-        logger.info("EvaluatorAgent initialized")
+        logger.info("EvaluatorAgent initialized with its own LLM client")
 
     async def execute(self, request: Dict[str, Any]) -> AgentResponse:
         """

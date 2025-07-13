@@ -1,6 +1,6 @@
 """Tests for the task planning system."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -24,8 +24,19 @@ class TestTaskPlanner:
     def mock_llm_client(self):
         """Create a mock LLM client."""
         client = AsyncMock()
+        # Return the format that TaskPlanner expects
         client.complete = AsyncMock(
-            return_value='{"requirements": {}, "optimization_goals": []}'
+            return_value="""{
+                "requirements": {
+                    "primary_goal": "Generate a matrix multiplication function",
+                    "secondary_goals": ["efficient implementation"],
+                    "code_requirements": ["efficient_data_structures", "performance_optimization"]
+                },
+                "optimization_goals": ["performance", "memory_efficiency"],
+                "constraints": ["readability"],
+                "user_preferences": {},
+                "planning_strategy": "standard"
+            }"""
         )
         return client
 
@@ -147,8 +158,71 @@ class TestTaskExecutor:
 
     @pytest.fixture
     def task_executor(self, mock_llm_client):
-        """Create a TaskExecutor instance."""
-        return TaskExecutor(mock_llm_client)
+        """Create a TaskExecutor instance with mocked agents."""
+        # Patch agent classes at the correct import location used by TaskExecutor
+        with patch(
+            "pinocchio.task_planning.task_executor.GeneratorAgent"
+        ) as mock_generator, patch(
+            "pinocchio.task_planning.task_executor.OptimizerAgent"
+        ) as mock_optimizer, patch(
+            "pinocchio.task_planning.task_executor.DebuggerAgent"
+        ) as mock_debugger, patch(
+            "pinocchio.task_planning.task_executor.EvaluatorAgent"
+        ) as mock_evaluator:
+            # Create mock agent instances
+            mock_gen_agent = MagicMock()
+            mock_gen_agent.execute = AsyncMock(
+                return_value=MagicMock(
+                    success=True,
+                    output={"code": "test code"},
+                    error_message=None,
+                    processing_time_ms=100,
+                    request_id="test_request",
+                )
+            )
+
+            mock_opt_agent = MagicMock()
+            mock_opt_agent.execute = AsyncMock(
+                return_value=MagicMock(
+                    success=True,
+                    output={"optimized_code": "test optimized code"},
+                    error_message=None,
+                    processing_time_ms=100,
+                    request_id="test_request",
+                )
+            )
+
+            mock_debug_agent = MagicMock()
+            mock_debug_agent.execute = AsyncMock(
+                return_value=MagicMock(
+                    success=True,
+                    output={"fixed_code": "test fixed code"},
+                    error_message=None,
+                    processing_time_ms=100,
+                    request_id="test_request",
+                )
+            )
+
+            mock_eval_agent = MagicMock()
+            mock_eval_agent.execute = AsyncMock(
+                return_value=MagicMock(
+                    success=True,
+                    output={"evaluation": "test evaluation"},
+                    error_message=None,
+                    processing_time_ms=100,
+                    request_id="test_request",
+                )
+            )
+
+            # Configure mock constructors to return our mock instances
+            mock_generator.return_value = mock_gen_agent
+            mock_optimizer.return_value = mock_opt_agent
+            mock_debugger.return_value = mock_debug_agent
+            mock_evaluator.return_value = mock_eval_agent
+
+            # Create TaskExecutor with mocked agents
+            executor = TaskExecutor(mock_llm_client)
+            return executor
 
     def test_task_executor_initialization(self, task_executor):
         """Test TaskExecutor initialization."""
@@ -301,20 +375,80 @@ class TestTaskPlanningIntegration:
     @pytest.mark.asyncio
     async def test_planner_executor_integration(self, mock_llm_client):
         """Test integration between planner and executor."""
-        planner = TaskPlanner(mock_llm_client)
-        executor = TaskExecutor(mock_llm_client)
+        with patch(
+            "pinocchio.task_planning.task_executor.GeneratorAgent"
+        ) as mock_generator, patch(
+            "pinocchio.task_planning.task_executor.OptimizerAgent"
+        ) as mock_optimizer, patch(
+            "pinocchio.task_planning.task_executor.DebuggerAgent"
+        ) as mock_debugger, patch(
+            "pinocchio.task_planning.task_executor.EvaluatorAgent"
+        ) as mock_evaluator:
+            # Create mock agent instances
+            mock_gen_agent = MagicMock()
+            mock_gen_agent.execute = AsyncMock(
+                return_value=MagicMock(
+                    success=True,
+                    output={"code": "test code"},
+                    error_message=None,
+                    processing_time_ms=100,
+                    request_id="test_request",
+                )
+            )
 
-        # Create plan
-        user_request = "Generate a fast matrix multiplication function"
-        plan = await planner.create_task_plan(user_request)
+            mock_opt_agent = MagicMock()
+            mock_opt_agent.execute = AsyncMock(
+                return_value=MagicMock(
+                    success=True,
+                    output={"optimized_code": "test optimized code"},
+                    error_message=None,
+                    processing_time_ms=100,
+                    request_id="test_request",
+                )
+            )
 
-        # Execute plan
-        messages = []
-        async for msg in executor.execute_plan(plan):
-            messages.append(msg)
+            mock_debug_agent = MagicMock()
+            mock_debug_agent.execute = AsyncMock(
+                return_value=MagicMock(
+                    success=True,
+                    output={"fixed_code": "test fixed code"},
+                    error_message=None,
+                    processing_time_ms=100,
+                    request_id="test_request",
+                )
+            )
 
-        assert len(messages) > 0
-        assert plan.is_completed() or plan.is_failed()
+            mock_eval_agent = MagicMock()
+            mock_eval_agent.execute = AsyncMock(
+                return_value=MagicMock(
+                    success=True,
+                    output={"evaluation": "test evaluation"},
+                    error_message=None,
+                    processing_time_ms=100,
+                    request_id="test_request",
+                )
+            )
+
+            # Configure mock constructors to return our mock instances
+            mock_generator.return_value = mock_gen_agent
+            mock_optimizer.return_value = mock_opt_agent
+            mock_debugger.return_value = mock_debug_agent
+            mock_evaluator.return_value = mock_eval_agent
+
+            planner = TaskPlanner(mock_llm_client)
+            executor = TaskExecutor(mock_llm_client)
+
+            # Create plan
+            user_request = "Generate a fast matrix multiplication function"
+            plan = await planner.create_task_plan(user_request)
+
+            # Execute plan
+            messages = []
+            async for msg in executor.execute_plan(plan):
+                messages.append(msg)
+
+            assert len(messages) > 0
+            assert plan.is_completed() or plan.is_failed()
 
     @pytest.mark.asyncio
     async def test_adaptive_planning(self, mock_llm_client):

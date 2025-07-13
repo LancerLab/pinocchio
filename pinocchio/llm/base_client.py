@@ -10,9 +10,10 @@ logger = logging.getLogger(__name__)
 class BaseLLMClient(abc.ABC):
     """Base class for LLM clients."""
 
-    def __init__(self):
+    def __init__(self, verbose: bool = False):
         """Initialize base LLM client."""
         self.call_count = 0
+        self.verbose = verbose
 
     @abc.abstractmethod
     async def complete(self, prompt: str, agent_type: Optional[str] = None) -> str:

@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from pinocchio.agents.base import Agent, AgentWithRetry
+from pinocchio.agents.debugger import DebuggerAgent
+from pinocchio.agents.evaluator import EvaluatorAgent
 from pinocchio.agents.generator import GeneratorAgent
+from pinocchio.agents.optimizer import OptimizerAgent
+from pinocchio.llm.custom_llm_client import CustomLLMClient
 from pinocchio.llm.mock_client import MockLLMClient
 
 
@@ -301,3 +305,32 @@ class TestAgentWithRetry:
 
         assert "LLM call failed after 3 attempts" in str(exc_info.value)
         assert failing_client.complete.call_count == 3
+
+
+def test_generator_agent_auto_llm():
+    agent = GeneratorAgent()
+    assert isinstance(agent.llm_client, CustomLLMClient)
+    # Check config fields (model_name, base_url, etc.)
+    assert hasattr(agent.llm_client, "model_name")
+    assert hasattr(agent.llm_client, "base_url")
+
+
+def test_optimizer_agent_auto_llm():
+    agent = OptimizerAgent()
+    assert isinstance(agent.llm_client, CustomLLMClient)
+    assert hasattr(agent.llm_client, "model_name")
+    assert hasattr(agent.llm_client, "base_url")
+
+
+def test_debugger_agent_auto_llm():
+    agent = DebuggerAgent()
+    assert isinstance(agent.llm_client, CustomLLMClient)
+    assert hasattr(agent.llm_client, "model_name")
+    assert hasattr(agent.llm_client, "base_url")
+
+
+def test_evaluator_agent_auto_llm():
+    agent = EvaluatorAgent()
+    assert isinstance(agent.llm_client, CustomLLMClient)
+    assert hasattr(agent.llm_client, "model_name")
+    assert hasattr(agent.llm_client, "base_url")

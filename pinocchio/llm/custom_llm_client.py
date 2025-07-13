@@ -15,14 +15,15 @@ logger = logging.getLogger(__name__)
 class CustomLLMClient(BaseLLMClient):
     """Custom LLM client for local network deployment."""
 
-    def __init__(self, config: LLMConfigEntry):
+    def __init__(self, config: LLMConfigEntry, verbose: bool = False):
         """
         Initialize Custom LLM client.
 
         Args:
             config: LLM configuration entry object
+            verbose: Whether to print verbose output
         """
-        super().__init__()
+        super().__init__(verbose=verbose)
         self.config = config
         self.base_url = config.base_url.rstrip("/") if config.base_url else None
         self.model_name = config.model_name
@@ -31,6 +32,11 @@ class CustomLLMClient(BaseLLMClient):
         self.api_key = config.api_key
         self.headers = config.headers or {}
         self.session = None
+
+        if self.verbose:
+            print(
+                f"[LLM VERBOSE] Selected LLM: provider=custom, model={self.model_name}, base_url={self.base_url}"
+            )
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
@@ -79,16 +85,22 @@ class CustomLLMClient(BaseLLMClient):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        logger.debug(f"Making request to {url}")
-        logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
+        if self.verbose:
+            print(f"[LLM VERBOSE] Sending request to {url}")
+            print(f"[LLM VERBOSE] Payload: {json.dumps(payload, indent=2)}")
 
         async with session.post(url, json=payload, headers=headers) as response:
+            if self.verbose:
+                print(f"[LLM VERBOSE] Response status: {response.status}")
             if response.status != 200:
                 error_text = await response.text()
+                if self.verbose:
+                    print(f"[LLM VERBOSE] Error: {error_text}")
                 raise Exception(f"LLM API error {response.status}: {error_text}")
 
             result = await response.json()
-            logger.debug(f"Response: {json.dumps(result, indent=2)}")
+            if self.verbose:
+                print(f"[LLM VERBOSE] Response: {json.dumps(result, indent=2)}")
             return result
 
     def _get_system_prompt(self, agent_type: Optional[str] = None) -> str:

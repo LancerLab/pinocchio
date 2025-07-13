@@ -225,6 +225,19 @@ class PinocchioConfig(BaseModel):
         ],
         description="LLM configuration(s)",
     )
+    # Agent-specific LLM configurations (optional, fallback to global llm)
+    llm_generator: Optional[LLMConfigEntry] = Field(
+        default=None, description="Generator agent specific LLM configuration"
+    )
+    llm_optimizer: Optional[LLMConfigEntry] = Field(
+        default=None, description="Optimizer agent specific LLM configuration"
+    )
+    llm_debugger: Optional[LLMConfigEntry] = Field(
+        default=None, description="Debugger agent specific LLM configuration"
+    )
+    llm_evaluator: Optional[LLMConfigEntry] = Field(
+        default=None, description="Evaluator agent specific LLM configuration"
+    )
     agents: AgentsConfig = Field(
         default_factory=AgentsConfig, description="Agents configuration"
     )

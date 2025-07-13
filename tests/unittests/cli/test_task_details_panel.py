@@ -5,6 +5,8 @@ Test task details panel functionality
 
 import asyncio
 
+import pytest
+
 from pinocchio.cli.main import PinocchioCLI
 from pinocchio.data_models.task_planning import (
     AgentType,
@@ -139,6 +141,7 @@ class TestTaskDetailsPanel:
         assert any("📋 Description:" in line for line in details)
 
 
+@pytest.mark.asyncio
 async def test_task_details_panel_integration():
     """Integration test for task details panel functionality."""
     cli = PinocchioCLI()
