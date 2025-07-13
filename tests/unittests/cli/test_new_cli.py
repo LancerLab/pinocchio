@@ -190,7 +190,7 @@ class TestNewCLI:
         ]
 
         for message in agent_messages:
-            cli.ad_agent_message(message, "Generator")
+            cli.add_agent_message(message, "Generator")
 
         # Verify agent messages are processed
         assert not cli.is_collecting_task_plan_overview
