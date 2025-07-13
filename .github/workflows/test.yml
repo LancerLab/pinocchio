@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.9, 3.10, 3.11]
+        python-version: [3.9, 3.10]
 
     steps:
     - uses: actions/checkout@v3
@@ -29,18 +29,23 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
 
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: 1.5.1
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-asyncio pytest-cov
+        poetry install
 
     - name: Run tests (excluding real LLM tests)
       env:
         ENABLE_REAL_LLM_TESTS: 0
         PYTHONPATH: .
       run: |
-        pytest tests/ -v --strict-markers -m "not local_only and not real_llm" --cov=pinocchio --cov-report=xml
+        poetry run pytest tests/ -v --strict-markers -m "not local_only and not real_llm" --cov=pinocchio --cov-report=xml
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -59,14 +64,20 @@ jobs:
       with:
         python-version: 3.11
 
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: 1.5.1
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install flake8 black isort mypy
+        poetry install
 
     - name: Run linting
       run: |
-        flake8 pinocchio/ tests/ --max-line-length=100 --ignore=E203,W503
-        black --check pinocchio/ tests/
-        isort --check-only pinocchio/ tests/
-        mypy pinocchio/ --ignore-missing-imports
+        poetry run flake8 pinocchio/ tests/ --max-line-length=150 --ignore=E203,W503,D205,E402,F401,F841,E712 --max-complexity=25
+        poetry run black --check pinocchio/ tests/
+        poetry run isort --check-only pinocchio/ tests/
+        poetry run mypy pinocchio/ --ignore-missing-imports

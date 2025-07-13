@@ -294,7 +294,10 @@ Please provide your analysis in JSON format:
                 optimizer_task = Task(
                     task_id=optimizer_task_id,
                     agent_type=AgentType.OPTIMIZER,
-                    task_description=f"[Round {round_idx}] Optimise code for: {', '.join(context.optimization_goals) if context.optimization_goals else 'performance and efficiency'}",
+                    task_description=(
+                        f"[Round {round_idx}] Optimise code for: "
+                        f"{', '.join(context.optimization_goals) if context.optimization_goals else 'performance and efficiency'}"
+                    ),
                     requirements={
                         "optimization_goals": context.optimization_goals
                         or ["performance", "memory_efficiency"]

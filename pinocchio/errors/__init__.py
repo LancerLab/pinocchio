@@ -6,7 +6,7 @@ across the Pinocchio system.
 """
 
 # Import and re-export common exceptions for convenience
-from .exceptions import (  # Base exception; Module-specific exceptions; LLM-specific exceptions; Config-specific exceptions; Workflow-specific exceptions; Knowledge-specific exceptions; Agent-specific exceptions; Memory-specific exceptions
+from .exceptions import (
     AgentError,
     AgentExecutionError,
     AgentInitializationError,

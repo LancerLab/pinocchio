@@ -358,7 +358,10 @@ class TaskExecutor:
                     new_debugger_task = Task(
                         task_id=f"task_{len(plan.tasks)+1}",
                         agent_type=AgentType.DEBUGGER,
-                        task_description=f"Dynamically inserted: Analyze and fix code error (attempt {current_repair_attempts + 1}/{self.max_repair_attempts})",
+                        task_description=(
+                            f"Dynamically inserted: Analyze and fix code error "
+                            f"(attempt {current_repair_attempts + 1}/{self.max_repair_attempts})"
+                        ),
                         requirements={"error_handling": True},
                         priority=TaskPriority.CRITICAL,
                         dependencies=[
@@ -379,7 +382,10 @@ class TaskExecutor:
                     # Increment repair attempts counter
                     self.repair_attempts[repair_key] = current_repair_attempts + 1
 
-                    yield f"🆕 Dynamically inserted DEBUGGER after {task.task_id} due to detected error (attempt {current_repair_attempts + 1}/{self.max_repair_attempts})"
+                    yield (
+                        f"🆕 Dynamically inserted DEBUGGER after {task.task_id} "
+                        f"due to detected error (attempt {current_repair_attempts + 1}/{self.max_repair_attempts})"
+                    )
 
                 elif current_repair_attempts >= self.max_repair_attempts:
                     yield f"⚠️ Max repair attempts ({self.max_repair_attempts}) reached for {task.task_id}, stopping debug repair loop"
