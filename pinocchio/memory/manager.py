@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from ..utils.file_utils import ensure_directory, safe_read_json, safe_write_json
+from ..utils.temp_utils import cleanup_temp_files, create_temp_file
 from .models.agent_memories import (
     BaseAgentMemory,
     DebuggerMemory,
@@ -24,15 +26,17 @@ class MemoryManager:
     def __init__(self, store_dir: str = "./memory_store"):
         """Initialize memory manager with storage directory."""
         self.store_dir = Path(store_dir)
-        self.store_dir.mkdir(parents=True, exist_ok=True)
+        # Use utils function to ensure directory exists
+        ensure_directory(self.store_dir)
         self._session_cache: Dict[
             str, Dict[str, Any]
         ] = {}  # session_id -> {code, perf, opt, memories}
 
     def _session_path(self, session_id: str) -> Path:
         p = self.store_dir / session_id
-        p.mkdir(exist_ok=True)
-        (p / "memories").mkdir(exist_ok=True)
+        # Use utils function to ensure directory exists
+        ensure_directory(p)
+        ensure_directory(p / "memories")
         return p
 
     def store_agent_memory(self, memory: BaseAgentMemory) -> str:
@@ -40,8 +44,10 @@ class MemoryManager:
         session_path = self._session_path(memory.session_id)
         fname = f"{memory.agent_type}_{memory.id}.json"
         fpath = session_path / "memories" / fname
-        with open(fpath, "w") as f:
-            f.write(memory.model_dump_json())
+        # Use utils function for safe JSON writing
+        success = safe_write_json(memory.model_dump(), fpath)
+        if not success:
+            raise RuntimeError(f"Failed to store agent memory {memory.id}")
         # Cache
         self._session_cache.setdefault(memory.session_id, {}).setdefault(
             "memories", []
@@ -253,9 +259,8 @@ class MemoryManager:
         # If not found in cache, try to reload from file
         session_path = self._session_path(session_id)
         fpath = session_path / "code_memory.json"
-        if fpath.exists():
-            with open(fpath, "r") as f:
-                data = json.load(f)
+        data = safe_read_json(fpath)
+        if data is not None:
             code_memory = CodeMemory.model_validate(data)
             self._session_cache.setdefault(session_id, {})["code_memory"] = code_memory
             return code_memory.versions.get(version_id)
@@ -292,8 +297,12 @@ class MemoryManager:
             agent_type=agent_type,
         )
         perf_history.add_metrics(metrics)
-        with open(fpath, "w") as f:
-            f.write(perf_history.model_dump_json())
+        # Use utils function for safe JSON writing
+        success = safe_write_json(perf_history.model_dump(), fpath)
+        if not success:
+            raise RuntimeError(
+                f"Failed to save performance history for session {session_id}"
+            )
         self._session_cache.setdefault(session_id, {})[
             "performance_history"
         ] = perf_history
@@ -308,9 +317,8 @@ class MemoryManager:
             return self._session_cache[session_id]["performance_history"]  # type: ignore
         session_path = self._session_path(session_id)
         fpath = session_path / "performance_history.json"
-        if fpath.exists():
-            with open(fpath, "r") as f:
-                data = json.load(f)
+        data = safe_read_json(fpath)
+        if data is not None:
             perf_history = PerformanceHistory.model_validate(data)
         else:
             perf_history = PerformanceHistory(session_id=session_id)
@@ -331,8 +339,12 @@ class MemoryManager:
         fpath = session_path / "optimization_history.json"
         opt_history = self.get_optimization_history(session_id)
         opt_history.add_iteration(techniques, hyperparameters, performance_impact)
-        with open(fpath, "w") as f:
-            f.write(opt_history.model_dump_json())
+        # Use utils function for safe JSON writing
+        success = safe_write_json(opt_history.model_dump(), fpath)
+        if not success:
+            raise RuntimeError(
+                f"Failed to save optimization history for session {session_id}"
+            )
         self._session_cache.setdefault(session_id, {})[
             "optimization_history"
         ] = opt_history
@@ -346,9 +358,8 @@ class MemoryManager:
             return self._session_cache[session_id]["optimization_history"]  # type: ignore[no-any-return]
         session_path = self._session_path(session_id)
         fpath = session_path / "optimization_history.json"
-        if fpath.exists():
-            with open(fpath, "r") as f:
-                data = json.load(f)
+        data = safe_read_json(fpath)
+        if data is not None:
             opt_history = OptimizationHistory.model_validate(data)
         else:
             opt_history = OptimizationHistory(session_id=session_id)
@@ -373,16 +384,16 @@ class MemoryManager:
         memories_dir = session_path / "memories"
         results = []
         for f in sorted(memories_dir.glob("*.json"), reverse=True):
-            with open(f, "r") as file:
-                data = json.load(file)
-            memory = BaseAgentMemory.model_validate(data)
-            if agent_type and memory.agent_type != agent_type:
-                continue
-            if filter_func and not filter_func(memory):
-                continue
-            results.append(memory)
-            if len(results) >= limit:
-                break
+            data = safe_read_json(f)
+            if data is not None:
+                memory = BaseAgentMemory.model_validate(data)
+                if agent_type and memory.agent_type != agent_type:
+                    continue
+                if filter_func and not filter_func(memory):
+                    continue
+                results.append(memory)
+                if len(results) >= limit:
+                    break
         return results
 
     def get_agent_memories(self, session_id: str) -> List[BaseAgentMemory]:
@@ -402,29 +413,32 @@ class MemoryManager:
 
         # Load code memory
         code_memory_file = session_path / "code_memory.json"
-        if code_memory_file.exists():
-            with open(code_memory_file, "r") as f:
-                export_data["code_memory"] = json.load(f)
+        code_memory_data = safe_read_json(code_memory_file)
+        if code_memory_data is not None:
+            export_data["code_memory"] = code_memory_data
 
         # Load performance history
         perf_history_file = session_path / "performance_history.json"
-        if perf_history_file.exists():
-            with open(perf_history_file, "r") as f:
-                export_data["performance_history"] = json.load(f)
+        perf_history_data = safe_read_json(perf_history_file)
+        if perf_history_data is not None:
+            export_data["performance_history"] = perf_history_data
 
         # Load optimization history
         opt_history_file = session_path / "optimization_history.json"
-        if opt_history_file.exists():
-            with open(opt_history_file, "r") as f:
-                export_data["optimization_history"] = json.load(f)
+        opt_history_data = safe_read_json(opt_history_file)
+        if opt_history_data is not None:
+            export_data["optimization_history"] = opt_history_data
 
         # Load memories
         memories_dir = session_path / "memories"
         if memories_dir.exists():
             for memory_path in sorted(memories_dir.glob("*.json")):
-                with open(memory_path, "r") as memory_file:
-                    export_data["memories"].append(json.load(memory_file))
+                memory_data = safe_read_json(memory_path)
+                if memory_data is not None:
+                    export_data["memories"].append(memory_data)
 
-        with open(export_path, "w") as f:
-            json.dump(export_data, f, indent=2)
+        # Use utils function for safe JSON writing
+        success = safe_write_json(export_data, export_path)
+        if not success:
+            raise RuntimeError(f"Failed to export logs to {export_path}")
         return export_path

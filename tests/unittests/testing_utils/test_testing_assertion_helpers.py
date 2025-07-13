@@ -26,7 +26,7 @@ from tests.utils.assertion_helpers import (
     assert_task_status,
     assert_task_valid,
 )
-from tests.utils.test_data_factories import (
+from tests.utils.testing_data_factories import (
     create_completed_test_session,
     create_simple_task_plan,
     create_test_session,
@@ -219,7 +219,7 @@ class TestAssertionHelpers:
 
     def test_assert_task_dependencies_with_deps(self):
         """Test assert_task_dependencies with dependencies."""
-        from tests.utils import create_test_task_dependency
+        from tests.utils.testing_data_factories import create_test_task_dependency
 
         task = create_test_task(dependencies=[create_test_task_dependency("dep1")])
         assert_task_dependencies(task, 1)

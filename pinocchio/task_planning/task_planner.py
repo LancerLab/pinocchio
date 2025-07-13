@@ -1,7 +1,11 @@
-"""Task planner for intelligent task decomposition and planning."""
+"""
+Task planning module for Pinocchio multi-agent system.
+
+This module provides intelligent task planning capabilities for coordinating
+multiple agents in code generation and optimization workflows.
+"""
 
 import logging
-import uuid
 from typing import Any, Dict, List, Optional
 
 from ..data_models.task_planning import (
@@ -12,79 +16,77 @@ from ..data_models.task_planning import (
     TaskPlanningContext,
     TaskPriority,
 )
-from ..llm.mock_client import MockLLMClient
+from ..utils import parse_structured_output, safe_json_parse, validate_json_structure
 
 logger = logging.getLogger(__name__)
 
 
 class TaskPlanner:
-    """Intelligent task planner for decomposing user requests into executable tasks."""
+    """Intelligent task planner for multi-agent coordination."""
 
     def __init__(self, llm_client: Optional[Any] = None):
         """
         Initialize task planner.
 
         Args:
-            llm_client: LLM client for intelligent planning (uses MockLLMClient if None)
+            llm_client: LLM client for request analysis
         """
-        self.llm_client = llm_client or MockLLMClient(response_delay_ms=100)
+        self.llm_client = llm_client
         logger.info("TaskPlanner initialized")
 
     async def create_task_plan(
         self, user_request: str, session_id: Optional[str] = None
     ) -> TaskPlan:
         """
-        Create a task plan from user request.
+        Create a comprehensive task plan for user request.
 
         Args:
-            user_request: User's input request
-            session_id: Optional session identifier
+            user_request: User's request description
+            session_id: Optional session ID for context
 
         Returns:
-            TaskPlan with decomposed tasks
+            TaskPlan with generated tasks
         """
-        # Create planning context
-        context = await self._analyze_request(user_request)
-        context.session_id = session_id
+        logger.info(f"Creating task plan for request: {user_request[:50]}...")
 
-        # Generate tasks based on analysis
+        # Analyze user request
+        context = await self._analyze_request(user_request)
+
+        # Generate tasks
         tasks = await self._generate_tasks(context)
 
         # Create task plan
-        plan_id = f"plan_{uuid.uuid4().hex[:8]}"
         plan = TaskPlan(
-            plan_id=plan_id,
+            plan_id=f"plan_{session_id or 'default'}",
             user_request=user_request,
             tasks=tasks,
-            session_id=session_id,
             context=context.model_dump(),
         )
 
-        logger.info(f"Created task plan {plan_id} with {len(tasks)} tasks")
+        logger.info(f"Created task plan with {len(tasks)} tasks")
         return plan
 
     async def _analyze_request(self, user_request: str) -> TaskPlanningContext:
         """
-        Analyze user request to extract requirements and goals.
+        Analyze user request to determine requirements and strategy.
 
         Args:
-            user_request: User's input request
+            user_request: User's request description
 
         Returns:
-            TaskPlanningContext with extracted information
+            TaskPlanningContext with analysis results
         """
-        # Build analysis prompt
-        prompt = self._build_analysis_prompt(user_request)
-
-        try:
-            # Call LLM for intelligent analysis
-            response = await self.llm_client.complete(prompt, agent_type="task_planner")
-
-            # Parse response (simplified for now)
-            analysis = self._parse_analysis_response(response, user_request)
-
-        except Exception as e:
-            logger.warning(f"LLM analysis failed, using fallback: {e}")
+        if self.llm_client:
+            # Use LLM for intelligent analysis
+            prompt = self._build_analysis_prompt(user_request)
+            try:
+                response = await self.llm_client.complete(prompt)
+                analysis = self._parse_analysis_response(response, user_request)
+            except Exception as e:
+                logger.warning(f"LLM analysis failed, using fallback: {e}")
+                analysis = self._fallback_analysis(user_request)
+        else:
+            # Use fallback analysis
             analysis = self._fallback_analysis(user_request)
 
         return TaskPlanningContext(
@@ -99,30 +101,27 @@ class TaskPlanner:
     def _build_analysis_prompt(self, user_request: str) -> str:
         """Build prompt for request analysis."""
         return f"""
-You are a task planner in the Pinocchio multi-agent system. Analyze the following user request and extract:
+Analyze the following user request for code generation and optimization:
 
-1. Requirements: What needs to be accomplished
-2. Optimization goals: Performance, memory, etc. goals
-3. Constraints: Limitations or requirements
-4. User preferences: Any specific preferences mentioned
-5. Planning strategy: Recommended approach (standard, aggressive, conservative)
+Request: {user_request}
 
-User request: {user_request}
-
-Please provide your analysis in JSON format:
+Please provide a structured analysis in JSON format:
 {{
     "requirements": {{
         "primary_goal": "main objective",
-        "secondary_goals": ["goal1", "goal2"],
-        "code_requirements": ["requirement1", "requirement2"]
+        "secondary_goals": ["list", "of", "secondary", "goals"],
+        "code_requirements": ["efficient_data_structures", "performance_optimization"]
     }},
     "optimization_goals": ["performance", "memory_efficiency", "scalability"],
-    "constraints": ["constraint1", "constraint2"],
+    "constraints": ["simplicity", "safety", "compatibility"],
     "user_preferences": {{
-        "preference1": "value1"
+        "complexity_level": "simple|moderate|advanced",
+        "optimization_aggressiveness": "conservative|standard|aggressive"
     }},
-    "planning_strategy": "standard|aggressive|conservative"
+    "planning_strategy": "conservative|standard|aggressive"
 }}
+
+Focus on high-performance computing and code optimization requirements.
 """
 
     def _parse_analysis_response(
@@ -130,14 +129,13 @@ Please provide your analysis in JSON format:
     ) -> Dict[str, Any]:
         """Parse LLM response for request analysis."""
         try:
-            import json
-
-            # Try to extract JSON from response
-            if "{" in response and "}" in response:
-                start = response.find("{")
-                end = response.rfind("}") + 1
-                json_str = response[start:end]
-                return json.loads(json_str)
+            # Use utils for JSON parsing
+            parsed = safe_json_parse(response)
+            if parsed is not None:
+                # Validate the structure
+                required_keys = ["requirements", "optimization_goals", "constraints"]
+                if validate_json_structure(parsed, required_keys):
+                    return parsed
         except Exception as e:
             logger.warning(f"Failed to parse analysis response: {e}")
 
@@ -327,142 +325,94 @@ Please provide your analysis in JSON format:
             "Generate high-performance Choreo DSL operator code based on the user request.",
             "",
             "Key Requirements:",
+            f"- Primary Goal: {context.user_request}",
+            f"- Optimization Goals: {', '.join(context.optimization_goals)}",
+            f"- Constraints: {', '.join(context.constraints)}",
+            "",
+            "Code Requirements:",
+            "- Use efficient data structures and algorithms",
+            "- Implement proper error handling",
+            "- Include performance optimizations",
+            "- Add comprehensive comments",
+            "- Ensure code is production-ready",
+            "",
+            "Output Format:",
+            "- Provide complete, compilable code",
+            "- Include usage examples",
+            "- Explain optimization techniques used",
+            "- List any assumptions or limitations",
         ]
-
-        if context.requirements:
-            for key, value in context.requirements.items():
-                instruction_parts.append(f"- {key}: {value}")
-
-        if context.optimization_goals:
-            instruction_parts.extend(
-                [
-                    "",
-                    "Optimization Goals:",
-                    "- " + "\n- ".join(context.optimization_goals),
-                ]
-            )
-
-        if context.constraints:
-            instruction_parts.extend(
-                ["", "Constraints:", "- " + "\n- ".join(context.constraints)]
-            )
-
-        instruction_parts.extend(
-            [
-                "",
-                "Focus on:",
-                "- Performance optimization (loop tiling, vectorization, memory coalescing)",
-                "- Memory efficiency and access patterns",
-                "- Correctness and safety with proper error checking",
-                "- Code readability and maintainability",
-                "- Following Choreo DSL syntax and conventions",
-            ]
-        )
 
         return "\n".join(instruction_parts)
 
     def _build_optimizer_instruction(self, context: TaskPlanningContext) -> str:
         """Build detailed instruction for optimizer agent."""
         instruction_parts = [
-            "Analyze and optimize the generated Choreo DSL code for better performance.",
+            "Optimize the generated code for maximum performance and efficiency.",
             "",
             "Optimization Goals:",
-            "- " + "\n- ".join(context.optimization_goals),
+            f"- {', '.join(context.optimization_goals)}",
+            "",
+            "Optimization Techniques to Consider:",
+            "- Loop unrolling and vectorization",
+            "- Memory access pattern optimization",
+            "- Cache-friendly data structures",
+            "- Algorithm complexity reduction",
+            "- Parallel processing opportunities",
+            "- Memory usage optimization",
+            "",
+            "Output Format:",
+            "- Provide optimized code with explanations",
+            "- Include performance benchmarks",
+            "- Document optimization techniques used",
+            "- Highlight expected performance improvements",
         ]
-
-        if context.requirements:
-            instruction_parts.extend(
-                [
-                    "",
-                    "Additional Requirements:",
-                    "- "
-                    + "\n- ".join(
-                        [f"{k}: {v}" for k, v in context.requirements.items()]
-                    ),
-                ]
-            )
-
-        instruction_parts.extend(
-            [
-                "",
-                "Optimization Focus:",
-                "- Identify performance bottlenecks",
-                "- Apply advanced optimization techniques",
-                "- Maintain code correctness",
-                "- Provide detailed optimization explanations",
-                "- Suggest hyperparameter tuning",
-            ]
-        )
 
         return "\n".join(instruction_parts)
 
     def _build_debugger_instruction(self, context: TaskPlanningContext) -> str:
         """Build detailed instruction for debugger agent."""
         instruction_parts = [
-            "Analyze the generated code for potential issues, errors, and improvements.",
+            "Analyze and debug the generated code for potential issues.",
             "",
-            "Debugging Focus:",
-            "- Syntax errors and compatibility issues",
+            "Debugging Focus Areas:",
+            "- Compilation errors and syntax issues",
+            "- Runtime errors and exceptions",
             "- Logic errors and edge cases",
             "- Performance bottlenecks",
-            "- Memory access patterns",
-            "- Error handling and validation",
+            "- Memory leaks and resource management",
+            "- Thread safety and concurrency issues",
+            "",
+            "Output Format:",
+            "- List all issues found with severity levels",
+            "- Provide specific fixes for each issue",
+            "- Include corrected code snippets",
+            "- Explain the root cause of each issue",
+            "- Suggest preventive measures",
         ]
-
-        if context.constraints:
-            instruction_parts.extend(
-                [
-                    "",
-                    "Specific Constraints to Check:",
-                    "- " + "\n- ".join(context.constraints),
-                ]
-            )
-
-        instruction_parts.extend(
-            [
-                "",
-                "Provide:",
-                "- Detailed analysis of issues found",
-                "- Specific fixes with explanations",
-                "- Improved code version",
-                "- Recommendations for robustness",
-            ]
-        )
 
         return "\n".join(instruction_parts)
 
     def _build_evaluator_instruction(self, context: TaskPlanningContext) -> str:
         """Build detailed instruction for evaluator agent."""
         instruction_parts = [
-            "Evaluate the generated code for performance, correctness, and quality.",
+            "Evaluate the generated and optimized code for quality and correctness.",
             "",
             "Evaluation Criteria:",
+            "- Code correctness and functionality",
+            "- Performance characteristics",
+            "- Code maintainability and readability",
+            "- Error handling and robustness",
+            "- Documentation quality",
+            "- Test coverage and reliability",
+            "",
+            "Output Format:",
+            "- Provide comprehensive evaluation report",
+            "- Include performance metrics",
+            "- Rate code quality on multiple dimensions",
+            "- Suggest improvements and best practices",
+            "- Provide overall score and recommendations",
         ]
-
-        if context.optimization_goals:
-            instruction_parts.append("- " + "\n- ".join(context.optimization_goals))
-
-        if context.requirements.get("performance_requirements"):
-            instruction_parts.extend(
-                [
-                    "",
-                    "Performance Requirements:",
-                    f"- {context.requirements['performance_requirements']}",
-                ]
-            )
-
-        instruction_parts.extend(
-            [
-                "",
-                "Evaluation Focus:",
-                "- Code quality and maintainability",
-                "- Performance characteristics",
-                "- Memory usage patterns",
-                "- Correctness and safety",
-                "- Optimization effectiveness",
-                "- Scalability considerations",
-            ]
-        )
 
         return "\n".join(instruction_parts)
 
@@ -473,27 +423,28 @@ Please provide your analysis in JSON format:
         Create an adaptive task plan based on previous results.
 
         Args:
-            user_request: User's input request
-            previous_results: Results from previous executions
+            user_request: User's request description
+            previous_results: Results from previous execution
 
         Returns:
             Adaptive TaskPlan
         """
+        logger.info("Creating adaptive task plan")
+
+        # Analyze request with previous context
         context = await self._analyze_request(user_request)
-        context.previous_results = previous_results
 
         # Generate adaptive tasks
         tasks = await self._generate_adaptive_tasks(context, previous_results)
 
-        plan_id = f"adaptive_plan_{uuid.uuid4().hex[:8]}"
+        # Create adaptive plan
         plan = TaskPlan(
-            plan_id=plan_id,
+            plan_id=f"adaptive_plan_{len(previous_results)}",
             user_request=user_request,
             tasks=tasks,
-            context=context.dict(),
+            context=context.model_dump(),
         )
 
-        logger.info(f"Created adaptive task plan {plan_id} with {len(tasks)} tasks")
         return plan
 
     async def _generate_adaptive_tasks(
@@ -501,114 +452,157 @@ Please provide your analysis in JSON format:
     ) -> List[Task]:
         """Generate adaptive tasks based on previous results."""
         tasks = []
-        task_counter = 1
 
-        # Check if previous generation failed
-        if previous_results.get("generator_failed"):
-            # Start with debugging to understand the issue
-            debugger_task = Task(
-                task_id=f"task_{task_counter}",
-                agent_type=AgentType.DEBUGGER,
-                task_description="Analyze previous generation failure and provide insights",
-                requirements={"analyze_failure": True},
-                priority=TaskPriority.CRITICAL,
-                input_data={"previous_results": previous_results},
+        # Analyze previous failures
+        failed_tasks = []
+        for key, result in previous_results.items():
+            if isinstance(result, dict) and not result.get("success", True):
+                failed_tasks.append(result)
+            elif isinstance(result, bool) and not result:
+                # Handle boolean results (like "generator_failed": True)
+                failed_tasks.append(
+                    {"task_id": key, "success": False, "error_details": {}}
+                )
+
+        # Check for specific failure patterns
+        if (
+            "generator_failed" in previous_results
+            and previous_results["generator_failed"]
+        ):
+            failed_tasks.append(
+                {
+                    "task_id": "generator",
+                    "success": False,
+                    "error_details": {
+                        "error_message": previous_results.get(
+                            "error_message", "Generator failed"
+                        )
+                    },
+                }
             )
-            tasks.append(debugger_task)
-            task_counter += 1
 
-        # Add generation task
-        generator_task = Task(
-            task_id=f"task_{task_counter}",
-            agent_type=AgentType.GENERATOR,
-            task_description=context.user_request,
-            requirements=context.requirements,
-            optimization_goals=context.optimization_goals,
-            priority=TaskPriority.CRITICAL,
-            input_data={
-                "user_request": context.user_request,
-                "previous_results": previous_results,
-            },
-        )
-        tasks.append(generator_task)
-        task_counter += 1
+        if failed_tasks:
+            # Add debugging and repair tasks - ensure DEBUGGER is first
+            for i, failed_task in enumerate(failed_tasks):
+                debug_task = Task(
+                    task_id=f"debug_task_{i}",
+                    agent_type=AgentType.DEBUGGER,
+                    task_description=f"Debug and repair failed task: {failed_task.get('task_id', 'unknown')}",
+                    requirements={"error_analysis": True},
+                    priority=TaskPriority.CRITICAL,
+                    input_data={
+                        "failed_task": failed_task,
+                        "error_details": failed_task.get("error_details", {}),
+                    },
+                )
+                tasks.append(debug_task)
 
-        # Add optimization if needed
-        if context.optimization_goals:
-            optimizer_task = Task(
-                task_id=f"task_{task_counter}",
-                agent_type=AgentType.OPTIMIZER,
-                task_description=f"Optimize generated code for: {', '.join(context.optimization_goals)}",
-                requirements={"optimization_goals": context.optimization_goals},
+            # Add continuation task after debugger tasks
+            continuation_task = Task(
+                task_id="continuation_task",
+                agent_type=AgentType.GENERATOR,
+                task_description="Continue code generation after bug fix",
+                requirements={"continuation": True},
                 priority=TaskPriority.HIGH,
                 dependencies=[
                     TaskDependency(
-                        task_id=f"task_{task_counter-1}", dependency_type="required"
+                        task_id=f"debug_task_{i}", dependency_type="required"
                     )
+                    for i in range(len(failed_tasks))
                 ],
-                input_data={"optimization_goals": context.optimization_goals},
+                input_data={
+                    "user_request": context.user_request,
+                    "previous_results": previous_results,
+                    "instruction": "Continue with improved code generation based on previous debugging results",
+                },
             )
-            tasks.append(optimizer_task)
-            task_counter += 1
+            tasks.append(continuation_task)
+        else:
+            # No failures, just add a generator task
+            continuation_task = Task(
+                task_id="continuation_task",
+                agent_type=AgentType.GENERATOR,
+                task_description="Continue code generation",
+                requirements={"continuation": True},
+                priority=TaskPriority.HIGH,
+                input_data={
+                    "user_request": context.user_request,
+                    "previous_results": previous_results,
+                    "instruction": "Continue with code generation",
+                },
+            )
+            tasks.append(continuation_task)
 
         return tasks
 
     def validate_plan(self, plan: TaskPlan) -> Dict[str, Any]:
         """
-        Validate task plan for consistency and completeness.
+        Validate task plan for completeness and consistency.
 
         Args:
-            plan: Task plan to validate
+            plan: TaskPlan to validate
 
         Returns:
             Validation results
         """
-        issues = []
-        warnings = []
+        validation_results = {
+            "valid": True,  # Keep backward compatibility
+            "is_valid": True,
+            "errors": [],
+            "warnings": [],
+            "task_count": len(plan.tasks),
+            "dependency_issues": [],
+            "issues": [],  # Keep backward compatibility
+        }
 
-        # Check for circular dependencies
-        for task in plan.tasks:
-            for dep in task.dependencies:
-                if dep.task_id == task.task_id:
-                    issues.append(f"Circular dependency in task {task.task_id}")
+        # Check for required tasks - only GENERATOR is absolutely required
+        agent_types = [task.agent_type for task in plan.tasks]
+        required_agents = [AgentType.GENERATOR]  # Only GENERATOR is required
 
-        # Check for missing dependencies
+        for agent_type in required_agents:
+            if agent_type not in agent_types:
+                validation_results["valid"] = False
+                validation_results["is_valid"] = False
+                error_msg = f"Missing required agent type: {agent_type}"
+                validation_results["errors"].append(error_msg)
+                validation_results["issues"].append(
+                    error_msg
+                )  # Keep backward compatibility
+
+        # Check dependencies
         task_ids = {task.task_id for task in plan.tasks}
         for task in plan.tasks:
-            for dep in task.dependencies:
-                if dep.task_id not in task_ids:
-                    issues.append(
-                        f"Missing dependency {dep.task_id} for task {task.task_id}"
-                    )
+            for dependency in task.dependencies:
+                if dependency.task_id not in task_ids:
+                    error_msg = f"Task {task.task_id} depends on non-existent task {dependency.task_id}"
+                    validation_results["dependency_issues"].append(error_msg)
+                    validation_results["errors"].append(error_msg)
+                    validation_results["issues"].append(
+                        error_msg
+                    )  # Keep backward compatibility
+                elif dependency.task_id == task.task_id:
+                    # Circular dependency
+                    error_msg = f"Circular dependency in task {task.task_id}"
+                    validation_results["dependency_issues"].append(error_msg)
+                    validation_results["errors"].append(error_msg)
+                    validation_results["issues"].append(
+                        error_msg
+                    )  # Keep backward compatibility
 
-        # Check for critical tasks
-        critical_tasks = [
-            task for task in plan.tasks if task.priority == TaskPriority.CRITICAL
-        ]
-        if not critical_tasks:
-            warnings.append("No critical tasks in plan")
+        if validation_results["dependency_issues"]:
+            validation_results["valid"] = False
+            validation_results["is_valid"] = False
 
-        # Check plan size
-        if len(plan.tasks) > 10:
-            warnings.append("Plan has many tasks, consider simplification")
-
-        return {
-            "valid": len(issues) == 0,
-            "issues": issues,
-            "warnings": warnings,
-            "task_count": len(plan.tasks),
-            "critical_task_count": len(critical_tasks),
-        }
+        return validation_results
 
     @staticmethod
     def _create_context_from_task(task: Task) -> TaskPlanningContext:
-        """Create a TaskPlanningContext from a task."""
+        """Create TaskPlanningContext from a single task."""
         return TaskPlanningContext(
-            user_request=task.input_data.get("user_request", task.task_description),
+            user_request=task.task_description,
             requirements=task.requirements or {},
             optimization_goals=task.optimization_goals or [],
             constraints=[],
-            context_type="code_generation",
-            complexity_level="medium",
-            previous_results={},
+            user_preferences={},
+            planning_strategy="standard",
         )

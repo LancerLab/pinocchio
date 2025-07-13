@@ -60,12 +60,13 @@ class TestGeneratorAgent:
         assert "optimization_techniques" in result.output
         assert result.processing_time_ms is not None
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_generator_execute_with_llm_failure(self):
         """Test generator with LLM failure."""
-        # Create generator with failing LLM client
+        # Create generator with failing LLM client and shorter retry delay
         failing_client = MockLLMClient(response_delay_ms=1, failure_rate=1.0)
-        generator = GeneratorAgent(failing_client, max_retries=2)
+        generator = GeneratorAgent(failing_client, max_retries=2, retry_delay=0.001)
 
         request = {"request_id": "test_request", "task_description": "编写一个算子"}
 

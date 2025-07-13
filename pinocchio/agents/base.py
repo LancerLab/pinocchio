@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
 from ..data_models.agent import AgentResponse
-from ..utils.json_parser import parse_structured_output
+from ..utils.json_parser import parse_structured_output, validate_agent_response
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,12 @@ class Agent(ABC):
 
             # Parse response
             parsed_response = parse_structured_output(response)
+
+            # Validate response structure
+            if not validate_agent_response(parsed_response):
+                logger.warning(
+                    f"Invalid agent response structure for {self.agent_type}"
+                )
 
             # Update statistics
             processing_time = (time.time() - start_time) * 1000  # Convert to ms

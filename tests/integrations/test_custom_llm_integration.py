@@ -4,13 +4,12 @@
 import asyncio
 import json
 import logging
+import os
 
 import pytest
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
-
-pytestmark = pytest.mark.asyncio
 
 # Mark tests that require real LLM connection to be skipped in CI
 pytestmark = [pytest.mark.asyncio, pytest.mark.real_llm]
@@ -32,7 +31,18 @@ logger = logging.getLogger(__name__)
 
 console = Console()
 
+# Fast mode for testing - set FAST_TEST=1 to enable
+FAST_TEST = os.getenv("FAST_TEST", "0") == "1"
 
+# Skip real LLM tests unless explicitly enabled
+SKIP_REAL_LLM = not os.getenv("ENABLE_REAL_LLM_TESTS", "0") == "1"
+
+
+@pytest.mark.skipif(
+    SKIP_REAL_LLM,
+    reason="Real LLM tests disabled. Set ENABLE_REAL_LLM_TESTS=1 to enable.",
+)
+@pytest.mark.slow
 async def test_custom_llm_connection():
     """Test Custom LLM client connection."""
     console.print(Panel.fit("🔗 Testing Custom LLM Connection", style="blue"))
@@ -47,11 +57,20 @@ async def test_custom_llm_connection():
     client = CustomLLMClient(config=llm_config)
 
     try:
-        # Test simple completion
+        # Test simple completion with shorter prompt in fast mode
         console.print("📡 Testing basic completion...")
-        prompt = "Hello, can you help me with code generation?"
+        prompt = (
+            "Hello, can you help me with code generation?" if not FAST_TEST else "Hi"
+        )
 
-        response = await client.complete(prompt, agent_type="generator")
+        # Add timeout for fast mode
+        if FAST_TEST:
+            response = await asyncio.wait_for(
+                client.complete(prompt, agent_type="generator"), timeout=5.0
+            )
+        else:
+            response = await client.complete(prompt, agent_type="generator")
+
         console.print("✅ Basic completion successful!")
 
         # Parse and display response
@@ -74,6 +93,11 @@ async def test_custom_llm_connection():
         return False
 
 
+@pytest.mark.skipif(
+    SKIP_REAL_LLM,
+    reason="Real LLM tests disabled. Set ENABLE_REAL_LLM_TESTS=1 to enable.",
+)
+@pytest.mark.slow
 async def test_code_generation():
     """Test code generation with Custom LLM."""
     console.print(Panel.fit("🧠 Testing Code Generation", style="blue"))
@@ -85,12 +109,22 @@ async def test_code_generation():
     client = CustomLLMClient(config=llm_config)
 
     try:
-        # Test code generation
-        prompt = """Please generate a Choreo DSL operator for matrix multiplication.
-        The operator should be optimized for performance and include proper error handling."""
+        # Use shorter prompt in fast mode
+        if FAST_TEST:
+            prompt = "Generate a simple function."
+        else:
+            prompt = """Please generate a Choreo DSL operator for matrix multiplication.
+            The operator should be optimized for performance and include proper error handling."""
 
-        console.print("📝 Generating matrix multiplication operator...")
-        response = await client.complete(prompt, agent_type="generator")
+        console.print("📝 Generating code...")
+
+        # Add timeout for fast mode
+        if FAST_TEST:
+            response = await asyncio.wait_for(
+                client.complete(prompt, agent_type="generator"), timeout=10.0
+            )
+        else:
+            response = await client.complete(prompt, agent_type="generator")
 
         # Parse response
         response_data = json.loads(response)
@@ -118,6 +152,11 @@ async def test_code_generation():
         return False
 
 
+@pytest.mark.skipif(
+    SKIP_REAL_LLM,
+    reason="Real LLM tests disabled. Set ENABLE_REAL_LLM_TESTS=1 to enable.",
+)
+@pytest.mark.slow
 async def test_debugging():
     """Test debugging with Custom LLM."""
     console.print(Panel.fit("🐛 Testing Debugging", style="blue"))
@@ -129,8 +168,16 @@ async def test_debugging():
     client = CustomLLMClient(config=llm_config)
 
     try:
-        # Test debugging
-        buggy_code = """
+        # Use shorter code in fast mode
+        if FAST_TEST:
+            buggy_code = """
+func test() {
+    // Simple buggy code
+    x = 1;
+}
+"""
+        else:
+            buggy_code = """
 func matmul_buggy(input: tensor, output: tensor) {
     // Buggy implementation with potential issues
     for i in range(input.shape[0]) {
@@ -147,7 +194,14 @@ func matmul_buggy(input: tensor, output: tensor) {
         {buggy_code}"""
 
         console.print("🔍 Analyzing buggy code...")
-        response = await client.complete(prompt, agent_type="debugger")
+
+        # Add timeout for fast mode
+        if FAST_TEST:
+            response = await asyncio.wait_for(
+                client.complete(prompt, agent_type="debugger"), timeout=10.0
+            )
+        else:
+            response = await client.complete(prompt, agent_type="debugger")
 
         # Parse response
         response_data = json.loads(response)

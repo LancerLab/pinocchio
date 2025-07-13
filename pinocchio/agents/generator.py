@@ -7,7 +7,8 @@ from pinocchio.config import ConfigManager
 from pinocchio.llm.custom_llm_client import CustomLLMClient
 
 from ..data_models.agent import AgentResponse
-from ..utils.json_parser import extract_code_from_response
+from ..utils.json_parser import extract_code_from_response, format_json_response
+from ..utils.temp_utils import cleanup_temp_files, create_temp_file
 from .base import AgentWithRetry
 
 logger = logging.getLogger(__name__)
@@ -16,13 +17,16 @@ logger = logging.getLogger(__name__)
 class GeneratorAgent(AgentWithRetry):
     """Agent responsible for generating Choreo DSL operator code."""
 
-    def __init__(self, llm_client: Any = None, max_retries: int = 3):
+    def __init__(
+        self, llm_client: Any = None, max_retries: int = 3, retry_delay: float = 1.0
+    ):
         """
         Initialize Generator agent.
 
         Args:
             llm_client: LLM client instance (optional)
             max_retries: Maximum retry attempts for LLM calls
+            retry_delay: Delay between retry attempts in seconds
         """
         if llm_client is None:
             config_manager = ConfigManager()
@@ -30,7 +34,7 @@ class GeneratorAgent(AgentWithRetry):
             agent_llm_config = config_manager.get_agent_llm_config("generator")
             verbose = config_manager.get("verbose.enabled", True)
             llm_client = CustomLLMClient(agent_llm_config, verbose=verbose)
-        super().__init__("generator", llm_client, max_retries)
+        super().__init__("generator", llm_client, max_retries, retry_delay)
         logger.info("GeneratorAgent initialized with its own LLM client")
 
     async def execute(self, request: Dict[str, Any]) -> AgentResponse:

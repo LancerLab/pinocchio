@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from ..utils.file_utils import ensure_directory, safe_read_json, safe_write_json
+from ..utils.temp_utils import cleanup_temp_files, create_temp_file
 from .formatter import TemplateFormatter
 from .models import (
     AgentType,
@@ -40,7 +42,8 @@ class PromptManager:
         self.storage_path = (
             Path(storage_path) if storage_path else Path("./prompt_storage")
         )
-        self.storage_path.mkdir(exist_ok=True)
+        # Use utils function to ensure directory exists
+        ensure_directory(self.storage_path)
 
         # Load existing templates if available
         self._load_templates()
@@ -347,8 +350,10 @@ class PromptManager:
         template_file = (
             self.storage_path / f"{template.template_name}_{template.version_id}.json"
         )
-        with open(template_file, "w") as f:
-            json.dump(template.to_dict(), f, indent=2)
+        # Use utils function for safe JSON writing
+        success = safe_write_json(template.to_dict(), template_file)
+        if not success:
+            raise RuntimeError(f"Failed to save template {template.template_name}")
 
     def _load_templates(self) -> None:
         """Load templates from storage."""
@@ -357,10 +362,10 @@ class PromptManager:
 
         for template_file in self.storage_path.glob("*.json"):
             try:
-                with open(template_file, "r") as f:
-                    data = json.load(f)
-                template = PromptTemplate.from_dict(data)
-                self.memory.add_template(template)
+                data = safe_read_json(template_file)
+                if data is not None:
+                    template = PromptTemplate.from_dict(data)
+                    self.memory.add_template(template)
             except Exception as e:
                 print(f"Error loading template from {template_file}: {e}")
 
@@ -376,8 +381,10 @@ class PromptManager:
             "total_usage": self.memory.total_usage,
             "success_rate": self.memory.success_rate,
         }
-        with open(state_file, "w") as f:
-            json.dump(state, f, indent=2)
+        # Use utils function for safe JSON writing
+        success = safe_write_json(state, state_file)
+        if not success:
+            raise RuntimeError("Failed to save memory state")
 
     def _remove_template_file(self, template_name: str, version_id: str) -> None:
         """Remove a specific template file."""

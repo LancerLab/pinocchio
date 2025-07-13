@@ -1,6 +1,7 @@
 """Assertion helpers for Pinocchio tests."""
 
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 from unittest.mock import MagicMock
 
 from pinocchio.data_models.task_planning import (
@@ -11,6 +12,7 @@ from pinocchio.data_models.task_planning import (
     TaskStatus,
 )
 from pinocchio.session import Session, SessionStatus
+from pinocchio.utils import safe_read_json
 
 
 def assert_task_valid(
@@ -99,6 +101,43 @@ def assert_mock_called_with_args(
         for key, value in expected_kwargs.items():
             assert key in actual_kwargs
             assert actual_kwargs[key] == value
+
+
+def assert_dict_structure(
+    data: Dict[str, Any],
+    required_keys: List[str],
+    optional_keys: Optional[List[str]] = None,
+) -> None:
+    """
+    Assert that a dictionary has the required structure.
+    Args:
+        data: Dictionary to check
+        required_keys: List of required keys
+        optional_keys: List of optional keys
+    """
+    if optional_keys is None:
+        optional_keys = []
+    # Check required keys
+    for key in required_keys:
+        assert key in data, f"Missing required key: {key}"
+    # Check that all keys are either required or optional
+    all_valid_keys = set(required_keys) | set(optional_keys)
+    for key in data.keys():
+        assert key in all_valid_keys, f"Unexpected key: {key}"
+
+
+def assert_json_file_structure(
+    file_path: Union[str, Path], required_keys: List[str]
+) -> None:
+    """
+    Assert that a JSON file has the required structure.
+    Args:
+        file_path: Path to JSON file
+        required_keys: List of required keys
+    """
+    data = safe_read_json(file_path)
+    assert data is not None, f"Failed to read JSON file: {file_path}"
+    assert_dict_structure(data, required_keys)
 
 
 def assert_dict_contains_keys(data: Dict[str, Any], required_keys: List[str]) -> None:

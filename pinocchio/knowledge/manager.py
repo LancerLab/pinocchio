@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ..utils.file_utils import ensure_directory, safe_read_json, safe_write_json
+from ..utils.temp_utils import cleanup_temp_files, create_temp_file
 from .models.knowledge import (
     KnowledgeCategory,
     KnowledgeContentType,
@@ -37,7 +39,8 @@ class KnowledgeManager:
         self.storage_path = (
             Path(storage_path) if storage_path else Path("knowledge_storage")
         )
-        self.storage_path.mkdir(exist_ok=True)
+        # Use utils function to ensure directory exists
+        ensure_directory(self.storage_path)
 
         # In-memory storage for active fragments
         self.fragments: Dict[str, KnowledgeFragment] = {}
@@ -330,8 +333,10 @@ class KnowledgeManager:
         """
         fragment_file = self.storage_path / f"{fragment.fragment_id}.json"
 
-        with open(fragment_file, "w") as f:
-            json.dump(fragment.model_dump(), f, indent=2, default=str)
+        # Use utils function for safe JSON writing
+        success = safe_write_json(fragment.model_dump(), fragment_file)
+        if not success:
+            raise RuntimeError(f"Failed to persist fragment {fragment.fragment_id}")
 
     def load_from_storage(self) -> None:
         """
@@ -339,8 +344,8 @@ class KnowledgeManager:
         """
         for fragment_file in self.storage_path.glob("*.json"):
             try:
-                with open(fragment_file, "r") as f:
-                    data = json.load(f)
+                data = safe_read_json(fragment_file)
+                if data is not None:
                     fragment = KnowledgeFragment(**data)
                     self.fragments[fragment.fragment_id] = fragment
 

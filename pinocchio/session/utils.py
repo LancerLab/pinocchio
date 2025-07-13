@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ..utils.file_utils import ensure_directory, safe_write_json
 from .models.session import Session, SessionStatus
 
 
@@ -134,10 +135,13 @@ class SessionUtils:
         report = SessionUtils.generate_session_report(session)
 
         output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+        # Use utils function to ensure directory exists
+        ensure_directory(output_file.parent)
 
-        with open(output_file, "w") as f:
-            json.dump(report, f, indent=2, default=str)
+        # Use utils function for safe JSON writing
+        success = safe_write_json(report, output_file)
+        if not success:
+            raise RuntimeError(f"Failed to export session to {output_path}")
 
         return str(output_file)
 

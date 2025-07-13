@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TaskStatus(str, Enum):
@@ -113,11 +113,7 @@ class Task(BaseModel):
         default_factory=dict, description="Task-specific configuration"
     )
 
-    class Config:
-        """Pydantic configuration."""
-
-        use_enum_values = True
-        validate_assignment = True
+    model_config = ConfigDict(use_enum_values=True, validate_assignment=True)
 
     def can_execute(self, completed_tasks: List[str]) -> bool:
         """
@@ -214,11 +210,7 @@ class TaskPlan(BaseModel):
         default_factory=dict, description="Execution metrics"
     )
 
-    class Config:
-        """Pydantic configuration."""
-
-        use_enum_values = True
-        validate_assignment = True
+    model_config = ConfigDict(use_enum_values=True, validate_assignment=True)
 
     def get_ready_tasks(self) -> List[Task]:
         """
@@ -348,8 +340,4 @@ class TaskPlanningContext(BaseModel):
     )
     max_tasks: int = Field(default=10, description="Maximum number of tasks in plan")
 
-    class Config:
-        """Pydantic configuration."""
-
-        use_enum_values = True
-        validate_assignment = True
+    model_config = ConfigDict(use_enum_values=True, validate_assignment=True)

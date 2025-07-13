@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from ..utils.file_utils import ensure_directory, safe_read_json, safe_write_json
 from .models import (
     LLMConfigEntry,
     LLMConfigList,
@@ -53,24 +54,31 @@ class ConfigManager:
 
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, "r", encoding="utf-8") as f:
-                    file_data = json.load(f)
+                file_data = safe_read_json(self.config_file)
+                if file_data is not None:
                     # Create config from file data, merging with defaults
                     config = PinocchioConfig(**file_data)
                     logger.info(f"Configuration loaded from {self.config_file}")
                     return config
+                else:
+                    logger.warning(f"Failed to load config from {self.config_file}")
+                    return default_config
             except Exception as e:
                 logger.warning(f"Failed to load config from {self.config_file}: {e}")
                 return default_config
         else:
             # Create default config file
             try:
-                os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-                with open(self.config_file, "w", encoding="utf-8") as f:
-                    json.dump(
-                        default_config.model_dump(), f, indent=2, ensure_ascii=False
+                # Use utils function to ensure directory exists
+                ensure_directory(Path(self.config_file).parent)
+                # Use utils function for safe JSON writing
+                success = safe_write_json(default_config.model_dump(), self.config_file)
+                if success:
+                    logger.info(
+                        f"Created default configuration file: {self.config_file}"
                     )
-                logger.info(f"Created default configuration file: {self.config_file}")
+                else:
+                    logger.warning(f"Failed to create config file: {self.config_file}")
             except Exception as e:
                 logger.warning(f"Failed to create config file: {e}")
 
@@ -178,10 +186,14 @@ class ConfigManager:
     def save(self) -> None:
         """Save configuration to file."""
         try:
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(self.config.model_dump(), f, indent=2, ensure_ascii=False)
-            logger.info(f"Configuration saved to {self.config_file}")
+            # Use utils function to ensure directory exists
+            ensure_directory(Path(self.config_file).parent)
+            # Use utils function for safe JSON writing
+            success = safe_write_json(self.config.model_dump(), self.config_file)
+            if success:
+                logger.info(f"Configuration saved to {self.config_file}")
+            else:
+                logger.error(f"Failed to save configuration to {self.config_file}")
         except Exception as e:
             logger.error(f"Failed to save configuration: {e}")
 

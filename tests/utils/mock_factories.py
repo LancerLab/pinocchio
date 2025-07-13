@@ -44,6 +44,24 @@ def create_async_mock_llm_client(
     return client
 
 
+def create_mock_async_client(
+    response: str = '{"success": true, "output": {"code": "test code"}}',
+    method_name: str = "complete",
+) -> AsyncMock:
+    """
+    Create a mock async client for testing (generic, not just LLM).
+    Args:
+        response: Mock response string
+        method_name: Name of the method to mock
+    Returns:
+        AsyncMock client
+    """
+    client = AsyncMock()
+    method = getattr(client, method_name)
+    method.return_value = response
+    return client
+
+
 def create_mock_agent_response(
     success: bool = True,
     output: Optional[Dict[str, Any]] = None,
@@ -52,21 +70,18 @@ def create_mock_agent_response(
     request_id: str = "test_request",
 ) -> MagicMock:
     """
-    Create a mock agent response.
-
+    Create a mock agent response (general mock response factory).
     Args:
         success: Whether the response indicates success
         output: Response output data
         error_message: Error message if any
         processing_time_ms: Processing time in milliseconds
         request_id: Request identifier
-
     Returns:
         MagicMock response object
     """
     if output is None:
         output = {"code": "test code"}
-
     return MagicMock(
         success=success,
         output=output,

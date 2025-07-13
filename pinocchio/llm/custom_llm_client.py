@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 import aiohttp
 
 from ..config.models import LLMConfigEntry
+from ..utils.json_parser import format_json_response, safe_json_parse
 from .base_client import BaseLLMClient
 
 logger = logging.getLogger(__name__)
@@ -180,10 +181,10 @@ For evaluation tasks:
                 content = response["choices"][0]["message"]["content"]
 
                 # Try to parse as JSON, if not, wrap it
-                try:
-                    json.loads(content)
-                    return content
-                except json.JSONDecodeError:
+                parsed_content = safe_json_parse(content)
+                if parsed_content is not None:
+                    return format_json_response(parsed_content)
+                else:
                     # If not valid JSON, create a structured response
                     return self._create_structured_response(content, agent_type)
             else:

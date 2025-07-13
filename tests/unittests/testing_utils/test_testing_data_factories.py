@@ -11,7 +11,7 @@ from pinocchio.data_models.task_planning import (
     TaskStatus,
 )
 from pinocchio.session import Session, SessionStatus
-from tests.utils.test_data_factories import (
+from tests.utils.testing_data_factories import (
     create_completed_test_session,
     create_multi_task_plan,
     create_simple_task_plan,

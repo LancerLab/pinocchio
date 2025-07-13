@@ -411,8 +411,33 @@ class TestSessionManager:
 
     def test_get_statistics(self, session_manager):
         """Test getting statistics."""
+        # Debug: Check temp directory contents before test
+        temp_dir = session_manager.store_dir
+        print(f"Debug: Temp directory: {temp_dir}")
+        print(f"Debug: Files in temp directory before test:")
+        for file_path in temp_dir.glob("*.json"):
+            print(f"  {file_path.name}")
+
+        # Debug: Check initial state
+        print(
+            f"Debug: Initial active_sessions count: {len(session_manager.active_sessions)}"
+        )
+        print(
+            f"Debug: Initial active_sessions IDs: {list(session_manager.active_sessions.keys())}"
+        )
+
         session1 = session_manager.create_session("Task 1")
+        print(
+            f"Debug: After creating session1, active_sessions count: {len(session_manager.active_sessions)}"
+        )
+
         session2 = session_manager.create_session("Task 2")
+        print(
+            f"Debug: After creating session2, active_sessions count: {len(session_manager.active_sessions)}"
+        )
+        print(
+            f"Debug: Active session IDs: {list(session_manager.active_sessions.keys())}"
+        )
 
         session_manager.complete_session(session1.session_id)
         session_manager.add_agent_interaction(
@@ -420,6 +445,31 @@ class TestSessionManager:
         )
 
         stats = session_manager.get_statistics()
+
+        # Debug information
+        print(f"Debug: total_sessions = {stats['total_sessions']}")
+        print(f"Debug: active_sessions = {stats['active_sessions']}")
+        print(f"Debug: status_distribution = {stats['status_distribution']}")
+
+        # List all sessions to see what's there
+        all_sessions = session_manager.list_sessions()
+        print(f"Debug: All session IDs: {[s.session_id for s in all_sessions]}")
+        print(
+            f"Debug: All session descriptions: {[s.task_description for s in all_sessions]}"
+        )
+
+        # Check active sessions in memory
+        print(
+            f"Debug: Active sessions in memory: {len(session_manager.active_sessions)}"
+        )
+        for session_id, session in session_manager.active_sessions.items():
+            print(f"Debug: Active session {session_id}: {session.task_description}")
+
+        # Debug: Check temp directory contents after test
+        print(f"Debug: Files in temp directory after test:")
+        for file_path in temp_dir.glob("*.json"):
+            print(f"  {file_path.name}")
+
         assert stats["total_sessions"] == 2
         assert stats["active_sessions"] == len(session_manager.active_sessions)
         assert "status_distribution" in stats

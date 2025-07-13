@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionStatus(str, Enum):
@@ -58,10 +58,7 @@ class Session(BaseModel):
     # Metadata
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        """Pydantic configuration for Session model."""
-
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
     @classmethod
     def create_session(
@@ -281,10 +278,7 @@ class SessionQuery(BaseModel):
     date_range: Optional[Dict[str, datetime]] = None
     limit: int = 10
 
-    class Config:
-        """Pydantic configuration for SessionQuery model."""
-
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class SessionExport(BaseModel):

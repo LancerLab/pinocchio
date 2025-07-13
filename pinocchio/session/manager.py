@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ..utils.file_utils import ensure_directory, safe_read_json, safe_write_json
+from ..utils.temp_utils import cleanup_temp_files, create_temp_file
 from .models.session import Session, SessionExport, SessionQuery
 
 
@@ -28,7 +30,8 @@ class SessionManager:
             store_dir: Directory for storing session data
         """
         self.store_dir = Path(store_dir)
-        self.store_dir.mkdir(parents=True, exist_ok=True)
+        # Use utils function to ensure directory exists
+        ensure_directory(self.store_dir)
 
         # In-memory cache for active sessions
         self.active_sessions: Dict[str, Session] = {}
@@ -81,17 +84,27 @@ class SessionManager:
         Returns:
             List of matching sessions
         """
-        sessions = []
+        session_dict = {}
 
-        # Load all session files
+        # First, add all active sessions from memory
+        for session in self.active_sessions.values():
+            session_dict[session.session_id] = session
+
+        # Then load any remaining sessions from files that aren't in memory
         for session_file in self.store_dir.glob("*.json"):
+            # Skip backup files
+            if ".backup." in session_file.name:
+                continue
             try:
                 session_id = session_file.stem
-                session = self._load_session(session_id)
-                if session:
-                    sessions.append(session)
+                if session_id not in session_dict:
+                    session = self._load_session(session_id)
+                    if session:
+                        session_dict[session_id] = session
             except Exception as e:
                 print(f"Error loading session {session_file}: {e}")
+
+        sessions = list(session_dict.values())
 
         # Apply filters
         if query:
@@ -480,18 +493,18 @@ class SessionManager:
     def _persist_session(self, session: Session) -> None:
         """Persist session to storage."""
         session_file = self.store_dir / f"{session.session_id}.json"
-        with open(session_file, "w") as f:
-            json.dump(session.to_dict(), f, indent=2)
+        success = safe_write_json(session.to_dict(), session_file)
+        if not success:
+            raise RuntimeError(f"Failed to persist session {session.session_id}")
 
     def _load_session(self, session_id: str) -> Optional[Session]:
         """Load session from storage."""
         session_file = self.store_dir / f"{session_id}.json"
-        if not session_file.exists():
+        session_data = safe_read_json(session_file)
+        if session_data is None:
             return None
 
         try:
-            with open(session_file, "r") as f:
-                session_data = json.load(f)
             return Session.from_dict(session_data)
         except Exception as e:
             print(f"Error loading session {session_id}: {e}")

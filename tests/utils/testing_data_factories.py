@@ -225,3 +225,93 @@ def create_test_session_metadata(
         end_time=end_time,
         runtime_seconds=runtime_seconds,
     )
+
+
+def create_test_config(
+    app_name: str = "pinocchio-test",
+    version: str = "0.1.0",
+    debug: bool = True,
+    llm_provider: str = "openai",
+    llm_model: str = "gpt-4",
+    api_key: str = "test-key",
+    memory_path: str = "./data",
+    max_items: int = 1000,
+    session_timeout: int = 3600,
+    auto_save: bool = True,
+) -> Dict[str, Any]:
+    """
+    Create a test configuration dictionary.
+    """
+    return {
+        "app": {
+            "name": app_name,
+            "version": version,
+            "debug": debug,
+        },
+        "llm": {
+            "provider": llm_provider,
+            "model": llm_model,
+            "api_key": api_key,
+        },
+        "memory": {
+            "storage_path": memory_path,
+            "max_items": max_items,
+        },
+        "session": {
+            "timeout": session_timeout,
+            "auto_save": auto_save,
+        },
+    }
+
+
+def create_test_session_data(
+    session_id: str = "test_session",
+    task_description: str = "Test task",
+    status: str = "active",
+    agent_interactions: Optional[List[Dict[str, Any]]] = None,
+    optimization_iterations: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Create test session data (dict, not Session model).
+    """
+    if agent_interactions is None:
+        agent_interactions = [
+            {
+                "agent_type": "generator",
+                "data": {"input": "test", "output": "result"},
+                "timestamp": "2023-01-01T00:00:00Z",
+            }
+        ]
+    if optimization_iterations is None:
+        optimization_iterations = [
+            {
+                "iteration_number": 1,
+                "data": {"optimization": "test"},
+                "timestamp": "2023-01-01T00:00:00Z",
+            }
+        ]
+    return {
+        "session_id": session_id,
+        "task_description": task_description,
+        "status": status,
+        "agent_interactions": agent_interactions,
+        "optimization_iterations": optimization_iterations,
+        "creation_time": "2023-01-01T00:00:00Z",
+    }
+
+
+def create_test_memory_data(
+    memory_id: str = "test_memory",
+    agent_type: str = "generator",
+    content: str = "Test memory content",
+    created_at: str = "2023-01-01T00:00:00Z",
+) -> Dict[str, Any]:
+    """
+    Create test memory data (dict, not model).
+    """
+    return {
+        "memory_id": memory_id,
+        "agent_type": agent_type,
+        "content": content,
+        "created_at": created_at,
+    }

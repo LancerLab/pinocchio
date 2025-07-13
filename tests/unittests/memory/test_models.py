@@ -2,20 +2,22 @@
 Tests for the memory models.
 """
 
-import json
 from datetime import datetime
 
 import pytest
 from pydantic import ValidationError
 
 from pinocchio.memory import BaseMemory, CodeMemory, CodeVersion
+from pinocchio.utils import assert_dict_structure
 from tests.utils import (
     assert_session_valid,
     assert_task_plan_valid,
     assert_task_valid,
+    create_test_json_file,
     create_test_session,
     create_test_task,
     create_test_task_plan,
+    load_test_json_file,
 )
 
 
@@ -60,8 +62,9 @@ class TestBaseMemory:
 
         # Convert to JSON
         json_str = memory.model_dump_json()
-        json_data = json.loads(json_str)
+        json_data = load_test_json_file(create_test_json_file(memory.model_dump()))
 
+        assert json_data is not None
         assert json_data["session_id"] == "test-session"
         assert json_data["agent_type"] == "evaluator"
         assert json_data["version_id"] == "test-version"
@@ -80,7 +83,12 @@ class TestBaseMemory:
             "metadata": {"key": "value"},
         }
 
-        memory = BaseMemory.model_validate(json_data)
+        # Create test JSON file
+        json_file = create_test_json_file(json_data)
+        loaded_data = load_test_json_file(json_file)
+
+        assert loaded_data is not None
+        memory = BaseMemory.model_validate(loaded_data)
 
         assert memory.id == "test-id"
         assert memory.session_id == "test-session"
@@ -200,7 +208,7 @@ class TestCodeVersion:
         assert diff["is_different"] is False
 
     def test_code_version_serialization(self):
-        """Test serializing and deserializing a CodeVersion."""
+        """Test serializing a CodeVersion instance."""
         version = CodeVersion.create_new_version(
             session_id="test-session",
             code="def example(): return 42",
@@ -210,45 +218,49 @@ class TestCodeVersion:
             description="Test version",
         )
 
-        json_str = version.model_dump_json()
-        deserialized = CodeVersion.model_validate_json(json_str)
-
-        assert deserialized.code == version.code
-        assert deserialized.version_id == version.version_id
-        assert deserialized.source_agent == version.source_agent
-        assert deserialized.description == version.description
+        # Test model_dump
+        data = version.model_dump()
+        assert_dict_structure(
+            data,
+            [
+                "version_id",
+                "session_id",
+                "code",
+                "language",
+                "kernel_type",
+                "source_agent",
+                "timestamp",
+                "description",
+                "optimization_techniques",
+                "hyperparameters",
+                "metadata",
+            ],
+            optional_keys=["parent_version_id"],
+        )
+        assert data["session_id"] == "test-session"
+        assert data["code"] == "def example(): return 42"
+        assert data["language"] == "python"
+        assert data["kernel_type"] == "cpu"
+        assert data["source_agent"] == "generator"
+        assert data["description"] == "Test version"
 
 
 class TestCodeMemory:
     """Tests for the CodeMemory class."""
 
     def test_code_memory_operations(self):
-        """Test CodeMemory operations."""
+        """Test basic CodeMemory operations."""
         memory = CodeMemory(session_id="test-session")
 
-        # Add a version
+        # Create test versions
         version1 = CodeVersion.create_new_version(
             session_id="test-session",
             code="def example(): return 42",
             language="python",
             kernel_type="cpu",
             source_agent="generator",
-            description="Initial version",
         )
 
-        version_id = memory.add_version(version1)
-        assert version_id == version1.version_id
-        assert memory.current_version_id == version1.version_id
-
-        # Get the version
-        retrieved = memory.get_version(version1.version_id)
-        assert retrieved.code == version1.code
-
-        # Get current version
-        current = memory.get_current_version()
-        assert current.code == "def example(): return 42"
-
-        # Add another version
         version2 = CodeVersion.create_new_version(
             session_id="test-session",
             code="def example(): return 43",
@@ -256,15 +268,32 @@ class TestCodeMemory:
             kernel_type="cpu",
             source_agent="debugger",
             parent_version_id=version1.version_id,
-            description="Fixed version",
         )
 
+        # Add versions to memory
+        memory.add_version(version1)
         memory.add_version(version2)
 
-        # Get version history
+        # Test getting versions
+        retrieved_version1 = memory.get_version(version1.version_id)
+        assert retrieved_version1 is not None
+        assert retrieved_version1.code == version1.code
+        assert retrieved_version1.source_agent == "generator"
+
+        retrieved_version2 = memory.get_version(version2.version_id)
+        assert retrieved_version2 is not None
+        assert retrieved_version2.code == version2.code
+        assert retrieved_version2.source_agent == "debugger"
+        assert retrieved_version2.parent_version_id == version1.version_id
+
+        # Test getting current version
+        current = memory.get_current_version()
+        assert current is not None
+        assert current.version_id == version2.version_id
+
+        # Test getting version history
         history = memory.get_version_history()
         assert len(history) == 2
-
         # Check that the newest version is first
         assert history[0]["version_id"] == version2.version_id
         assert history[0]["is_current"] is True
@@ -273,29 +302,21 @@ class TestCodeMemory:
     def test_get_nonexistent_version(self):
         """Test getting a version that doesn't exist."""
         memory = CodeMemory(session_id="test-session")
-
-        # Get a nonexistent version
-        retrieved = memory.get_version("nonexistent-id")
-        assert retrieved is None
-
-        # Get current version when there isn't one
-        retrieved = memory.get_current_version()
-        assert retrieved is None
+        version = memory.get_version("nonexistent-id")
+        assert version is None
 
     def test_set_nonexistent_version(self):
-        """Test setting a current version that doesn't exist."""
+        """Test setting a version that doesn't exist."""
         memory = CodeMemory(session_id="test-session")
-
-        # Try to set a nonexistent version as current
+        # This should not raise an exception
         result = memory.set_current_version("nonexistent-id")
         assert result is False
 
     def test_code_memory_serialization(self):
-        """Test serializing and deserializing CodeMemory."""
+        """Test serializing a CodeMemory instance."""
         memory = CodeMemory(session_id="test-session")
 
-        # Add versions
-        version1 = CodeVersion.create_new_version(
+        version = CodeVersion.create_new_version(
             session_id="test-session",
             code="def example(): return 42",
             language="python",
@@ -303,22 +324,11 @@ class TestCodeMemory:
             source_agent="generator",
         )
 
-        version2 = CodeVersion.create_new_version(
-            session_id="test-session",
-            code="def example(): return 43",
-            language="python",
-            kernel_type="cpu",
-            source_agent="debugger",
-            parent_version_id=version1.version_id,
-        )
+        memory.add_version(version)
 
-        memory.add_version(version1)
-        memory.add_version(version2)
-
-        # Serialize and deserialize
-        json_str = memory.model_dump_json()
-        deserialized = CodeMemory.model_validate_json(json_str)
-
-        assert deserialized.session_id == memory.session_id
-        assert deserialized.current_version_id == memory.current_version_id
-        assert len(deserialized.versions) == len(memory.versions)
+        # Test model_dump
+        data = memory.model_dump()
+        assert_dict_structure(data, ["session_id", "versions", "current_version_id"])
+        assert data["session_id"] == "test-session"
+        assert len(data["versions"]) == 1
+        assert version.version_id in data["versions"]

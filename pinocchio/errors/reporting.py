@@ -4,12 +4,17 @@ Error reporting and analysis tools for the Pinocchio multi-agent system.
 This module provides utilities for collecting, analyzing, and reporting errors
 that occur during system operation.
 """
-import json
 import logging
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from ..utils import (
+    safe_read_json,
+    safe_write_json,
+    sanitize_input,
+    validate_json_structure,
+)
 from .exceptions import PinocchioError
 
 
@@ -34,7 +39,7 @@ class ErrorReporter:
         error_data = {
             "timestamp": datetime.now().isoformat(),
             "error_type": error.__class__.__name__,
-            "message": str(error),
+            "message": sanitize_input(str(error)),
             "context": context or {},
         }
 
@@ -103,9 +108,36 @@ class ErrorReporter:
         Args:
             filepath: Path to the output file
         """
-        with open(filepath, "w") as f:
-            json.dump(self.errors, f, indent=2)
-        self.logger.info(f"Exported {len(self.errors)} error records to {filepath}")
+        success = safe_write_json(self.errors, filepath)
+        if success:
+            self.logger.info(f"Exported {len(self.errors)} error records to {filepath}")
+        else:
+            self.logger.error(f"Failed to export error records to {filepath}")
+
+    def import_from_json(self, filepath: str) -> bool:
+        """
+        Import recorded errors from a JSON file.
+
+        Args:
+            filepath: Path to the input file
+
+        Returns:
+            True if import was successful, False otherwise
+        """
+        data = safe_read_json(filepath)
+        if data is None:
+            self.logger.error(f"Failed to read error records from {filepath}")
+            return False
+
+        # Validate the structure
+        required_keys = ["timestamp", "error_type", "message"]
+        if not validate_json_structure(data, required_keys):
+            self.logger.error(f"Invalid error data structure in {filepath}")
+            return False
+
+        self.errors = data
+        self.logger.info(f"Imported {len(self.errors)} error records from {filepath}")
+        return True
 
     def clear_errors(self) -> None:
         """Clear all recorded errors."""
@@ -199,8 +231,27 @@ class ErrorMetricsCollector:
         # Calculate error rate (errors per second)
         return total_errors / window_size if window_size > 0 else 0.0
 
+    def export_metrics(self, filepath: str) -> None:
+        """
+        Export error metrics to a JSON file.
+
+        Args:
+            filepath: Path to the output file
+        """
+        metrics_data = {
+            "error_counts": dict(self.error_counts),
+            "error_rates": {k: v for k, v in self.error_rates.items()},
+            "export_timestamp": datetime.now().isoformat(),
+        }
+
+        success = safe_write_json(metrics_data, filepath)
+        if success:
+            self.logger.info(f"Exported error metrics to {filepath}")
+        else:
+            self.logger.error(f"Failed to export error metrics to {filepath}")
+
     def clear_metrics(self) -> None:
-        """Clear all collected metrics."""
+        """Clear all error metrics."""
         self.error_counts = defaultdict(int)
         self.error_rates = defaultdict(list)
         self.logger.debug("Cleared error metrics")

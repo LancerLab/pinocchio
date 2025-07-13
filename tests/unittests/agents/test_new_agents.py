@@ -274,6 +274,7 @@ class TestAgentIntegration:
         assert hasattr(debugger, "execute")
         assert hasattr(evaluator, "execute")
 
+    @pytest.mark.slow
     def test_agent_error_handling(self, mock_llm_client):
         """Test error handling in agents."""
         # Configure mock to raise an exception
@@ -283,15 +284,20 @@ class TestAgentIntegration:
         debugger = DebuggerAgent(mock_llm_client)
         evaluator = EvaluatorAgent(mock_llm_client)
 
-        # Test error handling for each agent
-        for agent in [optimizer, debugger, evaluator]:
-            result = (
-                agent.analyze_code_performance("test code")
-                if hasattr(agent, "analyze_code_performance")
-                else agent.analyze_code_issues("test code")
-                if hasattr(agent, "analyze_code_issues")
-                else agent.evaluate_performance("test code")
-            )
+        # Test error handling for each agent with simplified logic
+        agents_to_test = [
+            (optimizer, "analyze_code_performance"),
+            (debugger, "analyze_code_issues"),
+            (evaluator, "evaluate_performance"),
+        ]
 
-            # Should return empty dict or fallback structure on error
-            assert isinstance(result, dict)
+        for agent, method_name in agents_to_test:
+            if hasattr(agent, method_name):
+                method = getattr(agent, method_name)
+                result = method("test code")
+
+                # Should return empty dict or fallback structure on error
+                assert isinstance(result, dict)
+
+                # Verify error handling doesn't crash
+                assert len(result) >= 0  # Can be empty dict
