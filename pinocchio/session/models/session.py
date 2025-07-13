@@ -266,7 +266,7 @@ class Session(BaseModel):
             "latest_iteration": self.get_latest_optimization_iteration(),
             "latest_performance": self.get_latest_performance_metrics(),
             "target_performance": self.target_performance,
-            "status": self.status.value,
+            "status": self.status,
             "runtime_seconds": self.runtime_seconds,
         }
 

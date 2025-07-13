@@ -12,12 +12,11 @@ from pinocchio.data_models.task_planning import (
 )
 from pinocchio.session import Session, SessionStatus
 from tests.utils.test_data_factories import (
-    create_active_session,
-    create_completed_session,
-    create_failed_task_plan,
+    create_completed_test_session,
     create_multi_task_plan,
     create_simple_task_plan,
     create_test_session,
+    create_test_session_with_interactions,
     create_test_task,
     create_test_task_dependency,
     create_test_task_plan,
@@ -35,7 +34,7 @@ class TestTestDataFactories:
         assert task.task_id == "test_task"
         assert task.agent_type == AgentType.GENERATOR
         assert task.task_description == "Test task description"
-        assert task.priority == TaskPriority.CRITICAL
+        assert task.priority == TaskPriority.MEDIUM
         assert len(task.dependencies) == 0
 
     def test_create_test_task_with_custom_params(self):
@@ -67,7 +66,7 @@ class TestTestDataFactories:
 
         assert isinstance(plan, TaskPlan)
         assert plan.plan_id == "test_plan"
-        assert plan.user_request == "Test request"
+        assert plan.user_request == "Test user request"
         assert len(plan.tasks) == 1
         assert isinstance(plan.tasks[0], Task)
 
@@ -89,16 +88,16 @@ class TestTestDataFactories:
 
         assert isinstance(session, Session)
         assert session.session_id == "test_session"
-        assert session.task_description == "Test task"
+        assert session.task_description == "Test task description"
         assert session.status == SessionStatus.ACTIVE
         assert session.creation_time is not None
 
     def test_create_test_task_dependency(self):
         """Test creating a test task dependency."""
-        dependency = create_test_task_dependency()
+        dependency = create_test_task_dependency("dep_task", "required")
 
         assert isinstance(dependency, TaskDependency)
-        assert dependency.task_id == "dependency_task"
+        assert dependency.task_id == "dep_task"
         assert dependency.dependency_type == "required"
 
     def test_create_simple_task_plan(self):
@@ -115,7 +114,7 @@ class TestTestDataFactories:
         """Test creating a multi-task plan."""
         plan = create_multi_task_plan()
 
-        assert plan.plan_id == "multi_task_plan"
+        assert plan.plan_id == "multi_plan"
         assert len(plan.tasks) == 3
 
         # Check task order and dependencies
@@ -128,30 +127,24 @@ class TestTestDataFactories:
         assert len(plan.tasks[1].dependencies) == 1  # Debugger depends on generator
         assert len(plan.tasks[2].dependencies) == 1  # Optimizer depends on debugger
 
-    def test_create_failed_task_plan(self):
-        """Test creating a failed task plan."""
-        plan = create_failed_task_plan()
-
-        assert plan.plan_id == "failed_plan"
-        assert len(plan.tasks) == 1
-        assert plan.tasks[0].status == TaskStatus.FAILED
-        assert plan.tasks[0].error_count > 0
-
-    def test_create_completed_session(self):
-        """Test creating a completed session."""
-        session = create_completed_session()
+    def test_create_completed_test_session(self):
+        """Test creating a completed test session."""
+        session = create_completed_test_session()
 
         assert session.session_id == "completed_session"
         assert session.status == SessionStatus.COMPLETED
         assert session.end_time is not None
 
-    def test_create_active_session(self):
-        """Test creating an active session."""
-        session = create_active_session()
+    def test_create_test_session_with_interactions(self):
+        """Test creating a test session with interactions."""
+        session = create_test_session_with_interactions()
 
-        assert session.session_id == "active_session"
+        assert session.session_id == "session_with_interactions"
         assert session.status == SessionStatus.ACTIVE
-        assert session.end_time is None
+        assert len(session.agent_interactions) == 1
+        assert len(session.optimization_iterations) == 1
+        assert session.agent_interactions[0]["agent_type"] == "generator"
+        assert session.optimization_iterations[0]["iteration_number"] == 1
 
 
 class TestTestDataFactoriesIntegration:

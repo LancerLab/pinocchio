@@ -3,6 +3,13 @@ Tests for the prompt template models.
 """
 
 from pinocchio.prompt.models import AgentType, PromptMemory, PromptTemplate, PromptType
+from tests.utils import (
+    assert_session_valid,
+    assert_task_valid,
+    create_mock_llm_client,
+    create_test_session,
+    create_test_task,
+)
 
 
 class TestPromptModels:

@@ -14,6 +14,7 @@ from pinocchio.session import (
     SessionStatus,
     SessionUtils,
 )
+from tests.utils import create_test_session
 
 
 class TestSession:
@@ -21,7 +22,7 @@ class TestSession:
 
     def test_create_session(self):
         """Test session creation."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
         assert session.task_description == "Test task"
         assert session.status == SessionStatus.ACTIVE
         assert session.session_id is not None
@@ -29,7 +30,7 @@ class TestSession:
 
     def test_add_agent_interaction(self):
         """Test adding agent interaction."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
         interaction_data = {"input": "test", "output": "result"}
 
         session.add_agent_interaction("generator", interaction_data)
@@ -42,7 +43,7 @@ class TestSession:
 
     def test_add_optimization_iteration(self):
         """Test adding optimization iteration."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
         iteration_data = {"optimization": "test"}
 
         session.add_optimization_iteration(iteration_data)
@@ -55,7 +56,7 @@ class TestSession:
 
     def test_add_performance_metrics(self):
         """Test adding performance metrics."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
         metrics = {"speed": 100, "memory": 50}
 
         session.add_performance_metrics(metrics)
@@ -67,7 +68,7 @@ class TestSession:
 
     def test_add_version_reference(self):
         """Test adding version references."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
 
         session.add_version_reference("memory", "mem_v1")
         session.add_version_reference("prompt", "prompt_v1")
@@ -79,7 +80,7 @@ class TestSession:
 
     def test_add_code_version(self):
         """Test adding code version."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
 
         session.add_code_version("code_v1")
 
@@ -87,7 +88,7 @@ class TestSession:
 
     def test_complete_session(self):
         """Test completing session."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
 
         session.complete_session()
 
@@ -97,7 +98,7 @@ class TestSession:
 
     def test_fail_session(self):
         """Test failing session."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
         error_details = {"error": "test error"}
 
         session.fail_session(error_details)
@@ -109,7 +110,7 @@ class TestSession:
 
     def test_pause_resume_session(self):
         """Test pausing and resuming session."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
 
         session.pause_session()
         assert session.status == SessionStatus.PAUSED
@@ -119,7 +120,7 @@ class TestSession:
 
     def test_get_latest_optimization_iteration(self):
         """Test getting latest optimization iteration."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
 
         # No iterations yet
         assert session.get_latest_optimization_iteration() is None
@@ -134,7 +135,7 @@ class TestSession:
 
     def test_get_latest_performance_metrics(self):
         """Test getting latest performance metrics."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
 
         # No metrics yet
         assert session.get_latest_performance_metrics() is None
@@ -148,7 +149,7 @@ class TestSession:
 
     def test_get_agent_interactions_by_type(self):
         """Test getting agent interactions by type."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
 
         session.add_agent_interaction("generator", {"data": "gen1"})
         session.add_agent_interaction("debugger", {"data": "debug1"})
@@ -162,7 +163,7 @@ class TestSession:
 
     def test_get_optimization_summary(self):
         """Test getting optimization summary."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
         session.target_performance = {"speed": 1000}
 
         session.add_agent_interaction("generator", {"data": "test"})
@@ -431,7 +432,7 @@ class TestSessionUtils:
 
     def test_analyze_session_performance(self):
         """Test analyzing session performance."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
         session.add_agent_interaction("generator", {"data": "test"})
         session.add_agent_interaction("debugger", {"data": "test"})
         session.add_optimization_iteration({"optim": "test"})
@@ -449,7 +450,7 @@ class TestSessionUtils:
 
     def test_generate_session_report(self):
         """Test generating session report."""
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
         session.target_performance = {"speed": 1000}
         session.add_agent_interaction("generator", {"data": "test"})
         session.add_optimization_iteration({"optim": "test"})
@@ -466,8 +467,8 @@ class TestSessionUtils:
 
     def test_compare_sessions(self):
         """Test comparing sessions."""
-        session1 = Session.create_session("Task 1")
-        session2 = Session.create_session("Task 2")
+        session1 = create_test_session(task_description="Task 1")
+        session2 = create_test_session(task_description="Task 2")
 
         session1.add_agent_interaction("generator", {"data": "test"})
         session2.add_agent_interaction("generator", {"data": "test"})
@@ -484,7 +485,7 @@ class TestSessionUtils:
     def test_validate_session_data(self):
         """Test validating session data."""
         # Valid session
-        session = Session.create_session("Test task")
+        session = create_test_session(task_description="Test task")
         validation = SessionUtils.validate_session_data(session)
         assert validation["is_valid"] is True
         assert len(validation["errors"]) == 0
@@ -497,8 +498,8 @@ class TestSessionUtils:
 
     def test_get_session_statistics(self):
         """Test getting session statistics."""
-        session1 = Session.create_session("Task 1")
-        session2 = Session.create_session("Task 2")
+        session1 = create_test_session(task_description="Task 1")
+        session2 = create_test_session(task_description="Task 2")
 
         session1.add_agent_interaction("generator", {"data": "test"})
         session2.add_agent_interaction("debugger", {"data": "test"})
@@ -513,8 +514,8 @@ class TestSessionUtils:
 
     def test_filter_sessions_by_criteria(self):
         """Test filtering sessions by criteria."""
-        session1 = Session.create_session("Task 1")
-        session2 = Session.create_session("Task 2")
+        session1 = create_test_session(task_description="Task 1")
+        session2 = create_test_session(task_description="Task 2")
 
         session1.add_agent_interaction("generator", {"data": "test"})
         session2.add_agent_interaction("debugger", {"data": "test"})

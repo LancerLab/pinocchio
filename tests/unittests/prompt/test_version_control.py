@@ -15,6 +15,13 @@ from pinocchio.prompt.version_control import (
     VersionInfo,
     VersionStatus,
 )
+from tests.utils import (
+    assert_session_valid,
+    assert_task_valid,
+    create_mock_llm_client,
+    create_test_session,
+    create_test_task,
+)
 
 
 class TestVersionInfo:

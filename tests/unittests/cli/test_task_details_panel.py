@@ -8,14 +8,9 @@ import asyncio
 import pytest
 
 from pinocchio.cli.main import PinocchioCLI
-from pinocchio.data_models.task_planning import (
-    AgentType,
-    Task,
-    TaskDependency,
-    TaskPlan,
-    TaskPriority,
-)
+from pinocchio.data_models.task_planning import AgentType, TaskPriority
 from pinocchio.task_planning.task_executor import TaskExecutor
+from tests.utils import create_test_task, create_test_task_dependency
 
 
 class TestTaskDetailsPanel:
@@ -61,16 +56,16 @@ class TestTaskDetailsPanel:
         """Test that TaskExecutor generates proper task details panel content."""
         executor = TaskExecutor()
 
-        # Create a test task
-        task = Task(
+        # Create a test task using factory
+        task = create_test_task(
             task_id="task_1",
             agent_type=AgentType.DEBUGGER,
-            task_description="Debug the generated code",
+            description="Debug the generated code",
             priority=TaskPriority.CRITICAL,
             input_data={
                 "instruction": "Analyze the generated code for potential issues, errors, and improvements."
             },
-            dependencies=[TaskDependency(task_id="task_0", dependency_type="required")],
+            dependencies=[create_test_task_dependency("task_0", "required")],
             requirements={"error_handling": True},
         )
 
@@ -125,11 +120,11 @@ class TestTaskDetailsPanel:
         """Test that empty task details are handled properly."""
         executor = TaskExecutor()
 
-        # Create a minimal task
-        task = Task(
+        # Create a minimal task using factory
+        task = create_test_task(
             task_id="task_1",
             agent_type=AgentType.GENERATOR,
-            task_description="Generate code",
+            description="Generate code",
             priority=TaskPriority.MEDIUM,
         )
 

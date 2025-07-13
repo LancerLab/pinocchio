@@ -7,12 +7,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from pinocchio.cli.main import PinocchioCLI
-from pinocchio.data_models.task_planning import (
-    AgentType,
-    Task,
-    TaskPriority,
-    TaskStatus,
-)
+from pinocchio.data_models.task_planning import AgentType, TaskPriority
+from tests.utils import create_test_task
 
 
 class TestNewCLI:
@@ -130,11 +126,10 @@ class TestNewCLI:
 
     def test_task_update_processing(self, cli):
         """Test task update processing."""
-        task = Task(
+        task = create_test_task(
             task_id="test-1",
-            task_description="Test task",
+            description="Test task",
             agent_type=AgentType.GENERATOR,
-            status=TaskStatus.RUNNING,
             priority=TaskPriority.CRITICAL,
         )
 
@@ -146,18 +141,16 @@ class TestNewCLI:
     def test_task_plan_processing(self, cli):
         """Test task plan processing."""
         tasks = [
-            Task(
+            create_test_task(
                 task_id="task-1",
-                task_description="Generate code",
+                description="Generate code",
                 agent_type=AgentType.GENERATOR,
-                status=TaskStatus.COMPLETED,
                 priority=TaskPriority.CRITICAL,
             ),
-            Task(
+            create_test_task(
                 task_id="task-2",
-                task_description="Debug code",
+                description="Debug code",
                 agent_type=AgentType.DEBUGGER,
-                status=TaskStatus.RUNNING,
                 priority=TaskPriority.HIGH,
             ),
         ]

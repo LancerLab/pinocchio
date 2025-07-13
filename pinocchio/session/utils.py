@@ -31,7 +31,7 @@ class SessionUtils:
             "total_interactions": len(session.agent_interactions),
             "total_iterations": len(session.optimization_iterations),
             "performance_points": len(session.performance_trend),
-            "status": session.status.value,
+            "status": session.status,
         }
 
         # Analyze agent interactions
@@ -99,7 +99,7 @@ class SessionUtils:
         report = {
             "session_id": session.session_id,
             "task_description": session.task_description,
-            "status": session.status.value,
+            "status": session.status,
             "creation_time": session.creation_time.isoformat(),
             "end_time": session.end_time.isoformat() if session.end_time else None,
             "runtime_seconds": session.runtime_seconds,
@@ -254,7 +254,7 @@ class SessionUtils:
 
         for session in sessions:
             # Status distribution
-            status = session.status.value
+            status = session.status
             status_distribution[status] = status_distribution.get(status, 0) + 1
 
             # Runtime

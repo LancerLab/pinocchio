@@ -9,6 +9,14 @@ import pytest
 from pydantic import ValidationError
 
 from pinocchio.memory import BaseMemory, CodeMemory, CodeVersion
+from tests.utils import (
+    assert_session_valid,
+    assert_task_plan_valid,
+    assert_task_valid,
+    create_test_session,
+    create_test_task,
+    create_test_task_plan,
+)
 
 
 class TestBaseMemory:

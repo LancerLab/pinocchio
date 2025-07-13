@@ -18,6 +18,13 @@ from pinocchio.knowledge import (
 from pinocchio.memory import AgentMemory, CodeVersion, MemoryManager
 from pinocchio.prompt import AgentType, PromptManager, PromptType, StructuredInput
 from pinocchio.session import SessionManager, SessionStatus
+from tests.utils import (
+    assert_session_valid,
+    assert_task_valid,
+    create_mock_llm_client,
+    create_test_session,
+    create_test_task,
+)
 
 
 @pytest.fixture

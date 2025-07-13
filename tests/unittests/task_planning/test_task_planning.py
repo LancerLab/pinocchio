@@ -227,10 +227,10 @@ class TestTaskExecutor:
     @pytest.mark.asyncio
     async def test_execute_single_task(self, task_executor):
         """Test executing a single task."""
-        task = Task(
+        task = create_test_task(
             task_id="test_task",
             agent_type=AgentType.GENERATOR,
-            task_description="Generate test code",
+            description="Generate test code",
         )
 
         result = await task_executor.execute_single_task(task)
@@ -270,7 +270,6 @@ class TestTaskExecutor:
         task = create_test_task(
             task_id="test_task",
             requirements={"test": "value"},
-            optimization_goals=["performance"],
         )
 
         previous_results = {"task_1": {"code": "test code"}}
@@ -430,18 +429,18 @@ class TestTaskPlanningIntegration:
 
     def test_task_dependencies(self):
         """Test task dependency management."""
-        # Create tasks with dependencies
-        task1 = Task(
+        # Create tasks with dependencies using factories
+        task1 = create_test_task(
             task_id="task_1",
             agent_type=AgentType.GENERATOR,
-            task_description="Generate code",
+            description="Generate code",
         )
 
-        task2 = Task(
+        task2 = create_test_task(
             task_id="task_2",
             agent_type=AgentType.OPTIMIZER,
-            task_description="Optimize code",
-            dependencies=[TaskDependency(task_id="task_1", dependency_type="required")],
+            description="Optimize code",
+            dependencies=[create_test_task_dependency("task_1", "required")],
         )
 
         # Test dependency checking
@@ -451,10 +450,10 @@ class TestTaskPlanningIntegration:
 
     def test_task_status_management(self):
         """Test task status management."""
-        task = Task(
+        task = create_test_task(
             task_id="test_task",
             agent_type=AgentType.GENERATOR,
-            task_description="Generate code",
+            description="Generate code",
         )
 
         # Test status transitions
@@ -476,19 +475,21 @@ class TestTaskPlanningIntegration:
     def test_plan_progress_tracking(self):
         """Test plan progress tracking."""
         tasks = [
-            Task(
+            create_test_task(
                 task_id="task_1",
                 agent_type=AgentType.GENERATOR,
-                task_description="Generate code",
+                description="Generate code",
             ),
-            Task(
+            create_test_task(
                 task_id="task_2",
                 agent_type=AgentType.OPTIMIZER,
-                task_description="Optimize code",
+                description="Optimize code",
             ),
         ]
 
-        plan = TaskPlan(plan_id="test_plan", user_request="Test request", tasks=tasks)
+        plan = create_test_task_plan(
+            plan_id="test_plan", user_request="Test request", tasks=tasks
+        )
 
         # Test initial progress
         progress = plan.get_progress()

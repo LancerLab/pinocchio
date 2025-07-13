@@ -6,8 +6,9 @@ Core tests for task details panel functionality
 import pytest
 
 from pinocchio.cli.main import PinocchioCLI
-from pinocchio.data_models.task_planning import AgentType, Task, TaskPriority
+from pinocchio.data_models.task_planning import AgentType, TaskPriority
 from pinocchio.task_planning.task_executor import TaskExecutor
+from tests.utils import create_test_task
 
 
 def test_task_details_panel_buffering():
@@ -34,10 +35,10 @@ def test_task_details_content_generation():
     """Test task details content generation."""
     executor = TaskExecutor()
 
-    task = Task(
+    task = create_test_task(
         task_id="test_task",
         agent_type=AgentType.GENERATOR,
-        task_description="Generate code",
+        description="Generate code",
         priority=TaskPriority.CRITICAL,
         input_data={"instruction": "Generate high-performance code"},
     )

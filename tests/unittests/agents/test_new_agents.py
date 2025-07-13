@@ -10,6 +10,13 @@ from pinocchio.agents import (
     GeneratorAgent,
     OptimizerAgent,
 )
+from tests.utils import (
+    assert_task_plan_valid,
+    assert_task_valid,
+    create_mock_llm_client,
+    create_test_task,
+    create_test_task_plan,
+)
 
 
 class TestOptimizerAgent:

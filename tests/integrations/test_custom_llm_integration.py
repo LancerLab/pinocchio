@@ -18,6 +18,13 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.real_llm]
 from pinocchio.config import ConfigManager
 from pinocchio.config.models import LLMConfigEntry, LLMProvider
 from pinocchio.llm import CustomLLMClient
+from tests.utils import (
+    assert_session_valid,
+    assert_task_valid,
+    create_mock_llm_client,
+    create_test_session,
+    create_test_task,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

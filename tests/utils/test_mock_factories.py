@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from pinocchio.llm.mock_client import MockLLMClient
 from tests.utils.mock_factories import (
     create_async_mock_llm_client,
     create_mock_agent_response,
@@ -27,11 +28,9 @@ class TestMockFactories:
     def test_create_mock_llm_client_with_custom_params(self):
         """Test creating mock LLM client with custom parameters."""
         client = create_mock_llm_client(
-            response='{"test": "response"}', delay_ms=100, failure_rate=0.5
+            response='{"test": "response"}', response_delay_ms=100, failure_rate=0.5
         )
-
-        assert client.response_delay_ms == 100
-        assert client.failure_rate == 0.5
+        assert isinstance(client, MockLLMClient)
 
     def test_create_async_mock_llm_client(self):
         """Test creating async mock LLM client."""

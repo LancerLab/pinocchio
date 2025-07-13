@@ -10,7 +10,7 @@ from pinocchio.llm.mock_client import MockLLMClient
 
 def create_mock_llm_client(
     response: str = '{"success": true, "output": {"code": "test code"}}',
-    delay_ms: int = 1,
+    response_delay_ms: int = 1,
     failure_rate: float = 0.0,
 ) -> MockLLMClient:
     """
@@ -18,13 +18,13 @@ def create_mock_llm_client(
 
     Args:
         response: Mock response string
-        delay_ms: Response delay in milliseconds
+        response_delay_ms: Response delay in milliseconds
         failure_rate: Failure rate (0.0 to 1.0)
 
     Returns:
         MockLLMClient instance
     """
-    return MockLLMClient(response_delay_ms=delay_ms, failure_rate=failure_rate)
+    return MockLLMClient(response_delay_ms=response_delay_ms, failure_rate=failure_rate)
 
 
 def create_async_mock_llm_client(

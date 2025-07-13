@@ -8,6 +8,7 @@ import pytest
 
 from pinocchio.coordinator import Coordinator
 from pinocchio.llm.mock_client import MockLLMClient
+from tests.utils import create_mock_llm_client
 
 
 class TestCoordinator:
@@ -23,7 +24,7 @@ class TestCoordinator:
     @pytest.fixture
     def mock_llm_client(self):
         """Create mock LLM client."""
-        return MockLLMClient(response_delay_ms=1, failure_rate=0.0)
+        return create_mock_llm_client(response_delay_ms=1, failure_rate=0.0)
 
     @pytest.fixture
     def coordinator(self, mock_llm_client, temp_dir):

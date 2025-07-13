@@ -11,6 +11,13 @@ from pinocchio.agents.generator import GeneratorAgent
 from pinocchio.agents.optimizer import OptimizerAgent
 from pinocchio.llm.custom_llm_client import CustomLLMClient
 from pinocchio.llm.mock_client import MockLLMClient
+from tests.utils import (
+    assert_task_plan_valid,
+    assert_task_valid,
+    create_mock_llm_client,
+    create_test_task,
+    create_test_task_plan,
+)
 
 
 class TestGeneratorAgent:
