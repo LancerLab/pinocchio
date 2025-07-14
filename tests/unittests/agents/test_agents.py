@@ -299,7 +299,7 @@ class TestAgentWithRetry:
 
     @pytest.mark.asyncio
     async def test_retry_mechanism_final_failure(self):
-        """Test retry mechanism with final failure."""
+        """Test retry mechanism with final failure (should return structured error response)."""
         # Create client that always fails
         failing_client = Mock()
         failing_client.complete = AsyncMock(side_effect=Exception("Always fails"))
@@ -308,10 +308,15 @@ class TestAgentWithRetry:
             "retry_test", failing_client, max_retries=2, retry_delay=0.001
         )
 
-        with pytest.raises(Exception) as exc_info:
-            await retry_agent._call_llm_with_retry("test prompt")
+        result = await retry_agent._call_llm_with_retry("test prompt")
 
-        assert "LLM call failed after 3 attempts" in str(exc_info.value)
+        # Should return structured failure response, not raise
+        assert isinstance(result, dict)
+        assert result["success"] is False
+        assert "LLM call failed after" in result.get("error_message", "")
+        assert result.get("terminated") is True
+        assert result["agent_type"] == "retry_test"
+        assert result["output"] == {}
         assert failing_client.complete.call_count == 3
 
 

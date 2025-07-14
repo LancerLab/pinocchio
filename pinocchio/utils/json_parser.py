@@ -2,14 +2,60 @@
 
 import json
 import logging
+import re
 from typing import Any, Dict, Optional, Union
 
 logger = logging.getLogger(__name__)
 
 
+def _extract_first_json_object(text: str) -> str:
+    """
+    Extract the first top-level JSON object from text using bracket counting.
+    Returns the substring or None if not found.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+    count = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            count += 1
+        elif text[i] == "}":
+            count -= 1
+            if count == 0:
+                return text[start : i + 1]
+    return None
+
+
+def _try_recover_truncated_json(text: str) -> Optional[dict]:
+    """
+    Attempt to recover a truncated JSON object by completing missing right braces.
+    """
+    first = text.find("{")
+    if first == -1:
+        return None
+    # Count the number of right braces needed to complete
+    count = 0
+    for i in range(first, len(text)):
+        if text[i] == "{":
+            count += 1
+        elif text[i] == "}":
+            count -= 1
+    # Need count right braces
+    candidate = text[first:] + ("}" * count if count > 0 else "")
+    try:
+        result = json.loads(candidate)
+        if isinstance(result, dict):
+            logger.info("Recovered JSON object by auto-completing brackets.")
+            return result
+    except Exception as e:
+        logger.warning(f"Failed to recover truncated JSON by bracket completion: {e}")
+    return None
+
+
 def safe_json_parse(json_str: str) -> Optional[Dict[str, Any]]:
     """
-    Safely parse JSON string with error handling.
+    Safely parse JSON string with error handling. Now supports extracting JSON from extra text and partial JSON recovery.
 
     Args:
         json_str: JSON string to parse
@@ -21,33 +67,48 @@ def safe_json_parse(json_str: str) -> Optional[Dict[str, Any]]:
         logger.warning("Invalid JSON input: empty or non-string")
         return None
 
+    # Remove markdown code block formatting
+    cleaned_str = json_str.strip()
+    if cleaned_str.startswith("```json"):
+        cleaned_str = cleaned_str.replace("```json", "").replace("```", "").strip()
+
+    # Try direct parse first
     try:
-        # Remove common formatting issues
-        cleaned_str = json_str.strip()
-        if cleaned_str.startswith("```json"):
-            # Remove markdown code block formatting
-            cleaned_str = cleaned_str.replace("```json", "").replace("```", "").strip()
-
         result = json.loads(cleaned_str)
-
-        # Ensure result is a dictionary
         if isinstance(result, dict):
             return result
         else:
             logger.warning(f"JSON parsed but result is not a dict: {type(result)}")
             return {"content": result}
-
     except json.JSONDecodeError as e:
-        logger.error(f"JSON parsing failed: {e}")
-        return None
+        logger.warning(f"Direct JSON parsing failed: {e}")
     except Exception as e:
         logger.error(f"Unexpected error during JSON parsing: {e}")
         return None
 
+    # Try to extract first JSON object from text using bracket counting
+    json_candidate = _extract_first_json_object(cleaned_str)
+    if json_candidate:
+        try:
+            result = json.loads(json_candidate)
+            if isinstance(result, dict):
+                logger.info("Recovered JSON object from extra text.")
+                return result
+        except Exception as e:
+            logger.warning(f"Failed to parse extracted JSON object: {e}")
+
+    # Try to recover from partial JSON (truncated at end, auto-complete brackets)
+    recovered = _try_recover_truncated_json(cleaned_str)
+    if recovered:
+        return recovered
+
+    logger.error("JSON parsing failed after all recovery attempts.")
+    return None
+
 
 def parse_structured_output(response: str) -> Dict[str, Any]:
     """
-    Parse LLM response and extract structured output.
+    Parse LLM response and extract structured output. Now tries to extract JSON from extra text before falling back to plain text.
 
     Args:
         response: Raw LLM response string
@@ -58,12 +119,22 @@ def parse_structured_output(response: str) -> Dict[str, Any]:
     if not response:
         return {"error": "Empty response"}
 
-    # Try to parse as JSON first
+    # Try to parse as JSON first (with recovery)
     parsed = safe_json_parse(response)
     if parsed:
         return parsed
 
-    # If JSON parsing fails, return as plain text
+    # Try to extract JSON from text using bracket counting (if not already tried)
+    json_candidate = _extract_first_json_object(response)
+    if json_candidate:
+        try:
+            result = json.loads(json_candidate)
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            pass
+
+    # If all fails, return as plain text
     return {"content": response.strip(), "format": "plain_text", "parsed": False}
 
 

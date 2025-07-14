@@ -16,13 +16,16 @@ logger = logging.getLogger(__name__)
 class CustomLLMClient(BaseLLMClient):
     """Custom LLM client for local network deployment."""
 
-    def __init__(self, config: LLMConfigEntry, verbose: bool = False):
+    def __init__(
+        self, config: LLMConfigEntry, verbose: bool = False, verbose_callback=None
+    ):
         """
         Initialize Custom LLM client.
 
         Args:
             config: LLM configuration entry object
             verbose: Whether to print verbose output
+            verbose_callback: Optional callback for verbose messages (e.g., CLI.add_llm_verbose_message)
         """
         super().__init__(verbose=verbose)
         self.config = config
@@ -33,11 +36,14 @@ class CustomLLMClient(BaseLLMClient):
         self.api_key = config.api_key
         self.headers = config.headers or {}
         self.session = None
+        self.verbose_callback = verbose_callback
 
         if self.verbose:
-            print(
-                f"[LLM VERBOSE] Selected LLM: provider=custom, model={self.model_name}, base_url={self.base_url}"
-            )
+            msg = f"[LLM VERBOSE] Selected LLM: provider=custom, model={self.model_name}, base_url={self.base_url}"
+            if self.verbose_callback:
+                self.verbose_callback(msg)
+            else:
+                print(msg)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
@@ -87,21 +93,41 @@ class CustomLLMClient(BaseLLMClient):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         if self.verbose:
-            print(f"[LLM VERBOSE] Sending request to {url}")
-            print(f"[LLM VERBOSE] Payload: {json.dumps(payload, indent=2)}")
+            msg = f"[LLM VERBOSE] Sending request to {url}"
+            if self.verbose_callback:
+                self.verbose_callback(msg)
+            else:
+                print(msg)
+            msg = f"[LLM VERBOSE] Payload: {json.dumps(payload, indent=2)}"
+            if self.verbose_callback:
+                self.verbose_callback(msg)
+            else:
+                print(msg)
 
         async with session.post(url, json=payload, headers=headers) as response:
             if self.verbose:
-                print(f"[LLM VERBOSE] Response status: {response.status}")
+                msg = f"[LLM VERBOSE] Response status: {response.status}"
+                if self.verbose_callback:
+                    self.verbose_callback(msg)
+                else:
+                    print(msg)
             if response.status != 200:
                 error_text = await response.text()
                 if self.verbose:
-                    print(f"[LLM VERBOSE] Error: {error_text}")
+                    msg = f"[LLM VERBOSE] Error: {error_text}"
+                    if self.verbose_callback:
+                        self.verbose_callback(msg)
+                    else:
+                        print(msg)
                 raise Exception(f"LLM API error {response.status}: {error_text}")
 
             result = await response.json()
             if self.verbose:
-                print(f"[LLM VERBOSE] Response: {json.dumps(result, indent=2)}")
+                msg = f"[LLM VERBOSE] Response: {json.dumps(result, indent=2)}"
+                if self.verbose_callback:
+                    self.verbose_callback(msg)
+                else:
+                    print(msg)
             return result
 
     def _get_system_prompt(self, agent_type: Optional[str] = None) -> str:

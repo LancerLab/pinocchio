@@ -192,3 +192,38 @@ def remove_ansi_escape_codes(text: str) -> str:
     """
     ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
     return ansi_escape.sub("", text)
+
+
+def extract_and_pretty_json_from_str(s: str, indent: int = 2) -> str:
+    """
+    Extract the first balanced-bracket JSON object from a string, pretty-print it, and keep prefix/suffix text.
+    If no valid JSON is found, return the original string.
+    """
+    import json
+
+    if not isinstance(s, str):
+        return s
+    start = s.find("{")
+    if start == -1:
+        return s
+    count = 0
+    end = -1
+    for i in range(start, len(s)):
+        if s[i] == "{":
+            count += 1
+        elif s[i] == "}":
+            count -= 1
+            if count == 0:
+                end = i
+                break
+    if end != -1:
+        prefix = s[:start]
+        json_part = s[start : end + 1]
+        suffix = s[end + 1 :]
+        try:
+            parsed = json.loads(json_part)
+            pretty = json.dumps(parsed, indent=indent, ensure_ascii=False)
+            return prefix + pretty + suffix
+        except Exception:
+            return s
+    return s

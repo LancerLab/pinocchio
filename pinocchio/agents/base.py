@@ -290,6 +290,15 @@ class AgentWithRetry(Agent):
                     )
 
         # If we get here, all attempts failed
-        raise Exception(
+        # Return structured failure response with detailed error and suggestion
+        logger.error(
             f"LLM call failed after {self.max_retries + 1} attempts: {last_error}"
         )
+        return {
+            "agent_type": self.agent_type,
+            "success": False,
+            "output": {},
+            "error_message": f"LLM call failed after {self.max_retries + 1} attempts: {last_error}",
+            "suggestion": "Please check your input, network, or LLM configuration. If the problem persists, try simplifying your request or contact support.",
+            "terminated": True,
+        }

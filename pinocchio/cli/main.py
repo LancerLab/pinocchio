@@ -5,6 +5,7 @@ Pinocchio CLI - Multi-Agent Collaboration System
 
 import argparse
 import asyncio
+import logging
 import time
 from typing import List, Optional
 
@@ -14,6 +15,10 @@ from rich.panel import Panel
 from pinocchio.config import ConfigManager
 from pinocchio.coordinator import Coordinator
 from pinocchio.data_models.task_planning import AgentType, Task, TaskStatus
+
+logger = logging.getLogger(__name__)
+
+from pinocchio.utils.string_utils import extract_and_pretty_json_from_str
 
 
 def print_logo_and_welcome(console):
@@ -760,6 +765,145 @@ class PinocchioCLI:
         else:
             self.add_message(f"Coordinator: {message}", "🎯 Coordinator")
 
+    def add_llm_verbose_message(self, message: str):
+        """Add an LLM VERBOSE message with timestamp, icon, and pretty JSON if present."""
+        import json
+        import re
+
+        from rich.console import Group
+        from rich.panel import Panel
+        from rich.syntax import Syntax
+
+        timestamp = time.strftime("%H:%M:%S")
+        icon = "🤖 LLM"
+        border_style = "green"
+        bg = "on grey15"
+        payload_pat = re.compile(r"^\[LLM VERBOSE\] Payload:\s*{", re.DOTALL)
+        response_pat = re.compile(r"^\[LLM VERBOSE\] Response:\s*{", re.DOTALL)
+        is_payload = payload_pat.match(message)
+        is_response = response_pat.match(message)
+        if is_payload or is_response:
+            start = message.find("{")
+            end = message.rfind("}") + 1
+            if start != -1 and end != -1 and end > start:
+                prefix = message[:start]
+                json_part = message[start : end + 1]
+                suffix = message[end + 1 :]
+                try:
+                    data = json.loads(json_part)
+                    multiline_fields = []
+
+                    def pretty_print_nested(obj, path=None):
+                        if path is None:
+                            path = []
+                        if isinstance(obj, dict):
+                            new_obj = {}
+                            for k, v in obj.items():
+                                if isinstance(v, str):
+                                    s = v.strip()
+                                    if "\n" in s:
+                                        new_obj[k] = "<see below>"
+                                        multiline_fields.append((path + [k], s))
+                                    else:
+                                        new_obj[k] = s
+                                elif isinstance(v, (dict, list)):
+                                    new_obj[k] = pretty_print_nested(v, path + [k])
+                                else:
+                                    new_obj[k] = v
+                            return new_obj
+                        elif isinstance(obj, list):
+                            return [
+                                pretty_print_nested(i, path + [str(idx)])
+                                for idx, i in enumerate(obj)
+                            ]
+                        else:
+                            return obj
+
+                    replaced = pretty_print_nested(data)
+                    pretty = json.dumps(replaced, indent=2, ensure_ascii=False)
+                    self.console.print(
+                        f"[dim]{timestamp}[/dim] [{icon}] {prefix.strip()}"
+                    )
+                    self.console.print(
+                        Syntax(pretty, "json", theme="monokai", line_numbers=False)
+                    )
+                    for path, s in multiline_fields:
+                        label = ".".join(path)
+                        group = []
+                        lines = s.splitlines()
+                        buf = []
+                        in_json = False
+                        json_buf = []
+                        for line in lines:
+                            if not in_json and line.strip().startswith("{"):
+                                if buf:
+                                    group.append(
+                                        Syntax(
+                                            "\n".join(buf),
+                                            "markdown",
+                                            theme="monokai",
+                                            line_numbers=False,
+                                        )
+                                    )
+                                    buf = []
+                                in_json = True
+                                json_buf = [line]
+                            elif in_json:
+                                json_buf.append(line)
+                                if line.strip().endswith(
+                                    "}"
+                                ):  # Roughly determine end of JSON
+                                    json_str = "\n".join(json_buf)
+                                    # try:
+                                    #     parsed = json.loads(json_str)
+                                    #     pretty_json = json.dumps(parsed, indent=2, ensure_ascii=False)
+                                    #     group.append(Syntax(pretty_json, "json", theme="monokai", line_numbers=False))
+                                    # except Exception:
+                                    #     # Separate comment and non-comment lines
+                                    #     comment_lines = [line for line in json_buf if line.strip().startswith("//")]
+                                    #     non_comment_lines = [line for line in json_buf if not line.strip().startswith("//")]
+                                    #     # Try to highlight non-comment part as JSON
+                                    #     if non_comment_lines:
+                                    #         try:
+                                    #             parsed = json.loads("\n".join(non_comment_lines))
+                                    #             pretty_json = json.dumps(parsed, indent=2, ensure_ascii=False)
+                                    #             group.append(Syntax(pretty_json, "json", theme="monokai", line_numbers=False))
+                                    #         except Exception:
+                                    #             group.append(Syntax("\n".join(non_comment_lines), "jsonc", theme="monokai", line_numbers=False))
+                                    #     # Highlight comment part as markdown
+                                    #     if comment_lines:
+                                    #         group.append(Syntax("\n".join(comment_lines), "markdown", theme="monokai", line_numbers=False))
+                                    in_json = False
+                                    json_buf = []
+                            else:
+                                buf.append(line)
+                        if buf:
+                            group.append(
+                                Syntax(
+                                    "\n".join(buf),
+                                    "markdown",
+                                    theme="monokai",
+                                    line_numbers=False,
+                                )
+                            )
+                        panel = Panel(
+                            Group(*group),
+                            title=f"{label} (multiline)",
+                            border_style=border_style,
+                            style=bg,
+                            padding=(1, 2),
+                        )
+                        self.console.print(f"[dim]{timestamp}[/dim] [{icon}]", panel)
+                    if suffix.strip():
+                        self.console.print(suffix.strip())
+                    return
+                except Exception:
+                    pass  # fallback to below
+        pretty = extract_and_pretty_json_from_str(message)
+        formatted = f"[dim]{timestamp}[/dim] [{icon}] {pretty}"
+        self.messages.append(formatted)
+        self.console.print(formatted)
+
     def _is_json_message(self, message: str) -> bool:
         """Check if message contains JSON content."""
         import json
@@ -778,36 +922,48 @@ class PinocchioCLI:
         return False
 
     def _print_json_message(self, message: str, sender: str):
-        """Print JSON message in a formatted panel."""
+        """Print JSON message, recursively pretty-print nested JSON in all string fields."""
         import json
 
+        from rich.syntax import Syntax
+
         try:
-            start = message.find("{")
-            end = message.rfind("}") + 1
-            json_str = message[start:end]
-            json_data = json.loads(json_str)
+            data = json.loads(message) if isinstance(message, str) else message
+            multiline_fields = []
 
-            # Format JSON for display
-            formatted_json = json.dumps(json_data, indent=2, ensure_ascii=False)
+            def pretty_print_nested(obj, path=None):
+                if path is None:
+                    path = []
+                if isinstance(obj, dict):
+                    new_obj = {}
+                    for k, v in obj.items():
+                        if isinstance(v, str):
+                            s = v.strip()
+                            if "\n" in s:
+                                new_obj[k] = "<see below>"
+                                multiline_fields.append((path + [k], s))
+                            else:
+                                new_obj[k] = s
+                        elif isinstance(v, (dict, list)):
+                            new_obj[k] = pretty_print_nested(v, path + [k])
+                        else:
+                            new_obj[k] = v
+                    return new_obj
+                elif isinstance(obj, list):
+                    return [
+                        pretty_print_nested(i, path + [str(idx)])
+                        for idx, i in enumerate(obj)
+                    ]
+                else:
+                    return obj
 
-            # Create panel for JSON content
-            panel = Panel(
-                formatted_json,
-                title=f"📄 {sender} JSON Data",
-                border_style="cyan",
-                padding=(1, 2),
-            )
-            self.console.print(panel)
-
-            # Add timestamp message to buffer
-            timestamp = time.strftime("%H:%M:%S")
-            self.console.print(
-                f"[dim]{timestamp}[/dim] [{sender}] JSON data displayed above"
-            )
-
-        except Exception:
-            # Fallback to regular message if JSON parsing fails
-            self.add_message(f"{sender}: {message}", f"🤖 {sender}")
+            replaced = pretty_print_nested(data)
+            pretty = json.dumps(replaced, indent=2, ensure_ascii=False)
+            syntax = Syntax(pretty, "json", theme="monokai", line_numbers=False)
+            self.console.print(syntax)
+        except Exception as e:
+            self.console.print(f"[red]Failed to pretty-print JSON: {e}[/red]")
+            self.console.print(message)
 
     def print_task_update(self, task: Task):
         """Print task status update."""
@@ -932,6 +1088,22 @@ Task ID: {task.task_id}
                     elif command == "/help":
                         self.print_tips()
                         self.print_input_border()
+                        continue
+                    elif command == "/export":
+                        if (
+                            self.coordinator
+                            and hasattr(self.coordinator, "current_session")
+                            and self.coordinator.current_session
+                        ):
+                            session = self.coordinator.current_session
+                            path = session.save_to_file()
+                            self.console.print(
+                                f"[green]Session log exported to: {path}[/green]"
+                            )
+                        else:
+                            self.console.print(
+                                "[red]No active session to export.[/red]"
+                            )
                         continue
                     else:
                         self.console.print(f"[red]Unknown command: {command}[/red]")
@@ -1237,16 +1409,18 @@ async def main():
         verbose = False
         if verbose_config is not None:
             verbose = getattr(verbose_config, "enabled", False)
-        llm_client = CustomLLMClient(llm_config, verbose=verbose)
+        # Create CLI first for verbose callback
+        cli = PinocchioCLI()
+        llm_client = CustomLLMClient(
+            llm_config, verbose=verbose, verbose_callback=cli.add_llm_verbose_message
+        )
+        coordinator = Coordinator(llm_client)
+        cli.set_coordinator(coordinator)
+
     except Exception as e:
         console = Console()
         console.print(f"[red]Error creating LLM client: {e}[/red]")
         return
-
-    # Create coordinator and CLI
-    coordinator = Coordinator(llm_client)
-    cli = PinocchioCLI()
-    cli.set_coordinator(coordinator)
 
     # Run the new CLI
     await cli.run()

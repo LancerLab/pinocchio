@@ -102,6 +102,9 @@ class TaskExecutor:
         Yields:
             Progress messages during execution
         """
+        # Pass SessionLogger reference to plan object
+        if hasattr(self, "session_logger") and self.session_logger:
+            plan.session_logger = self.session_logger
         plan.mark_started()
         yield f"🤖 Starting execution of plan {plan.plan_id} with {len(plan.tasks)} tasks"
 
@@ -186,13 +189,13 @@ class TaskExecutor:
     ) -> AsyncGenerator[str, None]:
         """Execute a single task with verbose output and support dynamic debugger insertion."""
         agent_emoji = self._get_agent_emoji(task.agent_type)
-        yield f"🔄 Executing {agent_emoji} {task.agent_type.upper()} (Task {task.task_id})"
+        yield f"\U0001f504 Executing {agent_emoji} {task.agent_type.upper()} (Task {task.task_id})"
 
         # Generate task details panel content
         if self.verbose_enabled:
             task_details = self._generate_task_details_panel(task)
             if task_details:
-                yield "📋 Task Details:"
+                yield "\U0001f4cb Task Details:"
                 for line in task_details:
                     yield line
                 yield "<<END_TASK_DETAILS>>"
@@ -200,6 +203,23 @@ class TaskExecutor:
         # Show progress updates if enabled
         if self.verbose_enabled and self.show_progress_updates:
             yield "   ⏳ Starting task execution..."
+
+        # Record input/output summary to SessionLogger
+        session_logger = getattr(plan, "session_logger", None)
+        agent_request = self._prepare_agent_request(task, execution_results)
+        agent_response = None
+        try:
+            agent_response = await self._execute_task(task, execution_results)
+        finally:
+            if session_logger:
+                session_logger.log_communication(
+                    step_id=task.task_id,
+                    agent_type=task.agent_type,
+                    request=agent_request,
+                    response=agent_response
+                    if agent_response
+                    else {"error": "No response"},
+                )
 
         try:
             result = await self._execute_task(task, execution_results)

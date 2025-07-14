@@ -121,6 +121,9 @@ class Coordinator:
 
         yield self.current_session.log_summary("🚀 Starting task execution...")
 
+        # Pass SessionLogger to TaskExecutor
+        self.task_executor.session_logger = self.current_session
+
         # Execute plan and collect results
         async for progress_msg in self.task_executor.execute_plan(self.current_plan):
             yield self.current_session.log_summary(progress_msg)
