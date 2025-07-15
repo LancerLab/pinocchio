@@ -54,16 +54,31 @@
     "optimizer_enabled": true
   },
   "verbose": {
-    "enabled": true,
-    "level": "maximum",
-    "show_agent_instructions": true,
-    "show_execution_times": true,
-    "show_task_details": true,
-    "show_progress_updates": true
+    "enabled": false,
+    "mode": "production",
+    "level": "minimal",
+    "log_file": "./logs/verbose_prod.log",
+    "max_depth": 3,
+    "enable_colors": true,
+    "show_agent_instructions": false,
+    "show_execution_times": false,
+    "show_task_details": false,
+    "show_progress_updates": true,
+    "performance_tracking": false,
+    "session_tracking": false,
+    "export_on_exit": false,
+    "log_llm_requests": false,
+    "log_llm_responses": false,
+    "log_agent_communications": false,
+    "log_coordinator_activities": false,
+    "log_performance_metrics": false,
+    "log_error_details": false,
+    "log_session_summary": false
   },
   "logging": {
-    "level": "DEBUG",
-    "console_output": true,
-    "file_output": true
+    "level": "INFO",
+    "console_output": false,
+    "file_output": true,
+    "log_file": "./logs/pinocchio_prod.log"
   }
 }

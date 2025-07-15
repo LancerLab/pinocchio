@@ -62,6 +62,13 @@ from .validation import (
     validate_session_data,
     validate_url,
 )
+from .verbose_logger import (
+    LogLevel,
+    VerboseLogger,
+    get_verbose_logger,
+    log_verbose,
+    set_verbose_logger,
+)
 
 __all__ = [
     # File utilities
@@ -115,4 +122,10 @@ __all__ = [
     "sanitize_input",
     "validate_api_key",
     "assert_dict_structure",
+    # Verbose logging utilities
+    "VerboseLogger",
+    "LogLevel",
+    "get_verbose_logger",
+    "set_verbose_logger",
+    "log_verbose",
 ]

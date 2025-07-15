@@ -1,10 +1,12 @@
 """Coordinator - The central orchestrator for Pinocchio multi-agent system."""
 
 import logging
+import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from .session_logger import SessionLogger
 from .task_planning import TaskExecutor, TaskPlanner
+from .utils.verbose_logger import LogLevel, get_verbose_logger
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +78,29 @@ class Coordinator:
 
     async def _initialize_session(self, user_prompt: str) -> AsyncGenerator[str, None]:
         """Initialize new session."""
+        start_time = time.time()
+
         self.current_session = SessionLogger(user_prompt, self.sessions_dir)
+
+        # Log verbose session initialization
+        verbose_logger = get_verbose_logger()
+        verbose_logger.log_coordinator_activity(
+            "Session initialized",
+            data={
+                "user_prompt": user_prompt,
+                "session_id": self.current_session.session_id,
+                "sessions_dir": self.sessions_dir,
+            },
+            session_id=self.current_session.session_id,
+            duration_ms=(time.time() - start_time) * 1000,
+        )
+
         yield self.current_session.log_summary("Session started")
 
     async def _create_task_plan(self, user_prompt: str) -> AsyncGenerator[str, None]:
         """Create intelligent task plan from user request."""
+        start_time = time.time()
+
         yield self.current_session.log_summary("🤖 Creating intelligent task plan...")
 
         try:
@@ -107,7 +127,31 @@ class Coordinator:
                 )
                 raise Exception("Task plan validation failed")
 
+            # Log verbose task plan creation
+            verbose_logger = get_verbose_logger()
+            verbose_logger.log_coordinator_activity(
+                "Task plan created",
+                data={
+                    "task_count": len(self.current_plan.tasks),
+                    "validation": validation,
+                    "plan_id": getattr(self.current_plan, "id", None),
+                },
+                session_id=self.current_session.session_id,
+                duration_ms=(time.time() - start_time) * 1000,
+            )
+
         except Exception as e:
+            # Log verbose error
+            verbose_logger = get_verbose_logger()
+            verbose_logger.log(
+                LogLevel.ERROR,
+                "coordinator",
+                f"Failed to create task plan: {str(e)}",
+                data={"error": str(e), "user_prompt": user_prompt},
+                session_id=self.current_session.session_id,
+                duration_ms=(time.time() - start_time) * 1000,
+            )
+
             yield self.current_session.log_summary(
                 f"❌ Failed to create task plan: {str(e)}"
             )
@@ -115,11 +159,24 @@ class Coordinator:
 
     async def _execute_task_plan(self) -> AsyncGenerator[str, None]:
         """Execute the task plan with progress reporting."""
+        start_time = time.time()
+
         if not hasattr(self, "current_plan"):
             yield self.current_session.log_summary("❌ No task plan available")
             return
 
         yield self.current_session.log_summary("🚀 Starting task execution...")
+
+        # Log verbose execution start
+        verbose_logger = get_verbose_logger()
+        verbose_logger.log_coordinator_activity(
+            "Task execution started",
+            data={
+                "task_count": len(self.current_plan.tasks),
+                "plan_id": getattr(self.current_plan, "id", None),
+            },
+            session_id=self.current_session.session_id,
+        )
 
         # Pass SessionLogger to TaskExecutor
         self.task_executor.session_logger = self.current_session
@@ -132,6 +189,17 @@ class Coordinator:
             if "🎉 Plan" in progress_msg and "completed successfully" in progress_msg:
                 if hasattr(self.current_plan, "final_result"):
                     self._final_result = self.current_plan.final_result
+
+                # Log verbose execution completion
+                verbose_logger.log_coordinator_activity(
+                    "Task execution completed",
+                    data={
+                        "final_result": self._final_result,
+                        "plan_id": getattr(self.current_plan, "id", None),
+                    },
+                    session_id=self.current_session.session_id,
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
 
     async def _process_results(self) -> AsyncGenerator[str, None]:
         """Process and display final results."""

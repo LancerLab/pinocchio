@@ -33,6 +33,11 @@ class ConfigManager:
 
     def _get_default_config_path(self) -> str:
         """Get default configuration file path."""
+        # Check environment variable first
+        env_config = os.getenv("PINOCCHIO_CONFIG_FILE")
+        if env_config and os.path.exists(env_config):
+            return env_config
+
         # Try to find config in current directory or project root
         possible_paths = [
             "pinocchio.json",
@@ -164,6 +169,31 @@ class ConfigManager:
                 return default
 
         return value
+
+    def get_verbose_config(self) -> dict:
+        """Get verbose logging configuration."""
+        verbose_config = self.get("verbose", {})
+        if isinstance(verbose_config, dict):
+            return verbose_config
+        else:
+            # If verbose config is a Pydantic model, convert to dict
+            return (
+                verbose_config.model_dump()
+                if hasattr(verbose_config, "model_dump")
+                else {}
+            )
+
+    def is_verbose_enabled(self) -> bool:
+        """Check if verbose logging is enabled."""
+        return self.get("verbose.enabled", False)
+
+    def get_verbose_mode(self) -> str:
+        """Get verbose mode (development/production/debug)."""
+        return self.get("verbose.mode", "production")
+
+    def get_verbose_level(self) -> str:
+        """Get verbose level (minimal/detailed/maximum)."""
+        return self.get("verbose.level", "minimal")
 
     def set(self, key: str, value: Any) -> None:
         """Set configuration value."""

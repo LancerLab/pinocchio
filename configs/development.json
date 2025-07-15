@@ -55,15 +55,30 @@
   },
   "verbose": {
     "enabled": true,
-    "level": "maximum",
+    "mode": "development",
+    "level": "detailed",
+    "log_file": "./logs/verbose_dev.log",
+    "max_depth": 8,
+    "enable_colors": true,
     "show_agent_instructions": true,
     "show_execution_times": true,
     "show_task_details": true,
-    "show_progress_updates": true
+    "show_progress_updates": true,
+    "performance_tracking": true,
+    "session_tracking": true,
+    "export_on_exit": true,
+    "log_llm_requests": true,
+    "log_llm_responses": true,
+    "log_agent_communications": true,
+    "log_coordinator_activities": true,
+    "log_performance_metrics": true,
+    "log_error_details": true,
+    "log_session_summary": true
   },
   "logging": {
     "level": "DEBUG",
     "console_output": true,
-    "file_output": true
+    "file_output": true,
+    "log_file": "./logs/pinocchio_dev.log"
   }
 }

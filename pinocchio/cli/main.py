@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import logging
 import time
+from pathlib import Path
 from typing import List, Optional
 
 from rich.console import Console
@@ -15,6 +16,12 @@ from rich.panel import Panel
 from pinocchio.config import ConfigManager
 from pinocchio.coordinator import Coordinator
 from pinocchio.data_models.task_planning import AgentType, Task, TaskStatus
+from pinocchio.utils.verbose_logger import (
+    LogLevel,
+    VerboseLogger,
+    get_verbose_logger,
+    set_verbose_logger,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +194,8 @@ Development Tools:
 • /debug   - Enable debug mode for verbose output
 • /verbose - Toggle verbose logging
 • /config  - Show current configuration
+• /performance - Show performance metrics
+• /logs    - Export verbose logs
 
 Usage Examples:
 • Type '/chat' to start coding with AI agents
@@ -199,7 +208,9 @@ For more information, visit the Pinocchio documentation.
     print(help_text)
 
 
-def handle_commands(command: str) -> bool:
+def handle_commands(
+    command: str, cli_instance: Optional["PinocchioCLI"] = None
+) -> bool:
     """Handle CLI commands. Returns True if should continue, False if should quit."""
     console = Console()
 
@@ -230,6 +241,30 @@ def handle_commands(command: str) -> bool:
         console.print("  • Recent commands will be displayed here")
         console.print("  • Session history available")
         console.print("  • Use /help for available commands")
+        return True
+    elif command == "/verbose":
+        if cli_instance:
+            cli_instance.toggle_verbose_mode()
+        else:
+            console.print("[yellow]Verbose mode toggle requires CLI instance[/yellow]")
+        return True
+    elif command == "/performance":
+        if cli_instance:
+            cli_instance.show_performance_metrics()
+        else:
+            console.print("[yellow]Performance metrics require CLI instance[/yellow]")
+        return True
+    elif command == "/logs":
+        if cli_instance:
+            cli_instance.export_verbose_logs()
+        else:
+            console.print("[yellow]Log export requires CLI instance[/yellow]")
+        return True
+    elif command == "/session":
+        if cli_instance:
+            cli_instance.show_session_summary()
+        else:
+            console.print("[yellow]Session summary requires CLI instance[/yellow]")
         return True
     else:
         console.print(f"[red]Unknown command: {command}[/red]")
@@ -584,6 +619,18 @@ class PinocchioCLI:
         self.task_details_buffer = []
         self.is_collecting_task_details = False
 
+        # Verbose mode state
+        self.verbose_mode = False
+
+        # Initialize verbose logger
+        self.verbose_logger = VerboseLogger(
+            console=self.console,
+            log_file=Path("./logs/verbose.log") if self.verbose_mode else None,
+            max_depth=5,
+            enable_colors=True,
+        )
+        set_verbose_logger(self.verbose_logger)
+
     def set_coordinator(self, coordinator: Coordinator):
         """Set the coordinator."""
         self.coordinator = coordinator
@@ -904,6 +951,60 @@ class PinocchioCLI:
         self.messages.append(formatted)
         self.console.print(formatted)
 
+    def toggle_verbose_mode(self):
+        """Toggle verbose logging mode."""
+        self.verbose_mode = not self.verbose_mode
+        if self.verbose_mode:
+            # Create logs directory if it doesn't exist
+            Path("./logs").mkdir(exist_ok=True)
+            self.verbose_logger.log_file = Path("./logs/verbose.log")
+            self.verbose_logger.log(
+                LogLevel.INFO,
+                "cli",
+                "Verbose logging enabled",
+                data={"mode": "enabled", "log_file": str(self.verbose_logger.log_file)},
+            )
+            self.console.print("[green]Verbose logging enabled[/green]")
+        else:
+            self.verbose_logger.log_file = None
+            self.verbose_logger.log(
+                LogLevel.INFO,
+                "cli",
+                "Verbose logging disabled",
+                data={"mode": "disabled"},
+            )
+            self.console.print("[yellow]Verbose logging disabled[/yellow]")
+
+    def show_performance_metrics(self):
+        """Display performance metrics."""
+        self.verbose_logger.display_performance_summary()
+
+    def export_verbose_logs(self, file_path: str = None):
+        """Export verbose logs to file."""
+        if not file_path:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            file_path = f"./logs/verbose_export_{timestamp}.json"
+
+        try:
+            self.verbose_logger.export_entries(Path(file_path))
+            self.console.print(f"[green]Verbose logs exported to: {file_path}[/green]")
+        except Exception as e:
+            self.console.print(f"[red]Failed to export logs: {e}[/red]")
+
+    def show_session_summary(self, session_id: str = None):
+        """Display session summary."""
+        if (
+            not session_id
+            and hasattr(self, "current_session_id")
+            and self.current_session_id
+        ):
+            session_id = self.current_session_id
+
+        if session_id:
+            self.verbose_logger.display_session_summary(session_id)
+        else:
+            self.console.print("[yellow]No active session[/yellow]")
+
     def _is_json_message(self, message: str) -> bool:
         """Check if message contains JSON content."""
         import json
@@ -1082,32 +1183,11 @@ Task ID: {task.task_id}
 
                 if user_input.startswith("/"):
                     command = user_input.lower().strip()
-                    if command == "/quit":
-                        self.console.print("[yellow]Exiting Pinocchio CLI...[/yellow]")
+                    # Use the centralized command handler
+                    if not handle_commands(command, self):
                         break
-                    elif command == "/help":
-                        self.print_tips()
-                        self.print_input_border()
-                        continue
-                    elif command == "/export":
-                        if (
-                            self.coordinator
-                            and hasattr(self.coordinator, "current_session")
-                            and self.coordinator.current_session
-                        ):
-                            session = self.coordinator.current_session
-                            path = session.save_to_file()
-                            self.console.print(
-                                f"[green]Session log exported to: {path}[/green]"
-                            )
-                        else:
-                            self.console.print(
-                                "[red]No active session to export.[/red]"
-                            )
-                        continue
-                    else:
-                        self.console.print(f"[red]Unknown command: {command}[/red]")
-                        continue
+                    self.print_input_border()
+                    continue
 
                 if not user_input:
                     continue
@@ -1357,12 +1437,42 @@ async def legacy_run_chat_interface(
 async def main():
     """Main CLI entry point with new design."""
     import os
+    import shutil
     import sys
+    from pathlib import Path
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Pinocchio CLI - Multi-Agent Collaboration System"
+        description="Pinocchio CLI - Multi-Agent Collaboration System",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Configuration Modes:
+  --mode development    # Full verbose logging for development
+  --mode production     # Minimal logging for end users
+  --mode debug         # Maximum logging for troubleshooting
+
+Examples:
+  pinocchio --mode development
+  pinocchio --mode production
+  pinocchio --mode debug
+  pinocchio --config configs/custom.json
+        """,
     )
+
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["development", "production", "debug"],
+        help="Configuration mode (development/production/debug)",
+    )
+
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="pinocchio.json",
+        help="Path to configuration file (default: pinocchio.json)",
+    )
+
     parser.add_argument(
         "--legacy-cli", action="store_true", help="Use legacy CLI interface"
     )
@@ -1372,6 +1482,37 @@ async def main():
 
     # Parse arguments, but allow unknown arguments for backward compatibility
     args, unknown = parser.parse_known_args()
+
+    # Handle --help without executing
+    if "--help" in sys.argv or "-h" in sys.argv:
+        parser.print_help()
+        return
+
+    # Handle mode switching
+    if args.mode:
+        config_path = Path(f"configs/{args.mode}.json")
+        if config_path.exists():
+            try:
+                shutil.copy2(config_path, "pinocchio.json")
+                console = Console()
+                console.print(f"✅ Switched to {args.mode} mode")
+                console.print(f"📁 Configuration copied from: {config_path}")
+
+                # Show mode info
+                show_mode_info(console, args.mode)
+
+            except Exception as e:
+                console = Console()
+                console.print(f"❌ Failed to switch to {args.mode} mode: {e}")
+                return
+        else:
+            console = Console()
+            console.print(f"❌ Configuration file not found: {config_path}")
+            console.print("Available modes: development, production, debug")
+            return
+
+    # Set global config file path
+    os.environ["PINOCCHIO_CONFIG_FILE"] = args.config
 
     # Check if legacy mode is requested
     use_legacy = (
@@ -1392,25 +1533,36 @@ async def main():
         await legacy_main()
         return
 
-    # Load configuration
+    # Load configuration with custom config file
     try:
-        config_manager = ConfigManager()
+        config_manager = ConfigManager(args.config)
         config_manager.config
     except Exception as e:
         console = Console()
-        console.print(f"[red]Error loading configuration: {e}[/red]")
+        console.print(f"[red]Error loading configuration from {args.config}: {e}[/red]")
         return
 
     try:
         from pinocchio.llm.custom_llm_client import CustomLLMClient
 
         llm_config = config_manager.get_llm_config()
-        verbose_config = config_manager.get("verbose", None)
-        verbose = False
-        if verbose_config is not None:
-            verbose = getattr(verbose_config, "enabled", False)
+        verbose_config = config_manager.get_verbose_config()
+        verbose = verbose_config.get("enabled", False)
+
         # Create CLI first for verbose callback
         cli = PinocchioCLI()
+
+        # Initialize verbose logger with config
+        from pinocchio.utils.verbose_logger import VerboseLogger, set_verbose_logger
+
+        if verbose:
+            verbose_logger = VerboseLogger(
+                log_file=Path(verbose_config.get("log_file", "./logs/verbose.log")),
+                max_depth=verbose_config.get("max_depth", 5),
+                enable_colors=verbose_config.get("enable_colors", True),
+            )
+            set_verbose_logger(verbose_logger)
+
         llm_client = CustomLLMClient(
             llm_config, verbose=verbose, verbose_callback=cli.add_llm_verbose_message
         )
@@ -1424,6 +1576,52 @@ async def main():
 
     # Run the new CLI
     await cli.run()
+
+
+def show_mode_info(console: Console, mode: str):
+    """Show information about a specific mode."""
+    mode_info = {
+        "development": {
+            "description": "Full verbose logging for development",
+            "features": [
+                "✅ All verbose logging enabled",
+                "✅ Performance tracking",
+                "✅ Session tracking",
+                "✅ Export on exit",
+                "✅ Detailed agent communications",
+                "✅ LLM request/response logging",
+            ],
+        },
+        "production": {
+            "description": "Minimal logging for end users",
+            "features": [
+                "❌ Verbose logging disabled",
+                "❌ Performance tracking disabled",
+                "❌ Session tracking disabled",
+                "✅ Basic progress updates only",
+                "✅ Clean user experience",
+            ],
+        },
+        "debug": {
+            "description": "Maximum logging for troubleshooting",
+            "features": [
+                "✅ Maximum verbose logging",
+                "✅ Raw prompt/response logging",
+                "✅ Internal state logging",
+                "✅ Memory operations logging",
+                "✅ Configuration change logging",
+                "✅ Maximum recursion depth (10)",
+            ],
+        },
+    }
+
+    if mode in mode_info:
+        info = mode_info[mode]
+        console.print(f"\n📋 {mode.upper()} MODE:")
+        console.print(f"   {info['description']}")
+        console.print("\n   Features:")
+        for feature in info["features"]:
+            console.print(f"   {feature}")
 
 
 if __name__ == "__main__":

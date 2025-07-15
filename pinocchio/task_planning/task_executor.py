@@ -1,6 +1,7 @@
 """Task executor for executing task plans and managing agent interactions."""
 
 import logging
+import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from ..agents import DebuggerAgent, EvaluatorAgent, GeneratorAgent, OptimizerAgent
@@ -15,6 +16,7 @@ from ..data_models.task_planning import (
     TaskStatus,
 )
 from ..llm.mock_client import MockLLMClient
+from ..utils.verbose_logger import LogLevel, get_verbose_logger
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +104,20 @@ class TaskExecutor:
         Yields:
             Progress messages during execution
         """
+        start_time = time.time()
+
+        # Log verbose plan execution start
+        verbose_logger = get_verbose_logger()
+        verbose_logger.log_coordinator_activity(
+            "Plan execution started",
+            data={
+                "plan_id": plan.plan_id,
+                "task_count": len(plan.tasks),
+                "agent_types": [str(task.agent_type) for task in plan.tasks],
+            },
+            session_id=getattr(plan, "session_id", None),
+        )
+
         # Pass SessionLogger reference to plan object
         if hasattr(self, "session_logger") and self.session_logger:
             plan.session_logger = self.session_logger
@@ -126,6 +142,19 @@ class TaskExecutor:
         # Finalize plan
         async for msg in self._finalize_plan(plan, execution_results):
             yield msg
+
+        # Log verbose plan execution completion
+        verbose_logger.log_coordinator_activity(
+            "Plan execution completed",
+            data={
+                "plan_id": plan.plan_id,
+                "completed_tasks": len(completed_tasks),
+                "failed_tasks": len(failed_tasks),
+                "total_duration_ms": (time.time() - start_time) * 1000,
+            },
+            session_id=getattr(plan, "session_id", None),
+            duration_ms=(time.time() - start_time) * 1000,
+        )
 
     async def _display_task_plan_overview(
         self, plan: TaskPlan
@@ -188,6 +217,25 @@ class TaskExecutor:
         plan=None,  # pass plan for dynamic insertion
     ) -> AsyncGenerator[str, None]:
         """Execute a single task with verbose output and support dynamic debugger insertion."""
+        start_time = time.time()
+
+        # Log verbose task execution start
+        verbose_logger = get_verbose_logger()
+        verbose_logger.log_agent_activity(
+            str(task.agent_type),
+            "Task execution started",
+            data={
+                "task_id": task.task_id,
+                "task_description": task.task_description,
+                "priority": str(task.priority),
+                "dependencies": [dep.task_id for dep in task.dependencies]
+                if task.dependencies
+                else [],
+            },
+            session_id=getattr(plan, "session_id", None) if plan else None,
+            step_id=task.task_id,
+        )
+
         agent_emoji = self._get_agent_emoji(task.agent_type)
         yield f"\U0001f504 Executing {agent_emoji} {task.agent_type.upper()} (Task {task.task_id})"
 
@@ -229,6 +277,25 @@ class TaskExecutor:
                 completed_tasks.append(task.task_id)
                 execution_results[task.task_id] = result.output
 
+                # Log verbose task completion
+                verbose_logger.log_agent_activity(
+                    str(task.agent_type),
+                    "Task completed successfully",
+                    data={
+                        "task_id": task.task_id,
+                        "output_keys": list(result.output.keys())
+                        if isinstance(result.output, dict)
+                        else [],
+                        "execution_time_ms": result.execution_time_ms,
+                        "processing_time_ms": getattr(
+                            result, "processing_time_ms", None
+                        ),
+                    },
+                    session_id=getattr(plan, "session_id", None) if plan else None,
+                    step_id=task.task_id,
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
+
                 # Show success summary
                 yield f"✅ {agent_emoji} {task.agent_type.upper()} completed successfully"
 
@@ -258,6 +325,22 @@ class TaskExecutor:
             else:
                 task.mark_failed(result.error_message or "Unknown error")
                 failed_tasks.append(task.task_id)
+
+                # Log verbose task failure
+                verbose_logger.log(
+                    LogLevel.ERROR,
+                    f"agent:{str(task.agent_type)}",
+                    "Task failed",
+                    data={
+                        "task_id": task.task_id,
+                        "error_message": result.error_message,
+                        "error_details": getattr(result, "error_details", None),
+                    },
+                    session_id=getattr(plan, "session_id", None) if plan else None,
+                    step_id=task.task_id,
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
+
                 yield f"❌ {agent_emoji} {task.agent_type.upper()} failed: {result.error_message}"
 
                 # Show detailed error information if verbose is enabled
@@ -269,6 +352,22 @@ class TaskExecutor:
             error_msg = f"Exception in task {task.task_id}: {str(e)}"
             task.mark_failed(error_msg)
             failed_tasks.append(task.task_id)
+
+            # Log verbose task exception
+            verbose_logger.log(
+                LogLevel.ERROR,
+                f"agent:{str(task.agent_type)}",
+                "Task failed with exception",
+                data={
+                    "task_id": task.task_id,
+                    "error": str(e),
+                    "exception_type": type(e).__name__,
+                },
+                session_id=getattr(plan, "session_id", None) if plan else None,
+                step_id=task.task_id,
+                duration_ms=(time.time() - start_time) * 1000,
+            )
+
             yield f"💥 {agent_emoji} {task.agent_type.upper()} failed with exception: {str(e)}"
 
             # Show detailed exception information if verbose is enabled

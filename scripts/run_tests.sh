@@ -151,7 +151,7 @@ elif [ "$REAL_LLM" = true ]; then
 elif [ "$MODE" = "fast" ]; then
     PYTEST_CMD="$PYTEST_CMD -m 'not slow'"
 elif [ "$MODE" = "dev" ]; then
-    PYTEST_CMD="$PYTEST_CMD -m 'not slow and not real_llm'"
+    PYTEST_CMD="$PYTEST_CMD -m 'not real_llm'"
 elif [ "$MODE" = "local" ]; then
     PYTEST_CMD="$PYTEST_CMD -m 'not slow'"
 fi
