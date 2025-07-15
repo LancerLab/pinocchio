@@ -1,0 +1,66 @@
+{
+  "llms": [
+    {
+      "id": "main",
+    "provider": "custom",
+    "base_url": "http://10.0.16.46:8001",
+    "model_name": "Qwen/Qwen3-32B",
+    "timeout": 120,
+    "max_retries": 3,
+      "priority": 10
+    }
+  ],
+  "agents": {
+    "generator": {"enabled": true, "llm": "main", "max_retries": 3, "timeout": null},
+    "debugger": {"enabled": true, "llm": "main", "max_retries": 3, "timeout": null},
+    "optimizer": {"enabled": true, "llm": "main", "max_retries": 3, "timeout": null},
+    "evaluator": {"enabled": true, "llm": "main", "max_retries": 3, "timeout": null},
+    "planner": {"enabled": true, "llm": "main", "max_retries": 3, "timeout": null}
+  },
+  "session": {
+    "auto_save": true,
+    "save_interval_seconds": 300,
+    "max_session_size_mb": 100
+  },
+  "storage": {
+    "sessions_path": "./sessions",
+    "memories_path": "./memories",
+    "knowledge_path": "./knowledge",
+    "logs_path": "./logs"
+  },
+  "debug_repair": {
+    "max_repair_attempts": 3
+  },
+  "optimization": {
+    "max_optimisation_rounds": 3,
+    "optimizer_enabled": true
+  },
+  "verbose": {
+    "enabled": false,
+    "mode": "production",
+    "level": "minimal",
+    "log_file": "./logs/verbose_prod.log",
+    "max_depth": 3,
+    "enable_colors": true,
+    "show_agent_instructions": false,
+    "show_execution_times": false,
+    "show_task_details": false,
+    "show_progress_updates": true,
+    "performance_tracking": false,
+    "session_tracking": false,
+    "export_on_exit": false,
+    "log_llm_requests": false,
+    "log_llm_responses": false,
+    "log_agent_communications": false,
+    "log_coordinator_activities": false,
+    "log_performance_metrics": false,
+    "log_error_details": false,
+    "log_session_summary": false
+  },
+  "logging": {
+    "level": "INFO",
+    "console_output": false,
+    "file_output": true,
+    "log_file": "./logs/pinocchio_prod.log"
+  }
+}

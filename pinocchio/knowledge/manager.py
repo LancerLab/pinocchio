@@ -6,6 +6,7 @@ versioning, session tracking, and multi-agent support.
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,8 @@ from .models.knowledge import (
     KnowledgeQuery,
     KnowledgeVersionHistory,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeManager:
@@ -444,3 +447,164 @@ class KnowledgeManager:
             for fragment in self.fragments.values()
             if fragment.session_id == session_id
         ]
+
+    def query_by_keywords(
+        self, keywords: List[str], session_id: Optional[str] = None, limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Query knowledge fragments by keywords for prompt integration.
+
+        Args:
+            keywords: List of keywords to search for
+            session_id: Optional session ID filter
+            limit: Maximum number of results
+
+        Returns:
+            List of relevant knowledge fragments formatted for prompt use
+        """
+        # Get all fragments (optionally filtered by session)
+        relevant_fragments = []
+        for fragment_id, fragment in self.fragments.items():
+            if session_id and fragment.session_id != session_id:
+                continue
+
+            score = self._calculate_keyword_score(fragment, keywords)
+            if score > 0:
+                relevant_fragments.append((fragment, score))
+
+        # Sort by score and take top results
+        relevant_fragments.sort(key=lambda x: x[1], reverse=True)
+        top_fragments = relevant_fragments[:limit]
+
+        # Format for prompt use
+        results = []
+        for fragment, score in top_fragments:
+            formatted_fragment = self._format_fragment_for_prompt(fragment, score)
+            results.append(formatted_fragment)
+
+        return results
+
+    def _calculate_keyword_score(
+        self, fragment: KnowledgeFragment, keywords: List[str]
+    ) -> float:
+        """Calculate relevance score for knowledge fragment based on keywords."""
+        score = 0.0
+
+        # Convert keywords to lowercase for matching
+        keywords_lower = [kw.lower() for kw in keywords]
+
+        # Search in different fields with different weights
+        search_fields = [
+            (fragment.title, 0.4),
+            (fragment.content, 0.5),
+            (fragment.description, 0.3),
+            (str(fragment.tags), 0.2),
+            (str(fragment.category), 0.2),
+            (str(fragment.content_type), 0.1),
+        ]
+
+        for text, weight in search_fields:
+            text_lower = text.lower()
+            for keyword in keywords_lower:
+                if keyword in text_lower:
+                    score += weight
+                    # Bonus for exact word matches
+                    if f" {keyword} " in f" {text_lower} ":
+                        score += weight * 0.5
+                    # Extra bonus for title matches
+                    if text == fragment.title and keyword in text_lower:
+                        score += weight * 0.8
+
+        return score
+
+    def _format_fragment_for_prompt(
+        self, fragment: KnowledgeFragment, score: float
+    ) -> Dict[str, Any]:
+        """Format knowledge fragment for prompt manager use."""
+        return {
+            "fragment_id": fragment.fragment_id,
+            "title": fragment.title,
+            "content": fragment.content[:300] + "..."
+            if len(fragment.content) > 300
+            else fragment.content,
+            "full_content": fragment.content,
+            "description": fragment.description,
+            "category": fragment.category.value if fragment.category else None,
+            "content_type": fragment.content_type.value
+            if fragment.content_type
+            else None,
+            "tags": fragment.tags,
+            "relevance_score": score,
+            "version": fragment.version,
+            "session_id": fragment.session_id,
+            "created_at": fragment.created_at.isoformat(),
+            "updated_at": fragment.updated_at.isoformat(),
+        }
+
+    def add_cuda_knowledge_base(self) -> None:
+        """Add basic CUDA knowledge fragments to the system."""
+        logger.info("Adding CUDA knowledge base")
+
+        cuda_fragments = [
+            {
+                "title": "CUDA Memory Coalescing",
+                "content": """Memory coalescing in CUDA occurs when threads in a warp access consecutive memory addresses.
+Coalesced access patterns can achieve peak memory bandwidth, while non-coalesced patterns
+result in multiple memory transactions and reduced performance.
+
+Best practices:
+- Access consecutive addresses within a warp
+- Align data structures to memory boundaries
+- Use array-of-structures (AoS) to structure-of-arrays (SoA) transformation
+- Avoid strided memory access patterns when possible
+
+Example:
+// Coalesced access
+float* data = ...; // aligned array
+int tid = threadIdx.x + blockIdx.x * blockDim.x;
+float value = data[tid]; // consecutive access across warp
+
+// Non-coalesced access (avoid)
+float value = data[tid * stride]; // strided access""",
+                "description": "Guide to CUDA memory coalescing optimization",
+                "category": KnowledgeCategory.OPTIMIZATION,
+                "content_type": KnowledgeContentType.DOCUMENTATION,
+                "tags": ["cuda", "memory", "coalescing", "performance", "optimization"],
+            }
+        ]
+
+        for fragment_data in cuda_fragments:
+            fragment = KnowledgeFragment(
+                title=fragment_data["title"],
+                content=fragment_data["content"],
+                description=fragment_data["description"],
+                category=fragment_data["category"],
+                content_type=fragment_data["content_type"],
+                tags=fragment_data["tags"],
+                session_id="global",  # Global knowledge
+                author="system",
+            )
+            self.add_fragment(fragment)
+
+        logger.info(f"Added {len(cuda_fragments)} CUDA knowledge fragments")
+
+    def search_by_category(
+        self, category: KnowledgeCategory, limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Search knowledge fragments by category."""
+        results = []
+        for fragment in self.fragments.values():
+            if fragment.category == category:
+                formatted = self._format_fragment_for_prompt(fragment, 1.0)
+                results.append(formatted)
+                if len(results) >= limit:
+                    break
+
+        return results
+
+    def get_fragment_by_id(self, fragment_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific knowledge fragment by ID."""
+        fragment = self.fragments.get(fragment_id)
+        if fragment:
+            return self._format_fragment_for_prompt(fragment, 1.0)
+        return None

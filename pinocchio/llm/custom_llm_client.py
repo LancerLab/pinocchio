@@ -6,9 +6,15 @@ from typing import Any, Dict, Optional
 
 import aiohttp
 
+from pinocchio.config.config_manager import ConfigManager
+from pinocchio.utils.file_utils import get_output_path
+
 from ..config.models import LLMConfigEntry
 from ..utils.json_parser import format_json_response, safe_json_parse
 from .base_client import BaseLLMClient
+
+config = ConfigManager()
+logs_root = config.get_logs_path()
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +63,7 @@ class CustomLLMClient(BaseLLMClient):
         prompt: str,
         agent_type: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
     ) -> Dict[str, Any]:
         """
         Make request to LLM API.
@@ -182,6 +188,17 @@ For evaluation tasks:
 - Provide performance metrics
 - Identify potential improvements
 - Output should include: evaluation_results, performance_metrics, test_results, overall_score, recommendations"""
+
+        elif agent_type == "planner":
+            base_prompt += """
+
+For task planning and analysis:
+- Analyze user requests for code generation and optimization requirements
+- Extract primary and secondary goals from the request
+- Identify optimization targets and constraints
+- Determine appropriate planning strategy
+- Output should include: requirements, optimization_goals, constraints, user_preferences, planning_strategy
+- IMPORTANT: Always respond with valid JSON format only, no additional text"""
 
         return base_prompt
 

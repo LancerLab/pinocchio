@@ -12,6 +12,9 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from pinocchio.memory.models.code import CodeMemory, CodeVersion
+from pinocchio.session.context import set_current_session
+
 
 class SessionStatus(str, Enum):
     """Session status enumeration."""
@@ -49,8 +52,9 @@ class Session(BaseModel):
     # Current optimization targets
     target_performance: Optional[Dict[str, Any]] = None
 
-    # Associated code versions
-    code_version_ids: List[str] = Field(default_factory=list)
+    # Associated code versions (now managed directly)
+    code_versions: Dict[str, CodeVersion] = Field(default_factory=dict)
+    current_code_version_id: Optional[str] = None
 
     # Agent interaction history
     agent_interactions: List[Dict[str, Any]] = Field(default_factory=list)
@@ -59,6 +63,26 @@ class Session(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(use_enum_values=True)
+
+    def __init__(
+        self, task_description: str, target_performance: Optional[Dict[str, Any]] = None
+    ):
+        """Initialize the session model."""
+        self.task_description = task_description
+        self.target_performance = target_performance
+
+    def __del__(self):
+        """Clean up resources when the session model is deleted."""
+        pass  # No specific cleanup needed for this model
+
+    def __enter__(self):
+        """Enter the runtime context related to this object."""
+        set_current_session(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the runtime context related to this object."""
+        set_current_session(None)
 
     @classmethod
     def create_session(
@@ -134,14 +158,27 @@ class Session(BaseModel):
         elif module == "knowledge":
             self.knowledge_versions.append(version_id)
 
-    def add_code_version(self, code_version_id: str) -> None:
-        """
-        Add a code version reference.
+    def add_code_version(self, code_version: CodeVersion) -> None:
+        """Add a code version to the session."""
+        self.code_versions[code_version.version_id] = code_version
+        self.current_code_version_id = code_version.version_id
 
-        Args:
-            code_version_id: Code version ID
-        """
-        self.code_version_ids.append(code_version_id)
+    def get_latest_code(self) -> str:
+        """Get the latest code version."""
+        if self.current_code_version_id:
+            return self.code_versions[self.current_code_version_id].code
+        return ""
+
+    def get_code_version(self, version_id: str) -> Optional[CodeVersion]:
+        """Get a specific code version."""
+        return self.code_versions.get(version_id)
+
+    def get_version_history(self) -> list:
+        """Get the version history."""
+        # Sort by time, with the latest first
+        return sorted(
+            self.code_versions.values(), key=lambda v: v.timestamp, reverse=True
+        )
 
     def complete_session(self) -> None:
         """Mark session as completed."""
@@ -151,12 +188,7 @@ class Session(BaseModel):
             self.runtime_seconds = (self.end_time - self.creation_time).total_seconds()
 
     def fail_session(self, error_details: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Mark session as failed.
-
-        Args:
-            error_details: Error details
-        """
+        """Mark session as failed, optionally with error details."""
         self.status = SessionStatus.FAILED
         self.end_time = datetime.utcnow()
         if self.creation_time:

@@ -1,7 +1,7 @@
 """Pydantic data models for Pinocchio configuration."""
 
 from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -18,6 +18,7 @@ class LLMProvider(str, Enum):
 class LLMConfigEntry(BaseModel):
     """Configuration entry for a single LLM provider."""
 
+    id: str = Field(..., description="Unique identifier for this LLM configuration")
     provider: LLMProvider = Field(..., description="LLM provider type")
     base_url: Optional[str] = Field(
         None, description="Base URL for the LLM service (for custom)"
@@ -91,6 +92,10 @@ class AgentConfig(BaseModel):
 
     enabled: bool = Field(default=True, description="Whether the agent is enabled")
 
+    llm: Optional[str] = Field(
+        default=None, description="LLM configuration ID to use for this agent"
+    )
+
     max_retries: int = Field(
         default=3, ge=0, le=10, description="Maximum number of retry attempts"
     )
@@ -119,6 +124,10 @@ class AgentsConfig(BaseModel):
 
     evaluator: AgentConfig = Field(
         default_factory=AgentConfig, description="Evaluator agent configuration"
+    )
+
+    planner: AgentConfig = Field(
+        default_factory=AgentConfig, description="Planner agent configuration"
     )
 
     model_config = {"extra": "forbid", "validate_assignment": True}
@@ -155,6 +164,10 @@ class StorageConfig(BaseModel):
         default="./knowledge", description="Path to knowledge directory"
     )
 
+    logs_path: str = Field(
+        default="./logs", description="Path to logs and output artifacts root directory"
+    )
+
     model_config = {"extra": "forbid", "validate_assignment": True}
 
 
@@ -177,6 +190,35 @@ class OptimizationConfig(BaseModel):
 
     optimizer_enabled: bool = Field(
         default=True, description="Whether optimizer is enabled"
+    )
+
+    model_config = {"extra": "forbid", "validate_assignment": True}
+
+
+class TaskPlanningConfig(BaseModel):
+    """Task planning configuration data model."""
+
+    use_fixed_workflow: bool = Field(
+        default=False,
+        description="Whether to use fixed workflow instead of adaptive planning",
+    )
+
+    max_optimisation_rounds: int = Field(
+        default=3, ge=1, le=10, description="Maximum number of optimization rounds"
+    )
+
+    enable_optimiser: bool = Field(
+        default=True, description="Whether optimizer is enabled"
+    )
+
+    debug_repair: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "enabled": True,
+            "max_repair_attempts": 3,
+            "auto_insert_debugger": True,
+            "retry_generator_after_debug": True,
+        },
+        description="Debug repair configuration",
     )
 
     model_config = {"extra": "forbid", "validate_assignment": True}
@@ -209,35 +251,45 @@ class LoggingConfig(BaseModel):
     )
     console_output: bool = Field(default=True, description="Enable console logging")
     file_output: bool = Field(default=True, description="Enable file logging")
+    log_file: str = Field(default="./logs/pinocchio.log", description="Log file path")
+
+    model_config = {"extra": "forbid", "validate_assignment": True}
+
+
+class CLIConfig(BaseModel):
+    """CLI configuration."""
+
+    mode: str = Field(
+        default="production",
+        description="CLI mode (development/production). Development mode raises errors, production mode allows fallback",
+    )
+
+    model_config = {"extra": "forbid", "validate_assignment": True}
 
 
 class PinocchioConfig(BaseModel):
     """Main Pinocchio configuration data model."""
 
-    llm: Union[LLMConfigEntry, List[LLMConfigEntry]] = Field(
+    # Legacy llm field for backward compatibility
+    llm: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = Field(
+        default=None,
+        description="Legacy LLM configuration(s) - use llms array instead",
+    )
+
+    # New llms array for centralized LLM management
+    llms: List[LLMConfigEntry] = Field(
         default_factory=lambda: [
             LLMConfigEntry(
+                id="main",
                 provider=LLMProvider.CUSTOM,
                 base_url="http://localhost:8001",
                 model_name="default",
                 priority=1,
             )
         ],
-        description="LLM configuration(s)",
+        description="Centralized LLM configurations with unique IDs",
     )
-    # Agent-specific LLM configurations (optional, fallback to global llm)
-    llm_generator: Optional[LLMConfigEntry] = Field(
-        default=None, description="Generator agent specific LLM configuration"
-    )
-    llm_optimizer: Optional[LLMConfigEntry] = Field(
-        default=None, description="Optimizer agent specific LLM configuration"
-    )
-    llm_debugger: Optional[LLMConfigEntry] = Field(
-        default=None, description="Debugger agent specific LLM configuration"
-    )
-    llm_evaluator: Optional[LLMConfigEntry] = Field(
-        default=None, description="Evaluator agent specific LLM configuration"
-    )
+
     agents: AgentsConfig = Field(
         default_factory=AgentsConfig, description="Agents configuration"
     )
@@ -253,10 +305,14 @@ class PinocchioConfig(BaseModel):
     optimization: OptimizationConfig = Field(
         default_factory=OptimizationConfig, description="Optimization configuration"
     )
+    task_planning: TaskPlanningConfig = Field(
+        default_factory=TaskPlanningConfig, description="Task planning configuration"
+    )
     verbose: VerboseConfig = Field(
         default_factory=VerboseConfig, description="Verbose output configuration"
     )
     logging: LoggingConfig = Field(
         default_factory=LoggingConfig, description="Logging configuration"
     )
+    cli: CLIConfig = Field(default_factory=CLIConfig, description="CLI configuration")
     model_config = {"extra": "forbid", "validate_assignment": True}

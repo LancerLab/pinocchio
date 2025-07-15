@@ -6,8 +6,14 @@ multi-agent templates, version control, performance tracking, and structured I/O
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+
+from pinocchio.agents.debugger import DebuggerAgent
+from pinocchio.agents.evaluator import EvaluatorAgent
+from pinocchio.agents.generator import GeneratorAgent
+from pinocchio.agents.optimizer import OptimizerAgent
 
 from ..utils.file_utils import ensure_directory, safe_read_json, safe_write_json
 from ..utils.temp_utils import cleanup_temp_files, create_temp_file
@@ -39,9 +45,7 @@ class PromptManager:
         """
         self.memory = PromptMemory()
         self.formatter = TemplateFormatter()
-        self.storage_path = (
-            Path(storage_path) if storage_path else Path("./prompt_storage")
-        )
+        self.storage_path = Path(storage_path) if storage_path else Path("./prompts")
         # Use utils function to ensure directory exists
         ensure_directory(self.storage_path)
 
@@ -385,6 +389,397 @@ class PromptManager:
         success = safe_write_json(state, state_file)
         if not success:
             raise RuntimeError("Failed to save memory state")
+
+    def integrate_memory_and_knowledge(
+        self, memory_manager=None, knowledge_manager=None
+    ):
+        """
+        Integrate memory and knowledge managers for enhanced prompt generation.
+
+        Args:
+            memory_manager: MemoryManager instance
+            knowledge_manager: KnowledgeManager instance
+        """
+        self.memory_manager = memory_manager
+        self.knowledge_manager = knowledge_manager
+
+    def format_template_with_context(
+        self,
+        template_name: str,
+        variables: Dict[str, Any],
+        session_id: Optional[str] = None,
+        agent_type: Optional[AgentType] = None,
+        include_memory: bool = True,
+        include_knowledge: bool = True,
+        memory_keywords: Optional[List[str]] = None,
+        knowledge_keywords: Optional[List[str]] = None,
+        step_id: Optional[str] = None,
+        response: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Format a prompt template with enhanced context from memory and knowledge.
+
+        Args:
+            template_name: Name of the template
+            variables: Variables to substitute
+            session_id: Session ID for memory context
+            agent_type: Agent type filter
+            include_memory: Whether to include memory context
+            include_knowledge: Whether to include knowledge context
+            memory_keywords: Keywords for memory search
+            knowledge_keywords: Keywords for knowledge search
+
+        Returns:
+            Formatted template with enhanced context
+        """
+        # Get base template
+        template = self.get_template(template_name, agent_type=agent_type)
+        if template is None:
+            return None
+
+        # Prepare enhanced variables
+        enhanced_variables = variables.copy()
+
+        # Add memory context if available and requested
+        if include_memory and self.memory_manager and session_id and memory_keywords:
+            memory_context = self.memory_manager.query_memories_by_keywords(
+                session_id=session_id, keywords=memory_keywords, limit=5
+            )
+            enhanced_variables["memory_context"] = memory_context
+            enhanced_variables[
+                "previous_interactions"
+            ] = self._format_memory_for_prompt(memory_context)
+
+        # Add knowledge context if available and requested
+        if include_knowledge and self.knowledge_manager and knowledge_keywords:
+            knowledge_context = self.knowledge_manager.query_by_keywords(
+                keywords=knowledge_keywords, session_id=session_id, limit=3
+            )
+            enhanced_variables["knowledge_context"] = knowledge_context
+            enhanced_variables[
+                "relevant_knowledge"
+            ] = self._format_knowledge_for_prompt(knowledge_context)
+
+        # Format template with enhanced context
+        prompt = self.formatter.format_template(template.content, enhanced_variables)
+        # New: Save prompt and response to storage_path/{session_id}/{agent_type}/{step_id}_prompt.txt
+        if prompt and session_id and agent_type:
+            try:
+                agent_type_str = str(agent_type).lower()
+                storage_dir = self.storage_path / session_id / agent_type_str
+                storage_dir.mkdir(parents=True, exist_ok=True)
+                fname = f"{step_id or 'unknown'}"
+                prompt_fpath = storage_dir / f"{fname}_prompt.txt"
+                with open(prompt_fpath, "w", encoding="utf-8") as f:
+                    f.write(prompt)
+                # Synchronously save response
+                if response:
+                    resp_fpath = storage_dir / f"{fname}_response.txt"
+                    with open(resp_fpath, "w", encoding="utf-8") as f:
+                        f.write(response)
+            except Exception as e:
+                import logging
+
+                logging.warning(f"Failed to save prompt/response for {session_id}: {e}")
+        return prompt
+
+    def _format_memory_for_prompt(self, memory_context: List[Dict[str, Any]]) -> str:
+        """Format memory context for inclusion in prompts."""
+        if not memory_context:
+            return "No relevant previous interactions found."
+
+        formatted_parts = ["## Previous Interactions:"]
+
+        for memory in memory_context:
+            agent_type = memory.get("agent_type", "unknown")
+            memory_type = memory.get("type", "interaction")
+            timestamp = memory.get("timestamp", "unknown")
+
+            formatted_parts.append(
+                f"\n### {agent_type.title()} ({memory_type}) - {timestamp}"
+            )
+
+            if memory.get("input_summary"):
+                formatted_parts.append(f"Input: {memory['input_summary']}")
+
+            if memory.get("output_summary"):
+                formatted_parts.append(f"Output: {memory['output_summary']}")
+
+            # Add specific details based on memory type
+            if memory_type == "generation" and memory.get("optimization_techniques"):
+                formatted_parts.append(
+                    f"Optimization techniques: {', '.join(memory['optimization_techniques'])}"
+                )
+
+            elif memory_type == "debugging" and memory.get("errors"):
+                formatted_parts.append(
+                    f"Errors found: {', '.join(memory['errors'][:2])}"
+                )
+
+            elif memory_type == "evaluation" and memory.get("bottlenecks"):
+                formatted_parts.append(
+                    f"Bottlenecks: {', '.join(memory['bottlenecks'][:2])}"
+                )
+
+        return "\n".join(formatted_parts)
+
+    def _format_knowledge_for_prompt(
+        self, knowledge_context: List[Dict[str, Any]]
+    ) -> str:
+        """Format knowledge context for inclusion in prompts."""
+        if not knowledge_context:
+            return "No relevant knowledge fragments found."
+
+        formatted_parts = ["## Relevant Knowledge:"]
+
+        for fragment in knowledge_context:
+            title = fragment.get("title", "Unknown")
+            content = fragment.get("content", "")
+            category = fragment.get("category", "general")
+
+            formatted_parts.append(f"\n### {title} ({category})")
+            formatted_parts.append(content)
+
+        return "\n".join(formatted_parts)
+
+    AGENT_CLASS_MAP = {
+        "generator": GeneratorAgent,
+        "debugger": DebuggerAgent,
+        "optimizer": OptimizerAgent,
+        "evaluator": EvaluatorAgent,
+    }
+
+    def get_output_template_for_agent(self, agent_type):
+        """Get the output template string for the specified agent type."""
+        agent_type_str = (
+            agent_type.value if hasattr(agent_type, "value") else str(agent_type)
+        )
+        agent_class = self.AGENT_CLASS_MAP.get(agent_type_str.lower())
+        if not agent_class:
+            return ""
+        try:
+            agent = agent_class(llm_client=None)
+        except Exception:
+            from pinocchio.agents.base import Agent
+
+            agent = Agent(agent_type_str, llm_client=None)
+        # Dynamically select method
+        if agent_type_str.lower() == "generator" and hasattr(
+            agent, "_get_generation_output_format"
+        ):
+            return agent._get_generation_output_format()
+        elif agent_type_str.lower() == "debugger" and hasattr(
+            agent, "_get_debugging_output_format"
+        ):
+            return agent._get_debugging_output_format()
+        elif agent_type_str.lower() == "optimizer" and hasattr(
+            agent, "_get_optimization_output_format"
+        ):
+            return agent._get_optimization_output_format()
+        elif agent_type_str.lower() == "evaluator" and hasattr(
+            agent, "_get_evaluation_output_format"
+        ):
+            return agent._get_evaluation_output_format()
+        elif hasattr(agent, "_get_output_format"):
+            return agent._get_output_format()
+        else:
+            return ""
+
+    def create_context_aware_prompt(
+        self,
+        agent_type: Any,  # allow str or AgentType
+        task_description: str,
+        session_id: Optional[str] = None,
+        code: Optional[str] = None,
+        keywords: Optional[List[str]] = None,
+        previous_results: Optional[dict] = None,
+        session_obj: Optional[Any] = None,
+    ) -> str:
+        """
+        Create a context-aware prompt with memory and knowledge integration.
+        """
+        from ..data_models.task_planning import AgentType as PlanningAgentType
+
+        if isinstance(agent_type, str):
+            agent_type = PlanningAgentType[agent_type.upper()]
+
+        template_map = {
+            PlanningAgentType.GENERATOR: "cuda_generator",
+            PlanningAgentType.OPTIMIZER: "cuda_optimizer",
+            PlanningAgentType.DEBUGGER: "cuda_debugger",
+            PlanningAgentType.EVALUATOR: "cuda_evaluator",
+        }
+        template_name = template_map.get(agent_type, "default")
+        variables = {
+            "task_description": task_description,
+            "agent_type": agent_type.value,
+        }
+        # code fallback: always a string
+        if code is None and session_obj is not None:
+            code = session_obj.get_latest_code()
+        if code is None:
+            code = ""
+        variables["code"] = code
+        if keywords is None:
+            keywords = self._extract_keywords(task_description, code)
+        prompt_main = self.format_template_with_context(
+            template_name=template_name,
+            variables=variables,
+            session_id=session_id,
+            agent_type=agent_type,
+            memory_keywords=keywords,
+            knowledge_keywords=keywords,
+        ) or self._create_fallback_prompt(agent_type, task_description, code)
+
+        # Concatenate previous_results structured artifacts
+        previous_block = ""
+        if previous_results:
+            previous_block += "\n\n## Previous Agent Results:"
+            for task_id, result in previous_results.items():
+                if not isinstance(result, dict):
+                    continue
+                agent_type_str = result.get("agent_type", "unknown")
+                output = result.get("output", result)
+                code_str = output.get("code", "") if isinstance(output, dict) else ""
+                explanation = (
+                    output.get("explanation", "") if isinstance(output, dict) else ""
+                )
+                optimization_techniques = (
+                    output.get("optimization_techniques", [])
+                    if isinstance(output, dict)
+                    else []
+                )
+                previous_block += f"\n### From {task_id} ({agent_type_str}):"
+                if code_str:
+                    previous_block += f"\n```cuda\n{code_str}\n```"
+                if explanation:
+                    previous_block += f"\nExplanation: {explanation}"
+                if optimization_techniques:
+                    previous_block += f"\nOptimization Techniques: {', '.join(optimization_techniques)}"
+        # Concatenate output template
+        output_template = self.get_output_template_for_agent(agent_type)
+        prompt = prompt_main.strip() + previous_block + "\n\n" + output_template.strip()
+        return prompt
+
+    def create_context_aware_request(
+        self,
+        agent_type: Any,  # allow str or AgentType
+        task_description: str,
+        session_id: Optional[str] = None,
+        code: Optional[str] = None,
+        keywords: Optional[List[str]] = None,
+        context: Optional[Dict[str, Any]] = None,
+        previous_results: Optional[Dict[str, Any]] = None,
+        session_obj: Optional[Any] = None,
+        step_id: Optional[str] = None,
+        response: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Build a structured agent request with memory, knowledge, and context integration.
+        Args:
+            agent_type: Agent type (generator, debugger, optimizer, evaluator) (str or AgentType)
+            task_description: Task description string
+            session_id: Session ID for context
+            code: Optional code string for context
+            keywords: Optional keywords for memory/knowledge search
+            context: Additional context dict (optional)
+            previous_results: Previous task results (optional)
+            session_obj: Optional session object for code retrieval
+        Returns:
+            Structured request dict for agent execution
+        """
+        # Ensure agent_type is AgentType enum
+        from ..data_models.task_planning import AgentType as PlanningAgentType
+
+        if isinstance(agent_type, str):
+            agent_type = PlanningAgentType[agent_type.upper()]
+        # Build context-aware prompt
+        prompt = self.create_context_aware_prompt(
+            agent_type=agent_type,
+            task_description=task_description,
+            session_id=session_id,
+            code=code,
+            keywords=keywords,
+            previous_results=previous_results,
+            session_obj=session_obj,
+        )
+        if code is None and session_obj is not None:
+            code = session_obj.get_latest_code()
+        request = {
+            "agent_type": agent_type,  # keep as enum type
+            "task_description": task_description,
+            "session_id": session_id,
+            "code": code,
+            "keywords": keywords,
+            "context": context or {},
+            "previous_results": previous_results or {},
+            "prompt": prompt,
+        }
+        return request
+
+    def _extract_keywords(
+        self, task_description: str, code: Optional[str] = None
+    ) -> List[str]:
+        """Extract relevant keywords from task description and code."""
+        keywords = []
+
+        # Extract from task description
+        cuda_terms = [
+            "cuda",
+            "gpu",
+            "kernel",
+            "memory",
+            "optimization",
+            "performance",
+            "parallel",
+            "thread",
+            "block",
+            "grid",
+            "shared",
+            "global",
+        ]
+
+        task_lower = task_description.lower()
+        for term in cuda_terms:
+            if term in task_lower:
+                keywords.append(term)
+
+        # Extract from code if provided
+        if code:
+            code_lower = code.lower()
+            code_terms = [
+                "__global__",
+                "__shared__",
+                "__device__",
+                "cudamalloc",
+                "cudamemcpy",
+                "blockdim",
+                "griddim",
+                "threadidx",
+                "blockidx",
+            ]
+
+            for term in code_terms:
+                if term in code_lower:
+                    keywords.append(term.replace("__", ""))
+
+        return list(set(keywords))  # Remove duplicates
+
+    def _create_fallback_prompt(
+        self, agent_type: AgentType, task_description: str, code: Optional[str] = None
+    ) -> str:
+        """Create a fallback prompt when template is not available."""
+        base_prompt = (
+            f"You are a {agent_type.value} agent specializing in CUDA programming.\n\n"
+        )
+        base_prompt += f"Task: {task_description}\n\n"
+
+        if code:
+            base_prompt += f"Code to analyze:\n```cuda\n{code}\n```\n\n"
+
+        base_prompt += "Please provide your response in JSON format with appropriate fields for your agent type."
+
+        return base_prompt
 
     def _remove_template_file(self, template_name: str, version_id: str) -> None:
         """Remove a specific template file."""

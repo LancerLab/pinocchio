@@ -26,6 +26,52 @@ class MockLLMClient:
 
         # Predefined responses for different agent types
         self.response_templates = {
+            "planner": {
+                "agent_type": "planner",
+                "success": True,
+                "output": {
+                    "tasks": [
+                        {
+                            "task_id": "task_1",
+                            "agent_type": "generator",
+                            "description": "Generate initial code for the request",
+                            "dependencies": [],
+                            "priority": "critical",
+                            "requirements": {
+                                "code_type": "appropriate_for_request",
+                                "optimization_level": "basic",
+                            },
+                        },
+                        {
+                            "task_id": "task_2",
+                            "agent_type": "debugger",
+                            "description": "Debug and validate the generated code",
+                            "dependencies": ["task_1"],
+                            "priority": "high",
+                            "requirements": {
+                                "error_handling": True,
+                                "validation": True,
+                            },
+                        },
+                        {
+                            "task_id": "task_3",
+                            "agent_type": "evaluator",
+                            "description": "Evaluate the final code performance",
+                            "dependencies": ["task_2"],
+                            "priority": "medium",
+                            "requirements": {
+                                "evaluation_metrics": [
+                                    "performance",
+                                    "correctness",
+                                    "maintainability",
+                                ]
+                            },
+                        },
+                    ]
+                },
+                "explanation": "Decomposed the request into logical steps: generate, debug, evaluate",
+                "confidence": 0.95,
+            },
             "generator": {
                 "code": """
 // Generated Choreo DSL operator for {task}
@@ -200,17 +246,21 @@ func {function_name}_optimized(input: tensor, output: tensor) {{
             if isinstance(value, str) and "{" in value:
                 template[key] = value.format(**task_info)
 
-        return {
-            "agent_type": agent_type,
-            "success": True,
-            "output": template,
-            "processing_time_ms": self.response_delay_ms,
-            "metadata": {
-                "mock_response": True,
-                "call_count": self.call_count,
-                "detected_agent_type": agent_type,
-            },
-        }
+        # For planner agent, return the template directly without extra wrapping
+        if agent_type == "planner":
+            return template
+        else:
+            return {
+                "agent_type": agent_type,
+                "success": True,
+                "output": template,
+                "processing_time_ms": self.response_delay_ms,
+                "metadata": {
+                    "mock_response": True,
+                    "call_count": self.call_count,
+                    "detected_agent_type": agent_type,
+                },
+            }
 
     async def complete(self, prompt: str, agent_type: Optional[str] = None) -> str:
         """

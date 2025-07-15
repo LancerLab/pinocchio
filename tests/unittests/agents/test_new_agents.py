@@ -230,7 +230,7 @@ class TestEvaluatorAgent:
 
         assert isinstance(score, dict)
         assert "performance_metrics" in score
-        assert "bottlenecks" in score
+        assert "analysis" in score
 
     def test_evaluator_compare_with_baseline(self, evaluator_agent):
         """Test comparing with baseline metrics."""

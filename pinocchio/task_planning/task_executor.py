@@ -1,7 +1,17 @@
 """Task executor for executing task plans and managing agent interactions."""
 
 import logging
+import time
+import traceback
 from typing import Any, AsyncGenerator, Dict, List, Optional
+
+from rich.console import Console
+from rich.panel import Panel
+
+from pinocchio.config.config_manager import get_config_value
+from pinocchio.prompt.manager import PromptManager
+from pinocchio.session.context import get_current_session
+from pinocchio.task_planning.task_planner import TaskPlanner
 
 from ..agents import DebuggerAgent, EvaluatorAgent, GeneratorAgent, OptimizerAgent
 from ..config.settings import Settings
@@ -15,6 +25,7 @@ from ..data_models.task_planning import (
     TaskStatus,
 )
 from ..llm.mock_client import MockLLMClient
+from ..utils.verbose_logger import LogLevel, get_verbose_logger
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +34,10 @@ class TaskExecutor:
     """Executor for task plans with intelligent agent management and debug repair loops."""
 
     def __init__(
-        self, llm_client: Optional[Any] = None, config: Optional[Settings] = None
+        self,
+        llm_client: Optional[Any] = None,
+        config: Optional[Settings] = None,
+        prompt_manager: Optional[PromptManager] = None,
     ):
         """
         Initialize task executor.
@@ -47,50 +61,163 @@ class TaskExecutor:
 
         # Get LLM config
 
-        # Initialize agents (let each agent manage its own LLM client)
-        self.agents = {
-            AgentType.GENERATOR: GeneratorAgent(),
-            AgentType.OPTIMIZER: OptimizerAgent(),
-            AgentType.DEBUGGER: DebuggerAgent(),
-            AgentType.EVALUATOR: EvaluatorAgent(),
-        }
+        # Initialize agents with provided LLM client or let them create their own
+        if llm_client:
+            # Use provided LLM client for all agents (for dry-run or custom clients)
+            self.agents = {
+                AgentType.GENERATOR: GeneratorAgent(llm_client=llm_client),
+                AgentType.OPTIMIZER: OptimizerAgent(llm_client=llm_client),
+                AgentType.DEBUGGER: DebuggerAgent(llm_client=llm_client),
+                AgentType.EVALUATOR: EvaluatorAgent(llm_client=llm_client),
+            }
+        else:
+            # Let each agent manage its own LLM client
+            self.agents = {
+                AgentType.GENERATOR: GeneratorAgent(),
+                AgentType.OPTIMIZER: OptimizerAgent(),
+                AgentType.DEBUGGER: DebuggerAgent(),
+                AgentType.EVALUATOR: EvaluatorAgent(),
+            }
 
         # Debug repair configuration
-        self.debug_repair_enabled = self.config.get(
-            "task_planning.debug_repair.enabled", True
+        self.debug_repair_enabled = get_config_value(
+            self.config, "task_planning.debug_repair.enabled", True
         )
-        self.max_repair_attempts = self.config.get(
-            "task_planning.debug_repair.max_repair_attempts", 3
+        self.max_repair_attempts = get_config_value(
+            self.config, "task_planning.debug_repair.max_repair_attempts", 3
         )
-        self.auto_insert_debugger = self.config.get(
-            "task_planning.debug_repair.auto_insert_debugger", True
+        self.auto_insert_debugger = get_config_value(
+            self.config, "task_planning.debug_repair.auto_insert_debugger", True
         )
-        self.retry_generator_after_debug = self.config.get(
-            "task_planning.debug_repair.retry_generator_after_debug", True
+        self.retry_generator_after_debug = get_config_value(
+            self.config, "task_planning.debug_repair.retry_generator_after_debug", True
         )
 
         # Verbose configuration
-        self.verbose_enabled = self.config.get("verbose.enabled", True)
-        self.verbose_level = self.config.get("verbose.level", "detailed")
-        self.show_agent_instructions = self.config.get(
-            "verbose.show_agent_instructions", True
+        self.verbose_enabled = get_config_value(self.config, "verbose.enabled", True)
+        self.verbose_level = get_config_value(self.config, "verbose.level", "detailed")
+        self.show_agent_instructions = get_config_value(
+            self.config, "verbose.show_agent_instructions", True
         )
-        self.show_execution_times = self.config.get(
-            "verbose.show_execution_times", True
+        self.show_execution_times = get_config_value(
+            self.config, "verbose.show_execution_times", True
         )
-        self.show_task_details = self.config.get("verbose.show_task_details", True)
-        self.show_progress_updates = self.config.get(
-            "verbose.show_progress_updates", True
+        self.show_task_details = get_config_value(
+            self.config, "verbose.show_task_details", True
+        )
+        self.show_progress_updates = get_config_value(
+            self.config, "verbose.show_progress_updates", True
         )
 
         # Track repair attempts
         self.repair_attempts = {}
+
+        self.prompt_manager = prompt_manager or PromptManager()
 
         logger.info(
             f"TaskExecutor initialized with debug repair loop support (max_attempts={self.max_repair_attempts})"
         )
         if self.verbose_enabled:
             logger.info(f"Verbose output enabled (level: {self.verbose_level})")
+
+    def _trace_collection(
+        self,
+        obj,
+        name,
+        context_info=None,
+        log_traceback=True,
+        depth=0,
+        max_preview=5,
+        max_depth=2,
+    ):
+        import traceback
+
+        from pinocchio.utils.verbose_logger import get_verbose_logger
+
+        data = {
+            "type": str(type(obj)),
+            "is_none": obj is None,
+            "depth": depth,
+            "context": context_info,
+        }
+        if isinstance(obj, dict):
+            keys = list(obj.keys())
+            data["keys_preview"] = keys[:max_preview]
+            data["keys_count"] = len(keys)
+            data["values_types"] = [str(type(obj[k])) for k in keys[:max_preview]]
+            data["preview"] = {
+                k: (str(obj[k])[:80] if isinstance(obj[k], str) else str(type(obj[k])))
+                for k in keys[:max_preview]
+            }
+            # Recursively display value types and partial content (only up to max_depth)
+            if depth < max_depth:
+                data["values_detail"] = {}
+                for k in keys[:max_preview]:
+                    v = obj[k]
+                    if isinstance(v, (dict, list)):
+                        data["values_detail"][k] = self._trace_collection(
+                            v,
+                            f"{name}.{k}",
+                            context_info,
+                            log_traceback=False,
+                            depth=depth + 1,
+                            max_preview=max_preview,
+                            max_depth=max_depth,
+                        )
+                    elif isinstance(v, str):
+                        data["values_detail"][k] = {
+                            "type": "str",
+                            "length": len(v),
+                            "preview": v[:80],
+                        }
+                    else:
+                        data["values_detail"][k] = {
+                            "type": str(type(v)),
+                            "repr": repr(v),
+                        }
+        elif isinstance(obj, list):
+            data["length"] = len(obj)
+            data["preview_types"] = [str(type(x)) for x in obj[:max_preview]]
+            data["preview"] = [
+                str(x)[:80] if isinstance(x, str) else str(type(x))
+                for x in obj[:max_preview]
+            ]
+            # Recursively display element content (only up to max_depth)
+            if depth < max_depth:
+                data["elements_detail"] = []
+                for i, x in enumerate(obj[:max_preview]):
+                    if isinstance(x, (dict, list)):
+                        data["elements_detail"].append(
+                            self._trace_collection(
+                                x,
+                                f"{name}[{i}]",
+                                context_info,
+                                log_traceback=False,
+                                depth=depth + 1,
+                                max_preview=max_preview,
+                                max_depth=max_depth,
+                            )
+                        )
+                    elif isinstance(x, str):
+                        data["elements_detail"].append(
+                            {"type": "str", "length": len(x), "preview": x[:80]}
+                        )
+                    else:
+                        data["elements_detail"].append(
+                            {"type": str(type(x)), "repr": repr(x)}
+                        )
+        elif isinstance(obj, str):
+            data["length"] = len(obj)
+            data["preview"] = obj[:200]
+        else:
+            data["repr"] = repr(obj)
+        if log_traceback:
+            data["traceback"] = "".join(traceback.format_stack(limit=8))
+        get_verbose_logger().log_coordinator_activity(
+            f"[Tracing] Collection access: {name}",
+            data=data,
+        )
+        return data if depth > 0 else obj
 
     async def execute_plan(self, plan: TaskPlan) -> AsyncGenerator[str, None]:
         """
@@ -102,6 +229,20 @@ class TaskExecutor:
         Yields:
             Progress messages during execution
         """
+        start_time = time.time()
+
+        # Log verbose plan execution start
+        verbose_logger = get_verbose_logger()
+        verbose_logger.log_coordinator_activity(
+            "Plan execution started",
+            data={
+                "plan_id": plan.plan_id,
+                "task_count": len(plan.tasks),
+                "agent_types": [str(task.agent_type) for task in plan.tasks],
+            },
+            session_id=getattr(plan, "session_id", None),
+        )
+
         # Pass SessionLogger reference to plan object
         if hasattr(self, "session_logger") and self.session_logger:
             plan.session_logger = self.session_logger
@@ -116,6 +257,21 @@ class TaskExecutor:
         completed_tasks = []
         failed_tasks = []
         execution_results = {}
+        self._trace_collection(
+            completed_tasks,
+            "plan.completed_tasks",
+            {"plan_id": getattr(plan, "plan_id", None)},
+        )
+        self._trace_collection(
+            failed_tasks,
+            "plan.failed_tasks",
+            {"plan_id": getattr(plan, "plan_id", None)},
+        )
+        self._trace_collection(
+            execution_results,
+            "plan.execution_results",
+            {"plan_id": getattr(plan, "plan_id", None)},
+        )
 
         # Execute tasks
         async for msg in self._execute_tasks(
@@ -126,6 +282,19 @@ class TaskExecutor:
         # Finalize plan
         async for msg in self._finalize_plan(plan, execution_results):
             yield msg
+
+        # Log verbose plan execution completion
+        verbose_logger.log_coordinator_activity(
+            "Plan execution completed",
+            data={
+                "plan_id": plan.plan_id,
+                "completed_tasks": len(completed_tasks),
+                "failed_tasks": len(failed_tasks),
+                "total_duration_ms": (time.time() - start_time) * 1000,
+            },
+            session_id=getattr(plan, "session_id", None),
+            duration_ms=(time.time() - start_time) * 1000,
+        )
 
     async def _display_task_plan_overview(
         self, plan: TaskPlan
@@ -149,7 +318,11 @@ class TaskExecutor:
         execution_results: dict,
     ) -> AsyncGenerator[str, None]:
         """Execute tasks in the plan."""
-        while not plan.is_completed() and not plan.is_failed():
+        # Enhanced termination logic: as long as all tasks are not PENDING, stop
+        while (
+            any(task.status == TaskStatus.PENDING for task in plan.tasks)
+            and not plan.is_failed()
+        ):
             # Get ready tasks
             ready_tasks = plan.get_ready_tasks()
 
@@ -188,6 +361,25 @@ class TaskExecutor:
         plan=None,  # pass plan for dynamic insertion
     ) -> AsyncGenerator[str, None]:
         """Execute a single task with verbose output and support dynamic debugger insertion."""
+        start_time = time.time()
+
+        # Log verbose task execution start
+        verbose_logger = get_verbose_logger()
+        verbose_logger.log_agent_activity(
+            str(task.agent_type),
+            "Task execution started",
+            data={
+                "task_id": task.task_id,
+                "task_description": task.task_description,
+                "priority": str(task.priority),
+                "dependencies": [dep.task_id for dep in task.dependencies]
+                if task.dependencies
+                else [],
+            },
+            session_id=getattr(plan, "session_id", None) if plan else None,
+            step_id=task.task_id,
+        )
+
         agent_emoji = self._get_agent_emoji(task.agent_type)
         yield f"\U0001f504 Executing {agent_emoji} {task.agent_type.upper()} (Task {task.task_id})"
 
@@ -206,10 +398,16 @@ class TaskExecutor:
 
         # Record input/output summary to SessionLogger
         session_logger = getattr(plan, "session_logger", None)
-        agent_request = self._prepare_agent_request(task, execution_results)
+        safe_execution_results = execution_results or {}
+        self._trace_collection(
+            safe_execution_results,
+            "execution_results",
+            {"task_id": getattr(task, "task_id", None)},
+        )
+        agent_request = self._prepare_agent_request(task, safe_execution_results)
         agent_response = None
         try:
-            agent_response = await self._execute_task(task, execution_results)
+            agent_response = await self._execute_task(task, safe_execution_results)
         finally:
             if session_logger:
                 session_logger.log_communication(
@@ -222,12 +420,31 @@ class TaskExecutor:
                 )
 
         try:
-            result = await self._execute_task(task, execution_results)
+            result = await self._execute_task(task, safe_execution_results)
 
             if result.success:
                 task.mark_completed(result)
                 completed_tasks.append(task.task_id)
                 execution_results[task.task_id] = result.output
+
+                # Log verbose task completion
+                verbose_logger.log_agent_activity(
+                    str(task.agent_type),
+                    "Task completed successfully",
+                    data={
+                        "task_id": task.task_id,
+                        "output_keys": list(result.output.keys())
+                        if isinstance(result.output, dict)
+                        else [],
+                        "execution_time_ms": result.execution_time_ms,
+                        "processing_time_ms": getattr(
+                            result, "processing_time_ms", None
+                        ),
+                    },
+                    session_id=getattr(plan, "session_id", None) if plan else None,
+                    step_id=task.task_id,
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
 
                 # Show success summary
                 yield f"✅ {agent_emoji} {task.agent_type.upper()} completed successfully"
@@ -256,9 +473,26 @@ class TaskExecutor:
                         yield f"   🤖 LLM calls: {result.llm_calls}"
 
             else:
-                task.mark_failed(result.error_message or "Unknown error")
+                msg = result.error_message or "Unknown error"
+                task.mark_failed(msg)
                 failed_tasks.append(task.task_id)
-                yield f"❌ {agent_emoji} {task.agent_type.upper()} failed: {result.error_message}"
+
+                # Log verbose task failure
+                verbose_logger.log(
+                    LogLevel.ERROR,
+                    f"agent:{str(task.agent_type)}",
+                    "Task failed",
+                    data={
+                        "task_id": task.task_id,
+                        "error_message": msg,
+                        "error_details": getattr(result, "error_details", None),
+                    },
+                    session_id=getattr(plan, "session_id", None) if plan else None,
+                    step_id=task.task_id,
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
+
+                yield f"❌ {agent_emoji} {task.agent_type.upper()} failed: {msg}"
 
                 # Show detailed error information if verbose is enabled
                 if self.verbose_enabled and self.verbose_level == "detailed":
@@ -269,17 +503,50 @@ class TaskExecutor:
             error_msg = f"Exception in task {task.task_id}: {str(e)}"
             task.mark_failed(error_msg)
             failed_tasks.append(task.task_id)
+
+            # Log verbose task exception
+            verbose_logger.log(
+                LogLevel.ERROR,
+                f"agent:{str(task.agent_type)}",
+                "Task failed with exception",
+                data={
+                    "task_id": task.task_id,
+                    "error": str(e),
+                    "exception_type": type(e).__name__,
+                },
+                session_id=getattr(plan, "session_id", None) if plan else None,
+                step_id=task.task_id,
+                duration_ms=(time.time() - start_time) * 1000,
+            )
+
             yield f"💥 {agent_emoji} {task.agent_type.upper()} failed with exception: {str(e)}"
 
             # Show detailed exception information if verbose is enabled
             if self.verbose_enabled and self.verbose_level == "detailed":
-                import traceback
-
                 yield f"   📋 Exception traceback: {traceback.format_exc()}"
 
         # Handle dynamic debugger insertion
         async for msg in self._handle_dynamic_debugger_insertion(task, result, plan):
             yield msg
+
+        # After each task execution, pretty print the latest code
+        session = get_current_session()
+        if session and session.get_latest_code():
+            code = session.get_latest_code()
+            panel = Panel(
+                code,
+                title="[bold green]Current Latest Code[/bold green]",
+                border_style="green",
+                padding=(1, 2),
+            )
+            # Directly yield rich's ANSI rendered string
+            console = Console()
+            from io import StringIO
+
+            buf = StringIO()
+            console.file = buf
+            console.print(panel)
+            yield buf.getvalue()
 
     def _generate_task_details_panel(self, task: Task) -> List[str]:
         """Generate task details panel content."""
@@ -324,6 +591,7 @@ class TaskExecutor:
             and self.auto_insert_debugger
             and task.agent_type in [AgentType.GENERATOR, AgentType.OPTIMIZER]
         ):
+            context = task.input_data
             # Check if error detected (failure, error_message, or suspicious output)
             error_detected = (
                 task.status == TaskStatus.FAILED
@@ -367,11 +635,9 @@ class TaskExecutor:
                         yield f"   📊 Repair attempt {current_repair_attempts + 1}/{self.max_repair_attempts}"
 
                     # Create context for debugger instruction
-                    from ..task_planning.task_planner import TaskPlanner
+                    # prompt/context construction is handled internally by PromptManager/agent
 
-                    context = TaskPlanner._create_context_from_task(task)
-
-                    planner = TaskPlanner()
+                    planner = TaskPlanner()  # Assuming TaskPlanner is available
                     debugger_instruction = planner._build_debugger_instruction(context)
 
                     # Create debugger task
@@ -417,6 +683,7 @@ class TaskExecutor:
             and self.auto_insert_debugger
             and task.agent_type == AgentType.DEBUGGER
         ):
+            context = task.input_data
             # Check if debugger found bugs that need additional repair
             bugs_detected = (
                 (
@@ -449,11 +716,9 @@ class TaskExecutor:
 
                     if original_task:
                         # Create retry generator task
-                        from ..task_planning.task_planner import TaskPlanner
+                        # prompt/context construction is handled internally by PromptManager/agent
 
-                        context = TaskPlanner._create_context_from_task(original_task)
-
-                        planner = TaskPlanner()
+                        planner = TaskPlanner()  # Assuming TaskPlanner is available
                         generator_instruction = planner._build_generator_instruction(
                             context
                         )
@@ -581,10 +846,32 @@ class TaskExecutor:
                 error_message=f"Unknown agent type: {task.agent_type}",
             )
 
-        # Prepare request for agent
-        request = self._prepare_agent_request(task, previous_results)
+        # prompt/context construction is handled internally by PromptManager/agent
 
         try:
+            # Build request
+            safe_previous_results = previous_results or {}
+            self._trace_collection(
+                safe_previous_results,
+                "previous_results",
+                {"task_id": getattr(task, "task_id", None)},
+            )
+            request = self._prepare_agent_request(task, safe_previous_results)
+            # Tracing: log request code
+            get_verbose_logger().log_agent_activity(
+                str(task.agent_type),
+                "[Tracing] _execute_task: request code",
+                data={
+                    "task_id": getattr(task, "task_id", None),
+                    "request_code_type": str(type(request.get("code"))),
+                    "request_code_length": len(request.get("code"))
+                    if request.get("code")
+                    else 0,
+                    "request_code_preview": request.get("code", "")[:200],
+                },
+                session_id=getattr(task, "session_id", None),
+                step_id=getattr(task, "task_id", None),
+            )
             # Execute agent
             response = await agent.execute(request)
 
@@ -611,51 +898,88 @@ class TaskExecutor:
         self, task: Task, previous_results: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Prepare request for agent execution.
-
-        Args:
-            task: Task to execute
-            previous_results: Results from previous tasks
-
-        Returns:
-            Request dictionary for agent
+        Build agent request using PromptManager for context-aware prompt and request structure.
         """
-        request = {
-            "request_id": f"{task.task_id}_{task.created_at.timestamp()}",
-            "task_description": task.task_description,
-            "requirements": task.requirements,
-            "optimization_goals": task.optimization_goals,
-            "context": task.input_data,
-            "timestamp": task.created_at.timestamp(),
-        }
+        # Extract code from previous results if available
+        code = None
+        safe_previous_results = previous_results or {}
+        self._trace_collection(
+            safe_previous_results,
+            "previous_results",
+            {"task_id": getattr(task, "task_id", None)},
+            log_traceback=True,
+            depth=0,
+        )
+        if safe_previous_results:
+            for v_idx, v in enumerate(safe_previous_results.values()):
+                self._trace_collection(
+                    v,
+                    f"previous_results.value[{v_idx}]",
+                    {"task_id": getattr(task, "task_id", None)},
+                    log_traceback=False,
+                    depth=1,
+                )
+                if v is None:
+                    from pinocchio.utils.verbose_logger import get_verbose_logger
 
-        # Add detailed instruction if available
-        if "instruction" in task.input_data:
-            request["detailed_instruction"] = task.input_data["instruction"]
+                    get_verbose_logger().log_coordinator_activity(
+                        f"[Tracing][ERROR] previous_results.value[{v_idx}] is NoneType!",
+                        data={
+                            "task_id": getattr(task, "task_id", None),
+                        },
+                    )
+                    continue
+                if (
+                    isinstance(v, dict)
+                    and v.get("output")
+                    and isinstance(v["output"], dict)
+                    and v["output"].get("code")
+                ):
+                    code = v["output"]["code"]
+                    break
+        # Tracing: log code extraction
+        from pinocchio.utils.verbose_logger import get_verbose_logger
 
-        # Add previous results as context
-        if previous_results:
-            request["previous_results"] = previous_results
-
-        # Add agent-specific data
-        if task.agent_type == AgentType.OPTIMIZER:
-            # Pass generated code to optimizer
-            if "task_1" in previous_results:
-                request["code"] = previous_results["task_1"].get("code", "")
-
-        elif task.agent_type == AgentType.DEBUGGER:
-            # Pass code to debugger
-            if "task_1" in previous_results:
-                request["code"] = previous_results["task_1"].get("code", "")
-
-        elif task.agent_type == AgentType.EVALUATOR:
-            # Pass code to evaluator
-            if "task_1" in previous_results:
-                request["code"] = previous_results["task_1"].get("code", "")
-            # Add optimization results if available
-            if "task_2" in previous_results:
-                request["optimization_results"] = previous_results["task_2"]
-
+        get_verbose_logger().log_agent_activity(
+            str(task.agent_type),
+            "[Tracing] _prepare_agent_request: code extraction",
+            data={
+                "task_id": getattr(task, "task_id", None),
+                "code_type": str(type(code)),
+                "code_length": len(code) if code else 0,
+                "code_preview": code[:200] if code else None,
+                "previous_results_keys": list(safe_previous_results.keys()),
+            },
+            session_id=getattr(task, "session_id", None),
+            step_id=getattr(task, "task_id", None),
+        )
+        # Use PromptManager to build request
+        session_obj = get_current_session()
+        request = self.prompt_manager.create_context_aware_request(
+            agent_type=task.agent_type,
+            task_description=task.task_description,
+            session_id=getattr(task, "session_id", None),
+            code=None,  # Provided by session_obj automatically
+            keywords=None,
+            context=getattr(task, "input_data", None) or {},
+            previous_results=safe_previous_results,
+            session_obj=session_obj,
+        )
+        # Tracing: log final request code
+        get_verbose_logger().log_agent_activity(
+            str(task.agent_type),
+            "[Tracing] _prepare_agent_request: final request code",
+            data={
+                "task_id": getattr(task, "task_id", None),
+                "request_code_type": str(type(request.get("code"))),
+                "request_code_length": len(request.get("code"))
+                if request.get("code")
+                else 0,
+                "request_code_preview": request.get("code", "")[:200],
+            },
+            session_id=getattr(task, "session_id", None),
+            step_id=getattr(task, "task_id", None),
+        )
         return request
 
     def _compile_final_result(

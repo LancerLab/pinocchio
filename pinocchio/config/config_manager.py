@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from pinocchio.config.llm_config import LLMProvider
+
 from ..utils.file_utils import ensure_directory, safe_read_json, safe_write_json
 from .models import (
     LLMConfigEntry,
@@ -16,6 +18,12 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ConfigError(Exception):
+    """Exception raised for configuration-related errors."""
+
+    pass
 
 
 class ConfigManager:
@@ -33,6 +41,11 @@ class ConfigManager:
 
     def _get_default_config_path(self) -> str:
         """Get default configuration file path."""
+        # Check environment variable first
+        env_config = os.getenv("PINOCCHIO_CONFIG_FILE")
+        if env_config and os.path.exists(env_config):
+            return env_config
+
         # Try to find config in current directory or project root
         possible_paths = [
             "pinocchio.json",
@@ -61,11 +74,17 @@ class ConfigManager:
                     logger.info(f"Configuration loaded from {self.config_file}")
                     return config
                 else:
-                    logger.warning(f"Failed to load config from {self.config_file}")
-                    return default_config
+                    raise ConfigError(
+                        f"Failed to load config from {self.config_file}: Invalid JSON format"
+                    )
             except Exception as e:
-                logger.warning(f"Failed to load config from {self.config_file}: {e}")
-                return default_config
+                # Don't fallback to default config, instead raise the error
+                if isinstance(e, ConfigError):
+                    raise
+                else:
+                    raise ConfigError(
+                        f"Configuration validation failed for {self.config_file}: {e}"
+                    )
         else:
             # Create default config file
             try:
@@ -77,39 +96,58 @@ class ConfigManager:
                     logger.info(
                         f"Created default configuration file: {self.config_file}"
                     )
+                    return default_config
                 else:
-                    logger.warning(f"Failed to create config file: {self.config_file}")
+                    raise ConfigError(
+                        f"Failed to create config file: {self.config_file}"
+                    )
             except Exception as e:
-                logger.warning(f"Failed to create config file: {e}")
-
-            return default_config
+                raise ConfigError(f"Failed to create config file: {e}")
 
     def get_llm_config(self) -> LLMConfigEntry:
         """Get the best LLM configuration (auto select by priority)."""
+        # First try to use the new llms array
+        if hasattr(self.config, "llms") and self.config.llms:
+            # Use the first LLM in the array as default
+            return self.config.llms[0]
+
+        # Fallback to legacy llm field
         llm = self.config.llm
         if isinstance(llm, list):
-            # Already a list of dicts (from JSON), parse to LLMConfigList
-            llm_list = LLMConfigList(
-                llms=[
-                    LLMConfigEntry(**item)
-                    if not isinstance(item, LLMConfigEntry)
-                    else item
-                    for item in llm
-                ]
-            )
-            return llm_list.get_best_llm()
-        elif isinstance(llm, LLMConfigList):
-            return llm.get_best_llm()
-        elif isinstance(llm, LLMConfigEntry):
-            return llm
+            # Convert legacy list to LLMConfigEntry objects with generated IDs
+            llm_entries = []
+            for i, item in enumerate(llm):
+                if isinstance(item, dict):
+                    # Add id if not present
+                    if "id" not in item:
+                        item["id"] = f"legacy_{i}"
+                    llm_entries.append(LLMConfigEntry(**item))
+                elif isinstance(item, LLMConfigEntry):
+                    llm_entries.append(item)
+            if llm_entries:
+                return llm_entries[0]  # Return first one as default
         elif isinstance(llm, dict):
-            # Single dict, treat as one LLMConfigEntry
+            # Single dict, add id if not present
+            if "id" not in llm:
+                llm["id"] = "legacy_main"
             return LLMConfigEntry(**llm)
-        else:
-            raise ValueError("Invalid LLM config format")
+
+        # If no valid config found, create a default
+        return LLMConfigEntry(
+            id="default",
+            provider=LLMProvider.CUSTOM,
+            base_url="http://localhost:8001",
+            model_name="default",
+            priority=10,
+        )
 
     def get_all_llm_configs(self):
         """Return all LLM configs as a list of LLMConfigEntry."""
+        # First try to use the new llms array
+        if hasattr(self.config, "llms") and self.config.llms:
+            return self.config.llms
+
+        # Fallback to legacy llm field
         llm = self.config.llm
         if isinstance(llm, list):
             return [
@@ -132,15 +170,29 @@ class ConfigManager:
 
     def get_agent_llm_config(self, agent_type: str) -> LLMConfigEntry:
         """Get agent-specific LLM configuration with fallback to global config."""
-        # Try to get agent-specific config
-        agent_llm_key = f"llm_{agent_type}"
-        agent_config = getattr(self.config, agent_llm_key, None)
-
-        if agent_config is not None:
-            return agent_config
+        # Get agent config
+        agent_config = self.get_agent_config(agent_type)
+        if agent_config and hasattr(agent_config, "llm") and agent_config.llm:
+            # Agent has specified an LLM ID, find it in the llms array
+            llm_id = agent_config.llm
+            if hasattr(self.config, "llms") and self.config.llms:
+                for llm_config in self.config.llms:
+                    if llm_config.id == llm_id:
+                        return llm_config
+                logger.warning(
+                    f"LLM config with id '{llm_id}' not found for agent '{agent_type}', using default"
+                )
 
         # Fallback to global config
         return self.get_llm_config()
+
+    def get_llm_config_by_id(self, llm_id: str) -> Optional[LLMConfigEntry]:
+        """Get LLM configuration by ID."""
+        if hasattr(self.config, "llms") and self.config.llms:
+            for llm_config in self.config.llms:
+                if llm_config.id == llm_id:
+                    return llm_config
+        return None
 
     def get_session_config(self) -> SessionConfig:
         """Get session configuration."""
@@ -149,6 +201,10 @@ class ConfigManager:
     def get_storage_config(self) -> StorageConfig:
         """Get storage configuration."""
         return self.config.storage
+
+    def get_logs_path(self) -> str:
+        """Get logs root path from storage config."""
+        return self.config.storage.logs_path
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value by key."""
@@ -164,6 +220,31 @@ class ConfigManager:
                 return default
 
         return value
+
+    def get_verbose_config(self) -> dict:
+        """Get verbose logging configuration."""
+        verbose_config = self.get("verbose", {})
+        if isinstance(verbose_config, dict):
+            return verbose_config
+        else:
+            # If verbose config is a Pydantic model, convert to dict
+            return (
+                verbose_config.model_dump()
+                if hasattr(verbose_config, "model_dump")
+                else {}
+            )
+
+    def is_verbose_enabled(self) -> bool:
+        """Check if verbose logging is enabled."""
+        return self.get("verbose.enabled", False)
+
+    def get_verbose_mode(self) -> str:
+        """Get verbose mode (development/production/debug)."""
+        return self.get("verbose.mode", "production")
+
+    def get_verbose_level(self) -> str:
+        """Get verbose level (minimal/detailed/maximum)."""
+        return self.get("verbose.level", "minimal")
 
     def set(self, key: str, value: Any) -> None:
         """Set configuration value."""
@@ -210,3 +291,21 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Configuration validation failed: {e}")
             return False
+
+
+def get_config_value(config, key, default=None):
+    """
+    Safely get a nested config value from a Pydantic model or dict using dot notation.
+    """
+    keys = key.split(".")
+    value = config
+    for k in keys:
+        if isinstance(value, dict):
+            value = value.get(k, default)
+        elif hasattr(value, k):
+            value = getattr(value, k, default)
+        else:
+            return default
+        if value is None:
+            return default
+    return value

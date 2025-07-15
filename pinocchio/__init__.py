@@ -1,3 +1,3 @@
-"""Pinocchio - A multi-agent system for writing, debugging, and optimizing Choreo compute kernel DSL operators."""
+"""Pinocchio - AI-powered code generation and optimization system."""
 
 __version__ = "0.1.0"

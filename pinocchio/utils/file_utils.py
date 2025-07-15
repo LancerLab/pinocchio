@@ -2,9 +2,12 @@
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
+
+from .string_utils import sanitize_filename
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,9 @@ def safe_write_json(
     def default(obj):
         if isinstance(obj, datetime):
             return obj.isoformat()
+        # Handle TaskResult objects
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
         raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
     try:
@@ -289,3 +295,27 @@ def get_file_info(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Failed to get file info for {file_path}: {e}")
         return None
+
+
+def get_output_path(
+    logs_root: str, output_type: str, session_id: str = None, filename: str = None
+) -> str:
+    """Get standardized output path for code/bin/analysis/verbose/record, optionally by session_id."""
+    from pathlib import Path
+
+    base = Path(logs_root) / output_type
+    if session_id:
+        base = base / session_id
+    if filename:
+        base = base / filename
+    base.parent.mkdir(parents=True, exist_ok=True)
+    return str(base)
+
+
+def get_operator_name_from_task(task_description: str) -> str:
+    """Extract operator name from task description (e.g., 'matrix multiplication', 'conv2d')."""
+    # Simple rule: take the first English word or short phrase
+    match = re.search(r"([a-zA-Z0-9_\-]+)", task_description)
+    if match:
+        return sanitize_filename(match.group(1).lower())
+    return "unknown_op"

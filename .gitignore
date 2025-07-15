@@ -193,48 +193,12 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# Pinocchio specific ignores
-# Session logs and temporary files
-sessions/
-*.session.json
-*.session_*.json
+# Pinocchio output directories (keep structure, ignore contents)
+logs/*
+!logs/.gitkeep
+memories/*
+!memories/.gitkeep
+sessions/*
+!sessions/.gitkeep
 
-# Memory storage
-memories/
-*.memory.json
-
-# Knowledge storage
-knowledge/
-*.knowledge.json
-
-# LLM API keys and sensitive configs
-.env.local
-.env.production
-config.local.json
-secrets.json
-
-# Test artifacts
-test_outputs/
-test_sessions/
-test_memories/
-
-# Log files
-*.log
-logs/
-
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.backup
-
-# IDE specific
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS specific
-.DS_Store
-Thumbs.db
+# Keep directory structure but ignore content, for artifact archiving and directory management

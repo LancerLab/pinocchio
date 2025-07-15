@@ -56,6 +56,16 @@ class TaskResult:
     execution_time_ms: Optional[int] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert TaskResult to dictionary for JSON serialization."""
+        return {
+            "success": self.success,
+            "output": self.output,
+            "error_message": self.error_message,
+            "execution_time_ms": self.execution_time_ms,
+            "metadata": self.metadata,
+        }
+
 
 class Task(BaseModel):
     """Individual task in the plan."""
@@ -114,6 +124,14 @@ class Task(BaseModel):
     )
 
     model_config = ConfigDict(use_enum_values=True, validate_assignment=True)
+
+    def __init__(self, **data):
+        """Initialize the class with the given parameters."""
+        # Type protection: Ensure agent_type is an AgentType enum
+        agent_type = data.get("agent_type")
+        if isinstance(agent_type, str):
+            data["agent_type"] = AgentType[agent_type.upper()]
+        super().__init__(**data)
 
     def can_execute(self, completed_tasks: List[str]) -> bool:
         """
@@ -210,6 +228,11 @@ class TaskPlan(BaseModel):
         default_factory=dict, description="Execution metrics"
     )
 
+    # Session logger (not validated by pydantic, set at runtime)
+    session_logger: Optional[Any] = Field(
+        default=None, exclude=True, description="Session logger instance"
+    )
+
     model_config = ConfigDict(use_enum_values=True, validate_assignment=True)
 
     def get_ready_tasks(self) -> List[Task]:
@@ -225,7 +248,8 @@ class TaskPlan(BaseModel):
 
         ready_tasks = []
         for task in self.tasks:
-            if task.can_execute(completed_tasks):
+            # Only allow PENDING status tasks to enter ready_tasks, to prevent re-execution
+            if task.status == TaskStatus.PENDING and task.can_execute(completed_tasks):
                 ready_tasks.append(task)
 
         return ready_tasks

@@ -1,10 +1,14 @@
 """Session logger for Pinocchio multi-agent system."""
 
+import json
 import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from pinocchio.config.config_manager import ConfigManager
+from pinocchio.memory.manager import MemoryManager
 
 from .utils.file_utils import ensure_directory, safe_read_json, safe_write_json
 
@@ -14,7 +18,9 @@ logger = logging.getLogger(__name__)
 class SessionLogger:
     """Session logger for managing session lifecycle and logging."""
 
-    def __init__(self, user_prompt: str, sessions_dir: str = "./sessions"):
+    def __init__(
+        self, user_prompt: str, sessions_dir: str = None, logs_dir: str = None
+    ):
         """
         Initialize session logger.
 
@@ -22,9 +28,11 @@ class SessionLogger:
             user_prompt: Initial user prompt that started the session
             sessions_dir: Directory to store session files
         """
+        config = ConfigManager()
         self.session_id = f"session_{uuid.uuid4().hex[:8]}"
         self.user_prompt = user_prompt
-        self.sessions_dir = Path(sessions_dir)
+        self.sessions_dir = Path(sessions_dir or config.config.storage.sessions_path)
+        self.logs_dir = Path(logs_dir or config.get_logs_path())
         self.created_at = datetime.utcnow()
         self.completed_at: Optional[datetime] = None
 
@@ -132,12 +140,36 @@ class SessionLogger:
 
     def complete_session(self, status: str = "completed") -> None:
         """
-        Mark session as completed.
+        Mark the session as completed.
 
         Args:
-            status: Session completion status
+            status: The final status of the session ("completed" or "failed")
         """
+        self.status = status
         self.completed_at = datetime.utcnow()
+        if hasattr(self, "creation_time") and self.creation_time:
+            self.runtime_seconds = self.completed_at - self.creation_time
+        # === Added: Export all memories ===
+        try:
+            memory_manager = MemoryManager()
+            agent_memories = memory_manager.get_agent_memories(self.session_id)
+            mem_dir = Path("memories") / self.session_id
+            mem_dir.mkdir(parents=True, exist_ok=True)
+            mem_file = mem_dir / "agent_memories.json"
+            with open(mem_file, "w", encoding="utf-8") as f:
+                json.dump(
+                    [m.model_dump() for m in agent_memories],
+                    f,
+                    indent=2,
+                    ensure_ascii=False,
+                )
+        except Exception as e:
+            import logging
+
+            logging.warning(
+                f"Failed to export agent memories for session {self.session_id}: {e}"
+            )
+
         self.add_metadata("status", status)
         self.add_metadata(
             "duration_seconds", (self.completed_at - self.created_at).total_seconds()

@@ -5,16 +5,28 @@ Pinocchio CLI - Multi-Agent Collaboration System
 
 import argparse
 import asyncio
+import atexit
 import logging
+import signal
+import sys
 import time
+from pathlib import Path
 from typing import List, Optional
 
 from rich.console import Console
 from rich.panel import Panel
 
-from pinocchio.config import ConfigManager
+from pinocchio.config.config_manager import ConfigManager, get_config_value
 from pinocchio.coordinator import Coordinator
 from pinocchio.data_models.task_planning import AgentType, Task, TaskStatus
+from pinocchio.session.models.session import Session
+from pinocchio.utils.file_utils import get_output_path
+from pinocchio.utils.verbose_logger import (
+    LogLevel,
+    VerboseLogger,
+    get_verbose_logger,
+    set_verbose_logger,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +199,8 @@ Development Tools:
 • /debug   - Enable debug mode for verbose output
 • /verbose - Toggle verbose logging
 • /config  - Show current configuration
+• /performance - Show performance metrics
+• /logs    - Export verbose logs
 
 Usage Examples:
 • Type '/chat' to start coding with AI agents
@@ -199,7 +213,9 @@ For more information, visit the Pinocchio documentation.
     print(help_text)
 
 
-def handle_commands(command: str) -> bool:
+def handle_commands(
+    command: str, cli_instance: Optional["PinocchioCLI"] = None
+) -> bool:
     """Handle CLI commands. Returns True if should continue, False if should quit."""
     console = Console()
 
@@ -230,6 +246,30 @@ def handle_commands(command: str) -> bool:
         console.print("  • Recent commands will be displayed here")
         console.print("  • Session history available")
         console.print("  • Use /help for available commands")
+        return True
+    elif command == "/verbose":
+        if cli_instance:
+            cli_instance.toggle_verbose_mode()
+        else:
+            console.print("[yellow]Verbose mode toggle requires CLI instance[/yellow]")
+        return True
+    elif command == "/performance":
+        if cli_instance:
+            cli_instance.show_performance_metrics()
+        else:
+            console.print("[yellow]Performance metrics require CLI instance[/yellow]")
+        return True
+    elif command == "/logs":
+        if cli_instance:
+            cli_instance.export_verbose_logs()
+        else:
+            console.print("[yellow]Log export requires CLI instance[/yellow]")
+        return True
+    elif command == "/session":
+        if cli_instance:
+            cli_instance.show_session_summary()
+        else:
+            console.print("[yellow]Session summary requires CLI instance[/yellow]")
         return True
     else:
         console.print(f"[red]Unknown command: {command}[/red]")
@@ -584,6 +624,18 @@ class PinocchioCLI:
         self.task_details_buffer = []
         self.is_collecting_task_details = False
 
+        # Verbose mode state
+        self.verbose_mode = False
+
+        # Initialize verbose logger
+        self.verbose_logger = VerboseLogger(
+            console=self.console,
+            log_file=Path("./logs/verbose.log") if self.verbose_mode else None,
+            max_depth=5,
+            enable_colors=True,
+        )
+        set_verbose_logger(self.verbose_logger)
+
     def set_coordinator(self, coordinator: Coordinator):
         """Set the coordinator."""
         self.coordinator = coordinator
@@ -767,142 +819,81 @@ class PinocchioCLI:
 
     def add_llm_verbose_message(self, message: str):
         """Add an LLM VERBOSE message with timestamp, icon, and pretty JSON if present."""
-        import json
-        import re
+        import time
 
-        from rich.console import Group
+        from rich.console import Console
         from rich.panel import Panel
-        from rich.syntax import Syntax
 
         timestamp = time.strftime("%H:%M:%S")
         icon = "🤖 LLM"
         border_style = "green"
         bg = "on grey15"
-        payload_pat = re.compile(r"^\[LLM VERBOSE\] Payload:\s*{", re.DOTALL)
-        response_pat = re.compile(r"^\[LLM VERBOSE\] Response:\s*{", re.DOTALL)
-        is_payload = payload_pat.match(message)
-        is_response = response_pat.match(message)
-        if is_payload or is_response:
-            start = message.find("{")
-            end = message.rfind("}") + 1
-            if start != -1 and end != -1 and end > start:
-                prefix = message[:start]
-                json_part = message[start : end + 1]
-                suffix = message[end + 1 :]
-                try:
-                    data = json.loads(json_part)
-                    multiline_fields = []
+        console = Console()
+        # Preserve the original json extraction content logic (if any), but do not attempt to extract/highlight JSON structure separately
+        # Directly print the entire message content as is, keeping rich/Panel style
+        panel = Panel(
+            message,
+            title=f"{icon} LLM",
+            subtitle=timestamp,
+            border_style=border_style,
+            style=bg,
+            expand=True,
+        )
+        console.print(panel)
 
-                    def pretty_print_nested(obj, path=None):
-                        if path is None:
-                            path = []
-                        if isinstance(obj, dict):
-                            new_obj = {}
-                            for k, v in obj.items():
-                                if isinstance(v, str):
-                                    s = v.strip()
-                                    if "\n" in s:
-                                        new_obj[k] = "<see below>"
-                                        multiline_fields.append((path + [k], s))
-                                    else:
-                                        new_obj[k] = s
-                                elif isinstance(v, (dict, list)):
-                                    new_obj[k] = pretty_print_nested(v, path + [k])
-                                else:
-                                    new_obj[k] = v
-                            return new_obj
-                        elif isinstance(obj, list):
-                            return [
-                                pretty_print_nested(i, path + [str(idx)])
-                                for idx, i in enumerate(obj)
-                            ]
-                        else:
-                            return obj
+    def toggle_verbose_mode(self):
+        """Toggle verbose logging mode."""
+        self.verbose_mode = not self.verbose_mode
+        if self.verbose_mode:
+            # Create logs directory if it doesn't exist
+            Path("./logs").mkdir(exist_ok=True)
+            self.verbose_logger.log_file = Path("./logs/verbose.log")
+            self.verbose_logger.log(
+                LogLevel.INFO,
+                "cli",
+                "Verbose logging enabled",
+                data={"mode": "enabled", "log_file": str(self.verbose_logger.log_file)},
+            )
+            self.console.print("[green]Verbose logging enabled[/green]")
+        else:
+            self.verbose_logger.log_file = None
+            self.verbose_logger.log(
+                LogLevel.INFO,
+                "cli",
+                "Verbose logging disabled",
+                data={"mode": "disabled"},
+            )
+            self.console.print("[yellow]Verbose logging disabled[/yellow]")
 
-                    replaced = pretty_print_nested(data)
-                    pretty = json.dumps(replaced, indent=2, ensure_ascii=False)
-                    self.console.print(
-                        f"[dim]{timestamp}[/dim] [{icon}] {prefix.strip()}"
-                    )
-                    self.console.print(
-                        Syntax(pretty, "json", theme="monokai", line_numbers=False)
-                    )
-                    for path, s in multiline_fields:
-                        label = ".".join(path)
-                        group = []
-                        lines = s.splitlines()
-                        buf = []
-                        in_json = False
-                        json_buf = []
-                        for line in lines:
-                            if not in_json and line.strip().startswith("{"):
-                                if buf:
-                                    group.append(
-                                        Syntax(
-                                            "\n".join(buf),
-                                            "markdown",
-                                            theme="monokai",
-                                            line_numbers=False,
-                                        )
-                                    )
-                                    buf = []
-                                in_json = True
-                                json_buf = [line]
-                            elif in_json:
-                                json_buf.append(line)
-                                if line.strip().endswith(
-                                    "}"
-                                ):  # Roughly determine end of JSON
-                                    json_str = "\n".join(json_buf)
-                                    # try:
-                                    #     parsed = json.loads(json_str)
-                                    #     pretty_json = json.dumps(parsed, indent=2, ensure_ascii=False)
-                                    #     group.append(Syntax(pretty_json, "json", theme="monokai", line_numbers=False))
-                                    # except Exception:
-                                    #     # Separate comment and non-comment lines
-                                    #     comment_lines = [line for line in json_buf if line.strip().startswith("//")]
-                                    #     non_comment_lines = [line for line in json_buf if not line.strip().startswith("//")]
-                                    #     # Try to highlight non-comment part as JSON
-                                    #     if non_comment_lines:
-                                    #         try:
-                                    #             parsed = json.loads("\n".join(non_comment_lines))
-                                    #             pretty_json = json.dumps(parsed, indent=2, ensure_ascii=False)
-                                    #             group.append(Syntax(pretty_json, "json", theme="monokai", line_numbers=False))
-                                    #         except Exception:
-                                    #             group.append(Syntax("\n".join(non_comment_lines), "jsonc", theme="monokai", line_numbers=False))
-                                    #     # Highlight comment part as markdown
-                                    #     if comment_lines:
-                                    #         group.append(Syntax("\n".join(comment_lines), "markdown", theme="monokai", line_numbers=False))
-                                    in_json = False
-                                    json_buf = []
-                            else:
-                                buf.append(line)
-                        if buf:
-                            group.append(
-                                Syntax(
-                                    "\n".join(buf),
-                                    "markdown",
-                                    theme="monokai",
-                                    line_numbers=False,
-                                )
-                            )
-                        panel = Panel(
-                            Group(*group),
-                            title=f"{label} (multiline)",
-                            border_style=border_style,
-                            style=bg,
-                            padding=(1, 2),
-                        )
-                        self.console.print(f"[dim]{timestamp}[/dim] [{icon}]", panel)
-                    if suffix.strip():
-                        self.console.print(suffix.strip())
-                    return
-                except Exception:
-                    pass  # fallback to below
-        pretty = extract_and_pretty_json_from_str(message)
-        formatted = f"[dim]{timestamp}[/dim] [{icon}] {pretty}"
-        self.messages.append(formatted)
-        self.console.print(formatted)
+    def show_performance_metrics(self):
+        """Display performance metrics."""
+        self.verbose_logger.display_performance_summary()
+
+    def export_verbose_logs(self, file_path: str = None):
+        """Export verbose logs to file."""
+        if not file_path:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            file_path = f"./logs/verbose_export_{timestamp}.json"
+
+        try:
+            self.verbose_logger.export_entries(Path(file_path))
+            self.console.print(f"[green]Verbose logs exported to: {file_path}[/green]")
+        except Exception as e:
+            self.console.print(f"[red]Failed to export logs: {e}[/red]")
+
+    def show_session_summary(self, session_id: str = None):
+        """Display session summary."""
+        if (
+            not session_id
+            and hasattr(self, "current_session_id")
+            and self.current_session_id
+        ):
+            session_id = self.current_session_id
+
+        if session_id:
+            self.verbose_logger.display_session_summary(session_id)
+        else:
+            self.console.print("[yellow]No active session[/yellow]")
 
     def _is_json_message(self, message: str) -> bool:
         """Check if message contains JSON content."""
@@ -963,7 +954,8 @@ class PinocchioCLI:
             self.console.print(syntax)
         except Exception as e:
             self.console.print(f"[red]Failed to pretty-print JSON: {e}[/red]")
-            self.console.print(message)
+            self.console.print(f"[red]Raw message:[/red] {message}")
+            raise
 
     def print_task_update(self, task: Task):
         """Print task status update."""
@@ -1082,32 +1074,11 @@ Task ID: {task.task_id}
 
                 if user_input.startswith("/"):
                     command = user_input.lower().strip()
-                    if command == "/quit":
-                        self.console.print("[yellow]Exiting Pinocchio CLI...[/yellow]")
+                    # Use the centralized command handler
+                    if not handle_commands(command, self):
                         break
-                    elif command == "/help":
-                        self.print_tips()
-                        self.print_input_border()
-                        continue
-                    elif command == "/export":
-                        if (
-                            self.coordinator
-                            and hasattr(self.coordinator, "current_session")
-                            and self.coordinator.current_session
-                        ):
-                            session = self.coordinator.current_session
-                            path = session.save_to_file()
-                            self.console.print(
-                                f"[green]Session log exported to: {path}[/green]"
-                            )
-                        else:
-                            self.console.print(
-                                "[red]No active session to export.[/red]"
-                            )
-                        continue
-                    else:
-                        self.console.print(f"[red]Unknown command: {command}[/red]")
-                        continue
+                    self.print_input_border()
+                    continue
 
                 if not user_input:
                     continue
@@ -1182,6 +1153,10 @@ Task ID: {task.task_id}
             except Exception as e:
                 self.add_message(f"Error: {e}", "❌ Error")
                 self.print_input_border()
+        # After the loop, ensure emergency_save is called
+        import asyncio
+
+        asyncio.run(asyncio.to_thread(emergency_save))
 
 
 # Legacy functions for backward compatibility
@@ -1357,12 +1332,63 @@ async def legacy_run_chat_interface(
 async def main():
     """Main CLI entry point with new design."""
     import os
+    import shutil
     import sys
+    from pathlib import Path
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Pinocchio CLI - Multi-Agent Collaboration System"
+        description="Pinocchio CLI - Multi-Agent Collaboration System",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Configuration Modes:
+  --mode development    # Development mode - raises errors instead of fallback
+  --mode production     # Production mode - allows fallback for robustness
+
+Execution Strategies:
+  --strategy workflow   # Use fixed workflow patterns
+  --strategy planning   # Use adaptive task planning
+
+Testing Options:
+  --dry-run            # Use mock LLM responses for fast testing
+
+Examples:
+  pinocchio --mode development --strategy workflow
+  pinocchio --mode production --strategy planning
+  pinocchio --strategy workflow --config configs/workflow_template.json
+  pinocchio --strategy planning --config configs/planning_template.json
+  pinocchio --dry-run --strategy workflow  # Fast testing with mocks
+  pinocchio --dry-run --strategy planning  # Test planning logic without LLM calls
+        """,
     )
+
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["development", "production"],
+        help="CLI mode (development/production). Development mode raises errors, production mode allows fallback",
+    )
+
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="pinocchio.json",
+        help="Path to configuration file (default: pinocchio.json)",
+    )
+
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        choices=["workflow", "planning"],
+        help="Execution strategy (workflow=fixed workflow, planning=adaptive planning)",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Use mock LLM responses for fast testing (no real LLM calls)",
+    )
+
     parser.add_argument(
         "--legacy-cli", action="store_true", help="Use legacy CLI interface"
     )
@@ -1372,6 +1398,60 @@ async def main():
 
     # Parse arguments, but allow unknown arguments for backward compatibility
     args, unknown = parser.parse_known_args()
+
+    # Handle --help without executing
+    if "--help" in sys.argv or "-h" in sys.argv:
+        parser.print_help()
+        return
+
+    # Handle strategy switching
+    if args.strategy:
+        strategy_config_path = Path(f"configs/{args.strategy}_template.json")
+        if strategy_config_path.exists():
+            try:
+                shutil.copy2(strategy_config_path, "pinocchio.json")
+                console = Console()
+                console.print(f"✅ Switched to {args.strategy} strategy")
+                console.print(f"📁 Configuration copied from: {strategy_config_path}")
+
+                # Show strategy info
+                show_strategy_info(console, args.strategy)
+
+            except Exception as e:
+                console = Console()
+                console.print(f"❌ Failed to switch to {args.strategy} strategy: {e}")
+                return
+        else:
+            console = Console()
+            console.print(f"❌ Strategy template not found: {strategy_config_path}")
+            console.print("Available strategies: workflow, planning")
+            return
+
+    # Handle mode switching (can combine with strategy)
+    elif args.mode:
+        config_path = Path(f"configs/{args.mode}.json")
+        if config_path.exists():
+            try:
+                shutil.copy2(config_path, "pinocchio.json")
+                console = Console()
+                console.print(f"✅ Switched to {args.mode} mode")
+                console.print(f"📁 Configuration copied from: {config_path}")
+
+                # Show mode info
+                show_mode_info(console, args.mode)
+
+            except Exception as e:
+                console = Console()
+                console.print(f"❌ Failed to switch to {args.mode} mode: {e}")
+                return
+        else:
+            console = Console()
+            console.print(f"❌ Configuration file not found: {config_path}")
+            console.print("Available modes: development, production")
+            return
+
+    # Set global config file path
+    os.environ["PINOCCHIO_CONFIG_FILE"] = args.config
 
     # Check if legacy mode is requested
     use_legacy = (
@@ -1392,39 +1472,256 @@ async def main():
         await legacy_main()
         return
 
-    # Load configuration
+    # Load configuration with custom config file
     try:
-        config_manager = ConfigManager()
+        config_manager = ConfigManager(args.config)
         config_manager.config
     except Exception as e:
         console = Console()
-        console.print(f"[red]Error loading configuration: {e}[/red]")
+        console.print(f"[red]Error loading configuration from {args.config}: {e}[/red]")
         return
 
     try:
-        from pinocchio.llm.custom_llm_client import CustomLLMClient
+        verbose_config = config_manager.get_verbose_config()
+        verbose = verbose_config.get("enabled", False)
 
-        llm_config = config_manager.get_llm_config()
-        verbose_config = config_manager.get("verbose", None)
-        verbose = False
-        if verbose_config is not None:
-            verbose = getattr(verbose_config, "enabled", False)
         # Create CLI first for verbose callback
         cli = PinocchioCLI()
-        llm_client = CustomLLMClient(
-            llm_config, verbose=verbose, verbose_callback=cli.add_llm_verbose_message
-        )
-        coordinator = Coordinator(llm_client)
-        cli.set_coordinator(coordinator)
+
+        # Initialize verbose logger with config
+        from pinocchio.utils.verbose_logger import VerboseLogger, set_verbose_logger
+
+        if verbose:
+            verbose_logger = VerboseLogger(
+                log_file=Path(verbose_config.get("log_file", "./logs/verbose.log")),
+                max_depth=verbose_config.get("max_depth", 5),
+                enable_colors=verbose_config.get("enable_colors", True),
+            )
+            set_verbose_logger(verbose_logger)
+
+        # Choose LLM client based on dry-run flag
+        if args.dry_run:
+            # Use MockLLMClient for fast testing
+            from pinocchio.llm.mock_client import MockLLMClient
+
+            llm_client = MockLLMClient(response_delay_ms=50, failure_rate=0.0)
+            console = Console()
+            console.print(
+                "[yellow]🧪 DRY-RUN MODE: Using mock LLM client for fast testing[/yellow]"
+            )
+        else:
+            # Try to use real LLM client, fallback to mock if it fails
+            llm_client = None
+            try:
+                from pinocchio.llm.custom_llm_client import CustomLLMClient
+
+                # Get default LLM config (for generator agent)
+                llm_config = config_manager.get_agent_llm_config("generator")
+                llm_client = CustomLLMClient(
+                    llm_config,
+                    verbose=verbose,
+                    verbose_callback=cli.add_llm_verbose_message,
+                )
+                console = Console()
+                console.print(
+                    f"[green]✅ Connected to LLM server: {llm_config.base_url}[/green]"
+                )
+            except Exception as e:
+                # Don't fallback to MockLLMClient, instead report the error
+                console = Console()
+                console.print(f"[red]❌ Failed to initialize LLM client: {e}[/red]")
+                console.print(
+                    "[yellow]💡 Please check your configuration in pinocchio.json[/yellow]"
+                )
+                console.print(
+                    "[yellow]💡 You can use --dry-run for testing without LLM[/yellow]"
+                )
+                sys.exit(1)
+
+        # Ensure we have a valid LLM client
+        if llm_client is None:
+            from pinocchio.llm.mock_client import MockLLMClient
+
+            llm_client = MockLLMClient(response_delay_ms=100, failure_rate=0.0)
+            console = Console()
+            console.print(
+                "[yellow]⚠️ No LLM client available, using mock LLM client[/yellow]"
+            )
+
+        # Get mode from CLI args or config
+        mode = args.mode or config_manager.config.cli.mode
+        console.print(f"[blue]🔧 CLI Mode: {mode}[/blue]")
+
+        # === New: Use with Session.create_session() to wrap main flow ===
+        with Session.create_session(
+            task_description="Pinocchio CLI Session"
+        ) as session:
+            coordinator = Coordinator(llm_client, mode=mode)
+            cli.set_coordinator(coordinator)
+            await cli.run()
+            # === On normal main flow end, batch export all agent memory and prompt ===
+            if hasattr(session, "agents"):
+                for agent in session.agents.values():
+                    if hasattr(agent, "save_memory_to_file"):
+                        agent.save_memory_to_file(session.session_id)
+                    if hasattr(agent, "export_prompt_history_to_file"):
+                        agent.export_prompt_history_to_file(session.session_id)
 
     except Exception as e:
         console = Console()
         console.print(f"[red]Error creating LLM client: {e}[/red]")
         return
 
-    # Run the new CLI
-    await cli.run()
 
+def show_strategy_info(console: Console, strategy: str):
+    """Show information about the given strategy in the console."""
+    console.print(f"📋 {strategy.upper()} STRATEGY:")
+
+    if strategy == "workflow":
+        console.print("   Fixed workflow execution with predefined agent sequences")
+        console.print("   Features:")
+        console.print("   ✅ Predictable execution order")
+        console.print("   ✅ Fast execution time")
+        console.print("   ✅ Consistent results")
+        console.print("   ✅ Easy debugging and monitoring")
+        console.print(
+            "   ✅ Fixed pattern: Generator → Debugger → Evaluator → Optimizer"
+        )
+
+    elif strategy == "planning":
+        console.print("   Adaptive task planning with intelligent analysis")
+        console.print("   Features:")
+        console.print("   ✅ Intelligent request analysis")
+        console.print("   ✅ Dynamic task generation")
+        console.print("   ✅ Context-aware planning")
+        console.print("   ✅ Flexible agent coordination")
+        console.print("   ✅ Multi-round optimization cycles")
+
+
+def show_mode_info(console: Console, mode: str):
+    """Show information about the given mode in the console."""
+    mode_info = {
+        "development": {
+            "description": "Development mode - raises errors instead of fallback",
+            "features": [
+                "✅ Raises errors on LLM failures",
+                "✅ Raises errors on missing LLM client",
+                "✅ Raises errors on task planning failures",
+                "✅ Full verbose logging enabled",
+                "✅ Performance tracking",
+                "✅ Session tracking",
+                "✅ Detailed agent communications",
+                "✅ LLM request/response logging",
+            ],
+        },
+        "production": {
+            "description": "Production mode - allows fallback for robustness",
+            "features": [
+                "✅ Allows fallback on LLM failures",
+                "✅ Allows fallback on missing LLM client",
+                "✅ Allows fallback on task planning failures",
+                "✅ Minimal logging for end users",
+                "✅ Basic progress updates only",
+                "✅ Clean user experience",
+            ],
+        },
+    }
+
+    if mode in mode_info:
+        info = mode_info[mode]
+        console.print(f"\n📋 {mode.upper()} MODE:")
+        console.print(f"   {info['description']}")
+        console.print("\n   Features:")
+        for feature in info["features"]:
+            console.print(f"   {feature}")
+
+
+# === Global emergency save hook ===
+_emergency_saved = False
+
+
+def emergency_save():
+    """Emergency save function to save session, memories, and prompts."""
+    global _emergency_saved
+    if _emergency_saved:
+        return
+    _emergency_saved = True
+    try:
+        from pinocchio.memory.manager import MemoryManager
+        from pinocchio.prompt.manager import PromptManager
+        from pinocchio.session.context import get_current_session
+
+        session = get_current_session()
+        if session:
+            # Try to call session_logger.complete_session()
+            if hasattr(session, "session_logger") and session.session_logger:
+                session.session_logger.complete_session("emergency_exit")
+            # Compatible with direct session.complete_session()
+            if hasattr(session, "complete_session"):
+                session.complete_session()
+            # Force flush memory
+            try:
+                mm = MemoryManager()
+                agent_memories = mm.get_agent_memories(session.session_id)
+                for m in agent_memories:
+                    mm.store_agent_memory(m)
+            except Exception as e:
+                print(f"[Emergency Save] Memory flush failed: {e}")
+            # Force flush prompt
+            try:
+                pm = PromptManager()
+                # === New: Batch export all agent prompt_history and memory ===
+                if hasattr(session, "agents"):
+                    all_prompt_history = []
+                    all_memory = []
+                    for agent in session.agents.values():
+                        # Export each agent's prompt_history
+                        if hasattr(agent, "export_prompt_history_to_file"):
+                            agent.export_prompt_history_to_file(session.session_id)
+                        # Export each agent's memory
+                        if hasattr(agent, "save_memory_to_file"):
+                            agent.save_memory_to_file(session.session_id)
+                        # Merge to summary table
+                        if hasattr(agent, "prompt_history"):
+                            all_prompt_history.extend(agent.prompt_history)
+                        if hasattr(agent, "memory"):
+                            all_memory.extend(agent.memory)
+                    # Merge and export
+                    import json
+                    from pathlib import Path
+
+                    Path("prompts").mkdir(parents=True, exist_ok=True)
+                    with open(
+                        f"prompts/prompt_history_{session.session_id}_all.json",
+                        "w",
+                        encoding="utf-8",
+                    ) as f:
+                        json.dump(all_prompt_history, f, ensure_ascii=False, indent=2)
+                    with open(
+                        f"prompts/agent_memory_{session.session_id}_all.json",
+                        "w",
+                        encoding="utf-8",
+                    ) as f:
+                        json.dump(all_memory, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"[Emergency Save] Prompt flush failed: {e}")
+        print("[Emergency Save] Session, memories, and prompts have been saved.")
+    except Exception as e:
+        print(f"[Emergency Save] Failed: {e}")
+
+
+atexit.register(emergency_save)
+
+
+def signal_handler(sig, frame):
+    """Signal handler to trigger emergency save on Ctrl+C or kill signal."""
+    print(f"\n[Signal Handler] Signal {sig} received, triggering emergency save...")
+    emergency_save()
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # kill
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -1433,3 +1730,4 @@ if __name__ == "__main__":
 def run():
     """Entry point for the CLI script"""
     asyncio.run(main())
+    emergency_save()  # Ensure this line is properly indented under the function
