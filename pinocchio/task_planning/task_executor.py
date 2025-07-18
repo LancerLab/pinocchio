@@ -484,7 +484,7 @@ class TaskExecutor:
                     "Task failed",
                     data={
                         "task_id": task.task_id,
-                        "error_message": msg,
+                        "error_message": result.error_message,
                         "error_details": getattr(result, "error_details", None),
                     },
                     session_id=getattr(plan, "session_id", None) if plan else None,
@@ -492,7 +492,7 @@ class TaskExecutor:
                     duration_ms=(time.time() - start_time) * 1000,
                 )
 
-                yield f"❌ {agent_emoji} {task.agent_type.upper()} failed: {msg}"
+                yield f"❌ {agent_emoji} {task.agent_type.upper()} failed: {result.error_message}"
 
                 # Show detailed error information if verbose is enabled
                 if self.verbose_enabled and self.verbose_level == "detailed":

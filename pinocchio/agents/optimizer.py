@@ -152,7 +152,6 @@ class OptimizerAgent(AgentWithRetry):
                 step_id=request.get("step_id"),
             )
 
-            # Log prompt details
             self.verbose_logger.log_agent_activity(
                 self.agent_type,
                 "Optimization prompt built",
@@ -244,7 +243,6 @@ class OptimizerAgent(AgentWithRetry):
                         output.get("optimization_suggestions", [])
                     ),
                     "optimized_code_length": len(output.get("optimized_code", "")),
-                    # FULL OPTIMIZATION RESULTS FOR LOG
                     "full_optimization_suggestions": output.get(
                         "optimization_suggestions", []
                     ),

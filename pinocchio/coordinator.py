@@ -234,7 +234,7 @@ class Coordinator:
         """Initialize new session."""
         start_time = time.time()
 
-        self.session_logger = SessionLogger(user_prompt, self.sessions_dir)
+        self.current_session = SessionLogger(user_prompt, self.sessions_dir)
 
         # Log verbose session initialization
         verbose_logger = get_verbose_logger()
@@ -242,14 +242,14 @@ class Coordinator:
             "Session initialized",
             data={
                 "user_prompt": user_prompt,
-                "session_id": self.session_logger.session_id,
+                "session_id": self.current_session.session_id,
                 "sessions_dir": self.sessions_dir,
             },
-            session_id=self.session_logger.session_id,
+            session_id=self.current_session.session_id,
             duration_ms=(time.time() - start_time) * 1000,
         )
 
-        yield self.session_logger.log_summary("Session started")
+        yield self.current_session.log_summary("Session started")
 
     async def _create_task_plan(self, user_prompt: str) -> AsyncGenerator[str, None]:
         start_time = time.time()
@@ -396,11 +396,35 @@ class Coordinator:
                     "Invalid task plan",
                     {"errors": validation["errors"]},
                 )
-                yield self.session_logger.log_summary(f"❌ {error_msg}")
-                raise ValueError(error_msg)
+                raise Exception("Task plan validation failed")
+
+            # Log verbose task plan creation
+            verbose_logger = get_verbose_logger()
+            verbose_logger.log_coordinator_activity(
+                "Task plan created",
+                data={
+                    "task_count": len(self.current_plan.tasks),
+                    "validation": validation,
+                    "plan_id": getattr(self.current_plan, "id", None),
+                },
+                session_id=self.current_session.session_id,
+                duration_ms=(time.time() - start_time) * 1000,
+            )
+
         except Exception as e:
+            # Log verbose error
+            verbose_logger = get_verbose_logger()
             verbose_logger.log(
-                LogLevel.ERROR, "coordinator", "Task planning failed", {"error": str(e)}
+                LogLevel.ERROR,
+                "coordinator",
+                f"Failed to create task plan: {str(e)}",
+                data={"error": str(e), "user_prompt": user_prompt},
+                session_id=self.current_session.session_id,
+                duration_ms=(time.time() - start_time) * 1000,
+            )
+
+            yield self.current_session.log_summary(
+                f"❌ Failed to create task plan: {str(e)}"
             )
             yield self.session_logger.log_summary(f"💥 Task planning failed: {str(e)}")
             logger.exception("Task planning failed")
@@ -461,6 +485,17 @@ class Coordinator:
             session_id=self.session_logger.session_id,
         )
 
+        # Log verbose execution start
+        verbose_logger = get_verbose_logger()
+        verbose_logger.log_coordinator_activity(
+            "Task execution started",
+            data={
+                "task_count": len(self.current_plan.tasks),
+                "plan_id": getattr(self.current_plan, "id", None),
+            },
+            session_id=self.current_session.session_id,
+        )
+
         # Pass SessionLogger to TaskExecutor
         self.task_executor.session_logger = self.session_logger
 
@@ -480,7 +515,7 @@ class Coordinator:
                         "final_result": self._final_result,
                         "plan_id": getattr(self.current_plan, "id", None),
                     },
-                    session_id=self.session_logger.session_id,
+                    session_id=self.current_session.session_id,
                     duration_ms=(time.time() - start_time) * 1000,
                 )
 

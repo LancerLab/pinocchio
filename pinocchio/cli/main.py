@@ -20,7 +20,6 @@ from pinocchio.config.config_manager import ConfigManager, get_config_value
 from pinocchio.coordinator import Coordinator
 from pinocchio.data_models.task_planning import AgentType, Task, TaskStatus
 from pinocchio.session.models.session import Session
-from pinocchio.utils.file_utils import get_output_path
 from pinocchio.utils.verbose_logger import (
     LogLevel,
     VerboseLogger,
@@ -841,6 +840,22 @@ class PinocchioCLI:
         )
         console.print(panel)
 
+    def show_performance_metrics(self):
+        """Display performance metrics."""
+        self.verbose_logger.display_performance_summary()
+
+    def export_verbose_logs(self, file_path: str = None):
+        """Export verbose logs to file."""
+        if not file_path:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            file_path = f"./logs/verbose_export_{timestamp}.json"
+
+        try:
+            self.verbose_logger.export_entries(Path(file_path))
+            self.console.print(f"[green]Verbose logs exported to: {file_path}[/green]")
+        except Exception as e:
+            self.console.print(f"[red]Failed to export logs: {e}[/red]")
+
     def toggle_verbose_mode(self):
         """Toggle verbose logging mode."""
         self.verbose_mode = not self.verbose_mode
@@ -864,22 +879,6 @@ class PinocchioCLI:
                 data={"mode": "disabled"},
             )
             self.console.print("[yellow]Verbose logging disabled[/yellow]")
-
-    def show_performance_metrics(self):
-        """Display performance metrics."""
-        self.verbose_logger.display_performance_summary()
-
-    def export_verbose_logs(self, file_path: str = None):
-        """Export verbose logs to file."""
-        if not file_path:
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            file_path = f"./logs/verbose_export_{timestamp}.json"
-
-        try:
-            self.verbose_logger.export_entries(Path(file_path))
-            self.console.print(f"[green]Verbose logs exported to: {file_path}[/green]")
-        except Exception as e:
-            self.console.print(f"[red]Failed to export logs: {e}[/red]")
 
     def show_session_summary(self, session_id: str = None):
         """Display session summary."""
@@ -1722,6 +1721,7 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
 signal.signal(signal.SIGTERM, signal_handler)  # kill
+
 
 if __name__ == "__main__":
     asyncio.run(main())
