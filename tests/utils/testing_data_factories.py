@@ -102,23 +102,31 @@ def create_test_session(
     runtime_seconds: Optional[float] = None,
 ) -> Session:
     """Create a test Session instance with default values."""
-    return Session(
-        session_id=session_id,
+    # Create session with only the parameters the constructor accepts
+    session = Session(
         task_description=task_description,
-        status=status,
-        agent_interactions=agent_interactions or [],
-        optimization_iterations=optimization_iterations or [],
-        performance_trend=performance_trend or [],
-        memory_versions=memory_versions or [],
-        prompt_versions=prompt_versions or [],
-        knowledge_versions=knowledge_versions or [],
-        code_version_ids=code_version_ids or [],
-        target_performance=target_performance or {},
-        metadata=metadata or {},
-        creation_time=creation_time or datetime.utcnow(),
-        end_time=end_time,
-        runtime_seconds=runtime_seconds,
+        target_performance=target_performance or {}
     )
+
+    # Set additional attributes after creation
+    session.session_id = session_id
+    session.status = status
+    session.agent_interactions = agent_interactions or []
+    session.optimization_iterations = optimization_iterations or []
+    session.performance_trend = performance_trend or []
+    session.memory_versions = memory_versions or []
+    session.prompt_versions = prompt_versions or []
+    session.knowledge_versions = knowledge_versions or []
+    session.metadata = metadata or {}
+
+    if creation_time:
+        session.creation_time = creation_time
+    if end_time:
+        session.end_time = end_time
+    if runtime_seconds:
+        session.runtime_seconds = runtime_seconds
+
+    return session
 
 
 def create_simple_task_plan() -> TaskPlan:

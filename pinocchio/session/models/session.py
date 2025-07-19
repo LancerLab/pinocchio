@@ -68,8 +68,10 @@ class Session(BaseModel):
         self, task_description: str, target_performance: Optional[Dict[str, Any]] = None
     ):
         """Initialize the session model."""
-        self.task_description = task_description
-        self.target_performance = target_performance
+        super().__init__(
+            task_description=task_description,
+            target_performance=target_performance
+        )
 
     def __del__(self):
         """Clean up resources when the session model is deleted."""

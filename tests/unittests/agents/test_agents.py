@@ -94,7 +94,7 @@ class TestGeneratorAgent:
         assert "maximize_throughput" in prompt
         assert "minimize_memory_usage" in prompt
         assert "Context:" in prompt
-        assert "Instructions for Code Generation" in prompt
+        assert "Generator Agent Instructions" in prompt
 
     def test_process_generation_response(self, generator_agent):
         """Test response processing."""
@@ -136,7 +136,7 @@ class TestGeneratorAgent:
             assert isinstance(result["code"], str)
             assert len(result["code"]) > 0
             assert "language" in result
-            assert result["language"] == "choreo_dsl"
+            assert result["language"] == "cuda"
 
 
 class TestBaseAgent:

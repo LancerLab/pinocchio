@@ -46,6 +46,7 @@ class TestAgentSpecificConfig:
 
             # Mock the agent-specific config
             mock_llm_config = LLMConfigEntry(
+                id="generator-llm",
                 provider=LLMProvider.CUSTOM,
                 model_name="generator-specific-model",
                 base_url="http://generator:8001",
@@ -73,6 +74,7 @@ class TestAgentSpecificConfig:
         ) as mock_config_manager_class:
             mock_config_manager = MagicMock()
             mock_llm_config = LLMConfigEntry(
+                id="optimizer-llm",
                 provider=LLMProvider.CUSTOM,
                 model_name="optimizer-specific-model",
                 base_url="http://optimizer:8001",
@@ -97,6 +99,7 @@ class TestAgentSpecificConfig:
         ) as mock_config_manager_class:
             mock_config_manager = MagicMock()
             mock_llm_config = LLMConfigEntry(
+                id="debugger-llm",
                 provider=LLMProvider.CUSTOM,
                 model_name="debugger-specific-model",
                 base_url="http://debugger:8001",
@@ -119,6 +122,7 @@ class TestAgentSpecificConfig:
         ) as mock_config_manager_class:
             mock_config_manager = MagicMock()
             mock_llm_config = LLMConfigEntry(
+                id="evaluator-llm",
                 provider=LLMProvider.CUSTOM,
                 model_name="evaluator-specific-model",
                 base_url="http://evaluator:8001",
@@ -179,6 +183,7 @@ class TestAgentSpecificConfig:
         ) as mock_config_manager_class:
             mock_config_manager = MagicMock()
             mock_llm_config = LLMConfigEntry(
+                id="test-llm",
                 provider=LLMProvider.CUSTOM,
                 model_name="test-model",
                 base_url="http://test:8001",
