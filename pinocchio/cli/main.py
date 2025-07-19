@@ -1155,7 +1155,7 @@ Task ID: {task.task_id}
         # After the loop, ensure emergency_save is called
         import asyncio
 
-        asyncio.run(asyncio.to_thread(emergency_save))
+        await asyncio.to_thread(emergency_save)
 
 
 # Legacy functions for backward compatibility

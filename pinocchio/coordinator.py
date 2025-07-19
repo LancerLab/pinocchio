@@ -235,6 +235,7 @@ class Coordinator:
         start_time = time.time()
 
         self.current_session = SessionLogger(user_prompt, self.sessions_dir)
+        self.session_logger = self.current_session  # Fix: Set session_logger to current_session
 
         # Log verbose session initialization
         verbose_logger = get_verbose_logger()
