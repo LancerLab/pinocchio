@@ -165,7 +165,7 @@ class TestAgentPromptsUsage:
 
         # Validate prompt contains expected sections
         expected_sections = [
-            "CUDA programming expert",
+            "CUDA programming specialist",
             "code generation",
             "optimization guidelines",
             "memory management",

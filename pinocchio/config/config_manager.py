@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-from pinocchio.config.llm_config import LLMProvider
+from .models import LLMProvider
 
 from ..utils.file_utils import ensure_directory, safe_read_json, safe_write_json
 from .models import (
