@@ -405,24 +405,22 @@ class TaskExecutor:
             {"task_id": getattr(task, "task_id", None)},
         )
         agent_request = self._prepare_agent_request(task, safe_execution_results)
-        agent_response = None
+        result = None
         try:
-            agent_response = await self._execute_task(task, safe_execution_results)
+            result = await self._execute_task(task, safe_execution_results)
         finally:
             if session_logger:
                 session_logger.log_communication(
                     step_id=task.task_id,
                     agent_type=task.agent_type,
                     request=agent_request,
-                    response=agent_response
-                    if agent_response
+                    response=result
+                    if result
                     else {"error": "No response"},
                 )
 
         try:
-            result = await self._execute_task(task, safe_execution_results)
-
-            if result.success:
+            if result and result.success:
                 task.mark_completed(result)
                 completed_tasks.append(task.task_id)
                 execution_results[task.task_id] = result.output
@@ -473,7 +471,14 @@ class TaskExecutor:
                         yield f"   🤖 LLM calls: {result.llm_calls}"
 
             else:
-                msg = result.error_message or "Unknown error"
+                # Handle case where result is None or result.success is False
+                if result is None:
+                    msg = "Agent execution returned None"
+                    error_message = "Agent execution returned None"
+                else:
+                    msg = result.error_message or "Unknown error"
+                    error_message = result.error_message
+
                 task.mark_failed(msg)
                 failed_tasks.append(task.task_id)
 
@@ -484,15 +489,15 @@ class TaskExecutor:
                     "Task failed",
                     data={
                         "task_id": task.task_id,
-                        "error_message": result.error_message,
-                        "error_details": getattr(result, "error_details", None),
+                        "error_message": error_message,
+                        "error_details": getattr(result, "error_details", None) if result else None,
                     },
                     session_id=getattr(plan, "session_id", None) if plan else None,
                     step_id=task.task_id,
                     duration_ms=(time.time() - start_time) * 1000,
                 )
 
-                yield f"❌ {agent_emoji} {task.agent_type.upper()} failed: {result.error_message}"
+                yield f"❌ {agent_emoji} {task.agent_type.upper()} failed: {error_message}"
 
                 # Show detailed error information if verbose is enabled
                 if self.verbose_enabled and self.verbose_level == "detailed":
