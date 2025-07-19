@@ -364,6 +364,8 @@ class EvaluatorAgent(AgentWithRetry):
                 step_id=request.get("step_id"),
             )
 
+            return response
+
         except Exception as e:
             # Log evaluation error with detailed error information
             self.verbose_logger.log(
