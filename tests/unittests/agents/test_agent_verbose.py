@@ -5,6 +5,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+
 from pinocchio.agents.debugger import DebuggerAgent
 from pinocchio.agents.evaluator import EvaluatorAgent
 from pinocchio.agents.generator import GeneratorAgent
@@ -13,6 +15,7 @@ from pinocchio.config import ConfigManager
 from pinocchio.utils.verbose_logger import VerboseLogger, set_verbose_logger
 
 
+@pytest.mark.asyncio
 async def test_agent_verbose():
     """Test verbose functionality for all agents."""
     print("🧪 Testing Agent Verbose Functionality")
