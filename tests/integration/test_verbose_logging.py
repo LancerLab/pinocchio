@@ -13,7 +13,7 @@ from pinocchio.utils.verbose_logger import (
 )
 
 
-async def test_verbose_logging():
+def test_verbose_logging():
     """Test verbose logging functionality."""
     print("🧪 Testing Verbose Logging System")
     print("=" * 50)

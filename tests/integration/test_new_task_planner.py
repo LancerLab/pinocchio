@@ -121,7 +121,7 @@ async def test_new_task_planner():
         return False
 
 
-async def test_prompt_format():
+def test_prompt_format():
     """Test the new prompt format."""
     print("\n🧪 Testing new prompt format...")
 

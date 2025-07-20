@@ -143,7 +143,7 @@ def test_eval_tools():
         print(f"Profiling error (expected if nvprof not available): {result.error}")
 
 
-async def test_debugger_agent():
+def test_debugger_agent():
     """Test debugger agent with tools integration."""
     print("\n=== Testing Debugger Agent Integration ===")
 
@@ -161,12 +161,15 @@ async def test_debugger_agent():
             "step_id": "debug_step_1",
         }
 
-        # Execute debugging
-        response = await debugger.execute(request)
+        # Execute debugging using synchronous wrapper
+        response = debugger.analyze_code_issues(
+            request["code"],
+            request.get("error_message", "")
+        )
 
-        print(f"Debugger response success: {response.success}")
+        print(f"Debugger response success: {bool(response)}")
         print(
-            f"Debugger response keys: {list(response.output.keys()) if hasattr(response, 'output') and response.output else 'No output'}"
+            f"Debugger response keys: {list(response.keys()) if response else 'No output'}"
         )
 
         if hasattr(response, "output") and response.output:
@@ -184,7 +187,7 @@ async def test_debugger_agent():
         traceback.print_exc()
 
 
-async def test_evaluator_agent():
+def test_evaluator_agent():
     """Test evaluator agent with tools integration."""
     print("\n=== Testing Evaluator Agent Integration ===")
 
@@ -210,12 +213,12 @@ async def test_evaluator_agent():
             "step_id": "eval_step_1",
         }
 
-        # Execute evaluation
-        response = await evaluator.execute(request)
+        # Execute evaluation using synchronous wrapper
+        response = evaluator.evaluate_performance(request["code"])
 
-        print(f"Evaluator response success: {response.success}")
+        print(f"Evaluator response success: {bool(response)}")
         print(
-            f"Evaluator response keys: {list(response.output.keys()) if hasattr(response, 'output') and response.output else 'No output'}"
+            f"Evaluator response keys: {list(response.keys()) if response else 'No output'}"
         )
 
         if hasattr(response, "output") and response.output:
@@ -237,7 +240,7 @@ async def test_evaluator_agent():
         traceback.print_exc()
 
 
-async def main():
+def main():
     """Main test function."""
     print("Starting MCP Tools Integration Tests")
     print("=" * 50)
@@ -250,8 +253,8 @@ async def main():
     test_eval_tools(tool_manager)
 
     # Test agent integration
-    await test_debugger_agent()
-    await test_evaluator_agent()
+    test_debugger_agent()
+    test_evaluator_agent()
 
     print("\n" + "=" * 50)
     print("MCP Tools Integration Tests Completed")

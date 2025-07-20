@@ -200,5 +200,7 @@ memories/*
 !memories/.gitkeep
 sessions/*
 !sessions/.gitkeep
+test_memory/*
+test_prompts/*
 
 # Keep directory structure but ignore content, for artifact archiving and directory management
