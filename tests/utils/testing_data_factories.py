@@ -139,6 +139,12 @@ def create_simple_task_plan() -> TaskPlan:
                 task_id="task_1",
                 agent_type=AgentType.GENERATOR,
                 description="Generate code",
+                input_data={
+                    "user_request": "Generate a simple function",
+                    "code_type": "function",
+                    "requirements": {"language": "python"}
+                },
+                requirements={"language": "python"}
             )
         ],
     )
@@ -150,6 +156,12 @@ def create_multi_task_plan() -> TaskPlan:
         task_id="task_1",
         agent_type=AgentType.GENERATOR,
         description="Generate code",
+        input_data={
+            "user_request": "Generate code",
+            "code_type": "function",
+            "requirements": {"language": "python"}
+        },
+        requirements={"language": "python"}
     )
 
     task2 = create_test_task(
@@ -157,6 +169,10 @@ def create_multi_task_plan() -> TaskPlan:
         agent_type=AgentType.DEBUGGER,
         description="Debug code",
         dependencies=[create_test_task_dependency("task_1", "required")],
+        input_data={
+            "user_request": "Debug code",
+            "code_type": "function"
+        }
     )
 
     task3 = create_test_task(
@@ -164,6 +180,10 @@ def create_multi_task_plan() -> TaskPlan:
         agent_type=AgentType.OPTIMIZER,
         description="Optimize code",
         dependencies=[create_test_task_dependency("task_2", "required")],
+        input_data={
+            "user_request": "Optimize code",
+            "code_type": "function"
+        }
     )
 
     return create_test_task_plan(

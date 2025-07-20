@@ -60,9 +60,13 @@ def test_tool_manager():
     return tool_manager
 
 
-def test_debug_tools(tool_manager):
+def test_debug_tools():
     """Test CUDA debugging tools."""
     print("\n=== Testing Debug Tools ===")
+
+    # Create tool manager and register tools
+    tool_manager = ToolManager()
+    CudaDebugTools.register_tools(tool_manager)
 
     # Test syntax checker
     print("\n--- Testing Syntax Checker ---")
@@ -96,9 +100,13 @@ def test_debug_tools(tool_manager):
         )
 
 
-def test_eval_tools(tool_manager):
+def test_eval_tools():
     """Test CUDA evaluation tools."""
     print("\n=== Testing Evaluation Tools ===")
+
+    # Create tool manager and register tools
+    tool_manager = ToolManager()
+    CudaEvalTools.register_tools(tool_manager)
 
     # Test performance analyzer
     print("\n--- Testing Performance Analyzer ---")

@@ -9,6 +9,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add the project root to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
@@ -18,6 +20,7 @@ from pinocchio.llm.mock_client import MockLLMClient
 from pinocchio.utils.verbose_logger import VerboseLogger, set_verbose_logger
 
 
+@pytest.mark.asyncio
 async def test_dry_run_workflow():
     """Test dry-run workflow with mock LLM client."""
     print("🧪 Testing Pinocchio CLI --dry-run functionality")

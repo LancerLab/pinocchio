@@ -6,6 +6,8 @@ import json
 import os
 import sys
 
+import pytest
+
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -13,6 +15,7 @@ from pinocchio.llm.mock_client import MockLLMClient
 from pinocchio.task_planning.task_planner import TaskPlanner
 
 
+@pytest.mark.asyncio
 async def test_new_task_planner():
     """Test the new TaskPlanner design."""
     print("🧪 Testing new TaskPlanner design...")
@@ -158,6 +161,7 @@ async def test_prompt_format():
         return True
 
 
+@pytest.mark.asyncio
 async def test_parsing():
     """Test the parsing logic."""
     print("\n🧪 Testing parsing logic...")
