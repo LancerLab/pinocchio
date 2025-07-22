@@ -48,7 +48,9 @@ class KnowledgeFragment(BaseModel):
     title: str
     content: Any  # Can be structured JSON or Markdown text
     content_type: KnowledgeContentType
-    version: str
+    version: str = Field(
+        default_factory=lambda: f"v{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     parent_version: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)

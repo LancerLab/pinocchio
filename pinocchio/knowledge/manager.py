@@ -568,7 +568,7 @@ float value = data[tid]; // consecutive access across warp
 float value = data[tid * stride]; // strided access""",
                 "description": "Guide to CUDA memory coalescing optimization",
                 "category": KnowledgeCategory.OPTIMIZATION,
-                "content_type": KnowledgeContentType.DOCUMENTATION,
+                "content_type": KnowledgeContentType.TEXT,
                 "tags": ["cuda", "memory", "coalescing", "performance", "optimization"],
             }
         ]

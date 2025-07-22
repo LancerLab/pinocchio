@@ -325,10 +325,13 @@ class PromptMemory:
         self, agent_type: AgentType, template_name: str
     ) -> Optional[PromptTemplate]:
         """Get a template by agent type and name."""
-        if agent_type not in self.agent_templates:
+        agent_types_in_memory = {at.value: at for at in self.agent_templates.keys()}
+
+        if agent_type.value not in agent_types_in_memory:
             return None
 
-        version_id = self.agent_templates[agent_type].get(template_name)
+        memory_agent_type = agent_types_in_memory[agent_type.value]
+        version_id = self.agent_templates[memory_agent_type].get(template_name)
         if version_id is None:
             return None
 
