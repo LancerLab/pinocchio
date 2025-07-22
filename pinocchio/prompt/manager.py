@@ -461,7 +461,23 @@ class PromptManager:
             ] = self._format_knowledge_for_prompt(knowledge_context)
 
         # Format template with enhanced context
-        prompt = self.formatter.format_template(template.content, enhanced_variables)
+        prompt = self.formatter.format_template(template.input_schema.requirements, enhanced_variables)
+        
+        # 读取./prompt_storage/common_knowledge/cuda_example.cu文件的代码，将其作为cuda代码拼接在prompt后面
+        cuda_example_path = Path("./prompt_storage/common_knowledge/cuda_example.cu")
+        if cuda_example_path.exists():
+            with open(cuda_example_path, "r", encoding="utf-8") as f:
+                cuda_code = f.read()
+            prompt += f"\n\n```cuda\n{cuda_code}\n```"
+        
+        # 读取./prompt_storage/common_knowledge/hardware_specification.json的文件，将其作为对GPU硬件规格的描述拼接在prompt后面
+        hardware_spec_path = Path("./prompt_storage/common_knowledge/hardware_specification.json")
+        if hardware_spec_path.exists():
+            with open(hardware_spec_path, "r", encoding="utf-8") as f:
+                hardware_spec = json.load(f)
+            hardware_description = json.dumps(hardware_spec, indent=2)
+            prompt += f"\n\n## GPU Hardware Specification:\n{hardware_description}"
+        
         # New: Save prompt and response to storage_path/{session_id}/{agent_type}/{step_id}_prompt.txt
         if prompt and session_id and agent_type:
             try:
@@ -589,6 +605,7 @@ class PromptManager:
         self,
         agent_type: Any,  # allow str or AgentType
         task_description: str,
+        user_request: Optional[str] = None,
         session_id: Optional[str] = None,
         code: Optional[str] = None,
         keywords: Optional[List[str]] = None,
