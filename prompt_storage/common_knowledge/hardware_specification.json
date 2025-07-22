@@ -1,0 +1,75 @@
+{
+    "GPU_BEST_PRACTICES": [
+        "Find ways to parallelize sequential code.",
+        "Minimize data transfers between the host and the device.",
+        "Adjust kernel launch configuration to maximize device utilization.",
+        "Ensure that global memory accesses are coalesced.",
+        "Minimize redundant accesses to global memory whenever possible.",
+        "Avoid long sequences of diverged execution by threads within the same warp.",
+        "Use specialized instructions based on the specific GPU architecture"
+    ],
+    "GPU_DEFINITIONS": {
+        "Thread": "A thread is a single execution unit that can run a single instruction at a time.",
+        "Thread Block": "A thread block is a group of threads that can cooperate with each other.",
+        "Warp": "A warp is a group of threads that are scheduled together and execute in parallel.",
+        "Shared Memory": "Shared memory is a memory space that can be accessed by all threads in a thread block.",
+        "Register": "A register is a small memory space that can be accessed by a single thread.",
+        "Memory Hierarchy": "Memory hierarchy is a pyramid of memory types with different speeds and sizes.",
+        "Memory Bandwidth": "Memory bandwidth is the rate at which data can be read from or stored into memory.",
+        "Cache": "Cache is a small memory space that stores frequently accessed data."
+    },
+    "SPECIFIC_GPU_ARCHITECTURE": {
+        "H100": {
+            "GPU Architecture": "Hopper",
+            "GPU Memory": "80GB",
+            "Memory Bandwidth": "3.35 TB/s",
+            "FP64 TFLOPS": "34",
+            "FP64 Tensor Core TFLOPS": "67",
+            "FP32 TFLOPS": "67",
+            "TF32 Tensor Core TFLOPS": "989 with sparsity",
+            "BFLOAT16 Tensore Core TFLOPS": "1979 with sparsity",
+            "FP16 Tensor Core TFLOPS": "1979 with sparsity",
+            "FP8 Tensor Core TFLOPS": "3958 with sparsity",
+            "INT8 Tensor Core TOPS": "3958 with sparsity",
+            "Register File Size": "64K 32-bit registers per SM",
+            "Maximum number of registers per thread": "255",
+            "Maximum number of thread blocks per SM": "32",
+            "Shared memory capacity per SM": "228 KB",
+            "Maximum shared memory per thread block": "227 KB"
+        },
+        "A100": {
+            "GPU Architecture": "Ampere",
+            "GPU Memory": "40GB",
+            "Memory Bandwidth": "1935 GB/s",
+            "FP64 TFLOPS": "9.7",
+            "FP64 Tensor Core TFLOPS": "19.5",
+            "FP32 TFLOPS": "19.5",
+            "TF32 Tensor Core TFLOPS": "156 (312 with sparsity)",
+            "BFLOAT16 Tensore Core TFLOPS": "312 (624 with sparsity)",
+            "FP16 Tensor Core TFLOPS": "312 (624 with sparsity)",
+            "INT8 Tensor Core TOPS": "624 (1248 with sparsity)",
+            "Register File Size": "64K 32-bit registers per SM",
+            "Maximum number of registers per thread": "255",
+            "Maximum number of thread blocks per SM": "32",
+            "Shared memory capacity per SM": "164 KB",
+            "Maximum shared memory per thread block": "163 KB"
+        },
+        "A100-80GB": {
+            "GPU Architecture": "Ampere",
+            "GPU Memory": "80GB",
+            "Memory Bandwidth": "1935 GB/s",
+            "FP64 TFLOPS": "9.7",
+            "FP64 Tensor Core TFLOPS": "19.5",
+            "FP32 TFLOPS": "19.5",
+            "TF32 Tensor Core TFLOPS": "156 (312 with sparsity)",
+            "BFLOAT16 Tensore Core TFLOPS": "312 (624 with sparsity)",
+            "FP16 Tensor Core TFLOPS": "312 (624 with sparsity)",
+            "INT8 Tensor Core TOPS": "624 (1248 with sparsity)",
+            "Register File Size": "64K 32-bit registers per SM",
+            "Maximum number of registers per thread": "255",
+            "Maximum number of thread blocks per SM": "32",
+            "Shared memory capacity per SM": "164 KB",
+            "Maximum shared memory per thread block": "163 KB"
+        }
+    }
+}
