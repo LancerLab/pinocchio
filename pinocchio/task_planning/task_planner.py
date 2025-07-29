@@ -16,6 +16,7 @@ from ..data_models.task_planning import (
     AgentType,
     Task,
     TaskDependency,
+    TaskImpact,
     TaskPlan,
     TaskPriority,
 )
@@ -453,31 +454,61 @@ Optimizer enabled: No
             raise FileNotFoundError(f"workflow.json not found at {workflow_path}")
         with open(workflow_path, "r", encoding="utf-8") as f:
             workflow_data = json.load(f)
-        steps = workflow_data.get("workflow", [])
+        iteration = workflow_data.get("iteration", 1)
+        steps = workflow_data.get("steps", [])
         tasks = []
-        task_name_to_index = {step["task"]: idx for idx, step in enumerate(steps)}
-        for idx, step in enumerate(steps):
-            agent_type = AgentType[step["agent"].upper()]
-            task_id = f"task_{idx+1}"
-            dependencies = [
-                TaskDependency(
-                    task_id=f"task_{task_name_to_index[dep]+1}",
-                    dependency_type="required",
+
+        task_name_to_index = {}
+        for iter_idx in range(iteration):
+            for idx, step in enumerate(steps):
+                task_name_to_index[f"{step['task']}_{iter_idx+1}"] = iter_idx*len(steps)+idx
+                
+        for iter_idx in range(iteration):
+            for idx, step in enumerate(steps):
+                agent_type = AgentType[step["agent"].upper()]
+                task_id = f"task_{idx+iter_idx*len(steps)+1}"
+                     
+                dependencies = []
+                for dep in step.get("depends_on", []):
+                    order = dep.get('order', 0)
+                    
+                    if iter_idx+order < 0:
+                        continue
+                    
+                    dep_key = f"{dep['task']}_{iter_idx+1+order}"
+                    if dep_key in task_name_to_index:
+                        dep_index = task_name_to_index[dep_key]
+                        dependencies.append(
+                            TaskDependency(
+                                task_id=f"task_{dep_index+1}",
+                                dependency_type="required"
+                            )
+                        )
+                
+                impacts = []
+                for impact in step.get("impacts_on", []):
+                    impact_key = f"{impact['task']}_{iter_idx+1}"
+                    impact_task_id = f"task_{task_name_to_index[impact_key]+1}"
+                    impacts.append(
+                        TaskImpact(
+                            task_id=impact_task_id,
+                            action=impact.get("impact_type", "skip"),
+                            condition=impact.get("condition", None)
+                        )
+                    )
+
+                task = Task(
+                    task_id=task_id,
+                    agent_type=agent_type,
+                    task_description=step.get("description", f"{step['agent']} step"),
+                    requirements=step.get("requirements", {}),
+                    optimization_goals=step.get("optimization_goals", []),
+                    priority=TaskPriority.MEDIUM,
+                    dependencies=dependencies,
+                    impacts=impacts,
+                    input_data={"user_request": user_request, "workflow_step": step},
                 )
-                for dep in step.get("depends_on", [])
-                if dep in task_name_to_index
-            ]
-            task = Task(
-                task_id=task_id,
-                agent_type=agent_type,
-                task_description=step.get("description", f"{step['agent']} step"),
-                requirements=step.get("requirements", {}),
-                optimization_goals=step.get("optimization_goals", []),
-                priority=TaskPriority.MEDIUM,
-                dependencies=dependencies,
-                input_data={"user_request": user_request, "workflow_step": step},
-            )
-            tasks.append(task)
+                tasks.append(task)
         return tasks
 
     def validate_plan(self, plan: TaskPlan) -> Dict[str, Any]:

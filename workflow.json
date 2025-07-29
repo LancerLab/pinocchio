@@ -1,27 +1,43 @@
 {
-  "workflow": [
+  "iteration": 2,
+  "steps": [
     {
       "task": "generate_code",
       "agent": "generator",
-      "description": "Generate initial code"
+      "description": "Generate initial code",
+      "depends_on": [
+        {
+          "task": "evaluate_code",
+          "order": -1
+        }
+      ]
     },
     {
       "task": "debug_code",
       "agent": "debugger",
       "description": "Debug and validate code",
-      "depends_on": ["generate_code"]
+      "depends_on": [
+        {
+          "task": "generate_code"
+        }
+      ],
+      "impacts_on": [
+        {
+          "task": "evaluate_code",
+          "action": "skip",
+          "condition": "failed"
+        }
+      ]
     },
     {
       "task": "evaluate_code",
       "agent": "evaluator",
       "description": "Evaluate code",
-      "depends_on": ["debug_code"]
-    },
-    {
-      "task": "optimize_code",
-      "agent": "optimizer",
-      "description": "Optimize code",
-      "depends_on": ["evaluate_code"]
+      "depends_on": [
+        {
+          "task": "debug_code"
+        }
+      ]
     }
   ]
 }

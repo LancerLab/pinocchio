@@ -47,6 +47,15 @@ class TaskDependency:
 
 
 @dataclass
+class TaskImpact:
+    """Task impact information."""
+
+    task_id: str
+    action: str = "skip"  # skip, cancel
+    condition: Optional[str] = None  # condition for conditional impacts
+    
+
+@dataclass
 class TaskResult:
     """Result of task execution."""
 
@@ -89,6 +98,9 @@ class Task(BaseModel):
     )
     dependencies: List[TaskDependency] = Field(
         default_factory=list, description="Task dependencies"
+    )
+    impacts: List[TaskImpact] = Field(
+        default_factory=list, description="Task impacts on other tasks"
     )
 
     # Execution metadata
@@ -176,6 +188,10 @@ class Task(BaseModel):
         self.error_count += 1
         self.result = TaskResult(success=False, output={}, error_message=error_message)
 
+    def mark_skipped(self) -> None:
+        """Mark task as skipped."""
+        self.status = TaskStatus.SKIPPED
+    
     def should_retry(self) -> bool:
         """Check if task should be retried."""
         return self.status == TaskStatus.FAILED and self.retry_count < self.max_retries
@@ -242,14 +258,14 @@ class TaskPlan(BaseModel):
         Returns:
             List of tasks ready for execution
         """
-        completed_tasks = [
-            task.task_id for task in self.tasks if task.status == TaskStatus.COMPLETED
+        executed_tasks = [
+            task.task_id for task in self.tasks if (task.status == TaskStatus.COMPLETED or task.status == TaskStatus.FAILED)
         ]
 
         ready_tasks = []
         for task in self.tasks:
             # Only allow PENDING status tasks to enter ready_tasks, to prevent re-execution
-            if task.status == TaskStatus.PENDING and task.can_execute(completed_tasks):
+            if (task.status == TaskStatus.PENDING or task.status == TaskStatus.SKIPPED) and task.can_execute(executed_tasks):
                 ready_tasks.append(task)
 
         return ready_tasks

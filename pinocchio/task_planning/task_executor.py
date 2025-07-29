@@ -257,21 +257,6 @@ class TaskExecutor:
         completed_tasks = []
         failed_tasks = []
         execution_results = {}
-        self._trace_collection(
-            completed_tasks,
-            "plan.completed_tasks",
-            {"plan_id": getattr(plan, "plan_id", None)},
-        )
-        self._trace_collection(
-            failed_tasks,
-            "plan.failed_tasks",
-            {"plan_id": getattr(plan, "plan_id", None)},
-        )
-        self._trace_collection(
-            execution_results,
-            "plan.execution_results",
-            {"plan_id": getattr(plan, "plan_id", None)},
-        )
 
         # Execute tasks
         async for msg in self._execute_tasks(
@@ -320,7 +305,7 @@ class TaskExecutor:
         """Execute tasks in the plan."""
         # Enhanced termination logic: as long as all tasks are not PENDING, stop
         while (
-            any(task.status == TaskStatus.PENDING for task in plan.tasks)
+            any(task.status == TaskStatus.PENDING or task.status == TaskStatus.SKIPPED for task in plan.tasks)
             and not plan.is_failed()
         ):
             # Get ready tasks
@@ -399,11 +384,11 @@ class TaskExecutor:
         # Record input/output summary to SessionLogger
         session_logger = getattr(plan, "session_logger", None)
         safe_execution_results = execution_results or {}
-        self._trace_collection(
-            safe_execution_results,
-            "execution_results",
-            {"task_id": getattr(task, "task_id", None)},
-        )
+        # self._trace_collection(
+        #     safe_execution_results,
+        #     "execution_results",
+        #     {"task_id": getattr(task, "task_id", None)},
+        # )
         agent_request = self._prepare_agent_request(task, safe_execution_results)
         result = None
         try:
@@ -503,6 +488,22 @@ class TaskExecutor:
                 if self.verbose_enabled and self.verbose_level == "detailed":
                     if hasattr(result, "error_details"):
                         yield f"   🔍 Error details: {result.error_details}"
+            
+            # Handle Impacts on other tasks
+            if task.impacts:
+                for impact in task.impacts:
+                    impacted_task = next(
+                        (t for t in plan.tasks if t.task_id == impact.task_id), None
+                    )
+                    if impacted_task:
+                        # if not satify conditon, skip impact
+                        if impact["condition"] and not impact["condition"] != task.status.value:
+                            continue
+                        
+                        # Can support more actions
+                        elif impact.action == "skip":
+                            impacted_task.mark_skipped()
+                            yield f"   ⏭️ Skipped {impacted_task.task_id} due to impact from {task.task_id}"
 
         except Exception as e:
             error_msg = f"Exception in task {task.task_id}: {str(e)}"
@@ -840,6 +841,22 @@ class TaskExecutor:
         Returns:
             TaskResult with execution results
         """
+        
+        # return if taks is skipped
+        if task.status == TaskStatus.SKIPPED:
+            result = TaskResult(
+                success=False,
+                output=None,
+                error_message="SKIPPED due to previous task failure",
+                execution_time_ms=0,
+                metadata={
+                    "agent_type": task.agent_type,
+                    "task_id": task.task_id
+                },
+            )
+
+            return result
+        
         task.mark_started()
 
         # Get the appropriate agent
@@ -856,11 +873,11 @@ class TaskExecutor:
         try:
             # Build request
             safe_previous_results = previous_results or {}
-            self._trace_collection(
-                safe_previous_results,
-                "previous_results",
-                {"task_id": getattr(task, "task_id", None)},
-            )
+            # self._trace_collection(
+            #     safe_previous_results,
+            #     "previous_results",
+            #     {"task_id": getattr(task, "task_id", None)},
+            # )
             request = self._prepare_agent_request(task, safe_previous_results)
             # Tracing: log request code
             get_verbose_logger().log_agent_activity(
@@ -908,13 +925,13 @@ class TaskExecutor:
         # Extract code from previous results if available
         code = None
         safe_previous_results = previous_results or {}
-        self._trace_collection(
-            safe_previous_results,
-            "previous_results",
-            {"task_id": getattr(task, "task_id", None)},
-            log_traceback=True,
-            depth=0,
-        )
+        # self._trace_collection(
+        #     safe_previous_results,
+        #     "previous_results",
+        #     {"task_id": getattr(task, "task_id", None)},
+        #     log_traceback=True,
+        #     depth=0,
+        # )
         if safe_previous_results:
             for v_idx, v in enumerate(safe_previous_results.values()):
                 self._trace_collection(
